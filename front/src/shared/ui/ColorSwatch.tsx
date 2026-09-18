@@ -28,7 +28,6 @@ export function ColorSwatch({
 }: ColorSwatchProps) {
   return (
     <button
-      // eslint-disable-next-line react/button-has-type
       type={type}
       aria-pressed={selected}
       className={cn(

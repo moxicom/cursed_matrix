@@ -48,6 +48,9 @@ export function TaskCard({
   const stripe = TASK_COLOR_BY_ID[task.color].hex ?? '#23272b';
 
   return (
+    // clicking the card is a mouse shortcut; the keyboard path is the title
+    // button inside, so the card itself must not become a second tab stop
+    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */
     <article
       draggable
       onDragStart={onDragStart}
@@ -70,13 +73,22 @@ export function TaskCard({
       <div className="min-w-0 flex-1 py-8 pl-5 pr-9">
         <div className="flex items-start gap-6">
           <Checkbox checked={done} onChange={onToggle} title={t.complete} className="-mt-px" />
-          <h3
-            className={cn(
-              'm-0 min-w-0 flex-1 break-words text-115 font-medium leading-[1.45]',
-              done ? 'text-txt-tag line-through' : 'text-txt',
-            )}
-          >
-            {task.title}
+          {/* the title is the keyboard-operable way into the task; the card
+              itself stays a plain container so no interactive element nests */}
+          <h3 className="m-0 min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen();
+              }}
+              className={cn(
+                'block w-full border-0 bg-transparent p-0 text-left text-115 font-medium leading-[1.45] break-words',
+                done ? 'text-txt-tag line-through' : 'text-txt',
+              )}
+            >
+              {task.title}
+            </button>
           </h3>
           <span className="flex-none pt-2 text-9 text-txt-ghost">{task.id.toUpperCase()}</span>
         </div>

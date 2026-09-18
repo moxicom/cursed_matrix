@@ -3,9 +3,16 @@ import { create } from 'zustand';
 import { QUADRANT_BY_ID } from '@/shared/config/domain';
 import { TAG_MAX_LENGTH, TITLE_MAX_LENGTH } from '@/shared/config/limits';
 import { pad2 } from '@/shared/lib/ascii';
-import { xpForTask } from '@/shared/lib/progression';
+import { effectiveQuadrant, xpForTask } from '@/shared/lib/progression';
 import { currentUser, mockLinks, mockTasks } from '@/shared/mocks';
-import type { LinkType, Quadrant, Task, TaskColorId, TaskLink } from '@/shared/types/domain';
+import {
+  isSubtask,
+  type LinkType,
+  type Quadrant,
+  type Task,
+  type TaskColorId,
+  type TaskLink,
+} from '@/shared/types/domain';
 
 export interface ToastState {
   code: string;
@@ -17,6 +24,7 @@ interface BoardState {
   links: TaskLink[];
   toast: ToastState | null;
   nextId: number;
+  nextLinkId: number;
 
   /** Selectors */
   taskById: (id: string) => Task | undefined;
@@ -49,6 +57,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   links: [...mockLinks],
   toast: null,
   nextId: mockTasks.length + 1,
+  nextLinkId: mockLinks.length + 1,
 
   taskById: (id) => get().tasks.find((t) => t.id === id),
   subtasksOf: (id) =>
@@ -63,9 +72,17 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     if (!task) return;
     const next = task.status === 'ACTIVE';
     const stamp = nowIso();
-    const parent = task.parentTaskId === null ? null : get().taskById(task.parentTaskId);
-    const quadrant = task.quadrant ?? parent?.quadrant ?? 'IMPORTANT_URGENT';
-    const xp = xpForTask(quadrant, task.parentTaskId !== null);
+    const parent = task.parentTaskId === null ? undefined : get().taskById(task.parentTaskId);
+    const quadrant = effectiveQuadrant(task, parent);
+
+    // a subtask whose parent is gone has no quadrant, so no XP rate: that is
+    // corrupted data, and silently granting top-tier XP would hide it
+    if (quadrant === null) {
+      get().flash('ORPHANED_NODE', task.id.toUpperCase());
+      return;
+    }
+
+    const xp = xpForTask(quadrant, isSubtask(task));
 
     set((state) => ({
       tasks: state.tasks.map((t) => {
@@ -147,10 +164,13 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   },
 
   createSubtask: (parentId, rawTitle) => {
+    // hierarchy is one level deep — the UI hides the button, the store refuses
+    const parentTask = get().taskById(parentId);
+    if (!parentTask || isSubtask(parentTask)) return;
+
     const title = rawTitle.slice(0, TITLE_MAX_LENGTH);
     const id = `t${pad2(get().nextId)}`;
     const position = Math.max(0, ...get().subtasksOf(parentId).map((t) => t.position)) + 1024;
-    const parent = get().taskById(parentId);
 
     set((state) => ({
       nextId: state.nextId + 1,
@@ -164,7 +184,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           description: '',
           quadrant: null,
           position,
-          color: parent?.color ?? 'NONE',
+          color: parentTask.color,
           deadlineAt: null,
           deadlineHasTime: false,
           status: 'ACTIVE',
@@ -184,7 +204,11 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     const task = get().taskById(id);
     if (!task || task.parentTaskId === null) return;
     const parent = get().taskById(task.parentTaskId);
-    const quadrant = parent?.quadrant ?? 'IMPORTANT_URGENT';
+    const quadrant = parent?.quadrant ?? null;
+    if (quadrant === null) {
+      get().flash('ORPHANED_NODE', task.id.toUpperCase());
+      return;
+    }
     const position =
       Math.max(
         0,
@@ -248,11 +272,14 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     );
     if (exists) return;
 
+    // ids come from a monotonic counter: deriving them from links.length would
+    // reuse an id that still belongs to a surviving link after any removal
     set((state) => ({
+      nextLinkId: state.nextLinkId + 1,
       links: [
         ...state.links,
         {
-          id: `l${state.links.length + 1}`,
+          id: `l${pad2(state.nextLinkId)}`,
           userId: currentUser.id,
           sourceTaskId: sourceId,
           targetTaskId: targetId,

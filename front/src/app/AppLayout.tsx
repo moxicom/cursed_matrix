@@ -31,8 +31,13 @@ export function AppLayout() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const session = useSessionStore();
-  const board = useBoardStore();
-  const filters = useFiltersStore();
+  // narrow selectors: this layout sits above every route, so subscribing to the
+  // whole board store would re-render it on every keystroke in a task title
+  const toast = useBoardStore((s) => s.toast);
+  const dismissToast = useBoardStore((s) => s.dismissToast);
+  const activeTaskCount = useBoardStore((s) => s.activeTaskCount());
+  const query = useFiltersStore((s) => s.query);
+  const setQuery = useFiltersStore((s) => s.setQuery);
   const hasAccess = useHasAccess();
   const ui = useUiStore();
 
@@ -90,8 +95,6 @@ export function AppLayout() {
     return () => window.removeEventListener('keydown', onKey);
   }, [hasAccess, ui, closeTask]);
 
-  const toast = board.toast;
-  const dismissToast = board.dismissToast;
   useEffect(() => {
     if (toast === null) return undefined;
     const timer = window.setTimeout(dismissToast, 2600);
@@ -117,10 +120,10 @@ export function AppLayout() {
           <AppHeader
             user={session.user}
             activeSection={section}
-            activeTasks={board.activeTaskCount()}
-            query={filters.query}
+            activeTasks={activeTaskCount}
+            query={query}
             onQueryChange={(value) => {
-              filters.setQuery(value);
+              setQuery(value);
               // opening is sticky: clearing the field must not close the palette
               if (value.trim() !== '') ui.openSearch();
             }}
@@ -134,15 +137,15 @@ export function AppLayout() {
         <>
           <SearchPalette
             open={ui.searchOpen}
-            query={filters.query}
-            onQueryChange={filters.setQuery}
+            query={query}
+            onQueryChange={setQuery}
             onClose={ui.closeSearch}
             onOpenTask={openTask}
           />
           <TaskModal taskId={taskId} onClose={closeTask} onOpenTask={openTask} />
           <PaywallModal
             open={ui.paywallOpen}
-            activeTasks={board.activeTaskCount()}
+            activeTasks={activeTaskCount}
             githubUrl={GITHUB_URL}
             onClose={ui.closePaywall}
             onViewPlans={() => {

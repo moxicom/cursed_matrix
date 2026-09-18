@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { QUADRANT_BY_ID, TASK_COLOR_BY_ID } from '@/shared/config/domain';
-import type { Task, TaskLink } from '@/shared/types/domain';
+import type { Quadrant, Task, TaskLink } from '@/shared/types/domain';
 
 interface NodeState {
   x: number;
@@ -20,8 +20,8 @@ interface View {
 export interface ForceGraphInput {
   nodes: readonly Task[];
   links: readonly TaskLink[];
-  /** Effective quadrant per task id — subtasks inherit it from their parent. */
-  quadrantOf: (task: Task) => string;
+  /** Effective quadrant — null for a subtask whose parent is missing. */
+  quadrantOf: (task: Task) => Quadrant | null;
   linkCountOf: (id: string) => number;
   subtaskCountOf: (id: string) => number;
   selectedId: string | null;
@@ -30,7 +30,9 @@ export interface ForceGraphInput {
 }
 
 export interface ForceGraphApi {
-  canvasRef: (element: HTMLCanvasElement | null) => void;
+  /** Callback ref for the canvas element. Not named *Ref: the value is a
+   *  setter, and the name would make the whole result look ref-like. */
+  attachCanvas: (element: HTMLCanvasElement | null) => void;
   zoom: number;
   zoomBy: (factor: number) => void;
   fit: () => void;
@@ -64,7 +66,11 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
     moved: boolean;
   } | null>(null);
 
-  inputRef.current = input;
+  // keep the latest props visible to the rAF loop and DOM listeners without
+  // re-subscribing them; written after render, never during it
+  useEffect(() => {
+    inputRef.current = input;
+  });
 
   const toWorld = useCallback((x: number, y: number) => {
     const view = viewRef.current;
@@ -278,7 +284,7 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
       const r = radius(task) * view.k;
       const done = task.status === 'COMPLETED';
       const quadrant = quadrantOf(task);
-      const accent = QUADRANT_BY_ID[quadrant as keyof typeof QUADRANT_BY_ID]?.accent ?? '#7d878c';
+      const accent = quadrant === null ? '#7d878c' : QUADRANT_BY_ID[quadrant].accent;
       const custom = TASK_COLOR_BY_ID[task.color].hex;
       const isSelected = selectedId === task.id;
       const isHovered = hovered === task.id;
@@ -311,9 +317,7 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
           ctx.fillStyle = '#6f797e';
           ctx.font = "8px 'JetBrains Mono', monospace";
           ctx.fillText(
-            `${task.id.toUpperCase()} · ${
-              QUADRANT_BY_ID[quadrant as keyof typeof QUADRANT_BY_ID]?.code ?? 'SUB'
-            }`,
+            `${task.id.toUpperCase()} · ${quadrant === null ? 'SUB' : QUADRANT_BY_ID[quadrant].code}`,
             p.x,
             p.y + r + 23,
           );
@@ -512,5 +516,5 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
     setZoom(k);
   }, []);
 
-  return { canvasRef: setCanvas, zoom, zoomBy, fit };
+  return { attachCanvas: setCanvas, zoom, zoomBy, fit };
 }

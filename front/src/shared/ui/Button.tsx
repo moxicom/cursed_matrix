@@ -43,7 +43,6 @@ export function Button({
 }: ButtonProps) {
   return (
     <button
-      // eslint-disable-next-line react/button-has-type
       type={type}
       className={cn(
         'inline-flex items-center justify-center gap-7 whitespace-nowrap transition-colors',

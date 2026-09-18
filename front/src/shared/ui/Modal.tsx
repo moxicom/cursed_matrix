@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import { cn } from '@/shared/lib/cn';
@@ -23,7 +23,15 @@ export interface ModalProps {
   className?: string;
   /** Disable closing on backdrop click / Escape. */
   persistent?: boolean;
+  /** Accessible name of the dialog — required for `role="dialog"` to be useful. */
+  ariaLabel: string;
 }
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Nested dialogs must not un-inert the app when only one of them closes. */
+let inertDepth = 0;
 
 const SIZES = {
   sm: 'w-[min(520px,94vw)]',
@@ -49,7 +57,57 @@ export function Modal({
   surface = 'raised',
   className,
   persistent = false,
+  ariaLabel,
 }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // make the application behind the dialog inert, so Tab and screen-reader
+  // navigation cannot reach the board underneath an "aria-modal" dialog
+  useEffect(() => {
+    if (!open) return undefined;
+    const root = document.getElementById('root');
+    inertDepth += 1;
+    root?.setAttribute('inert', '');
+    return () => {
+      inertDepth -= 1;
+      if (inertDepth === 0) root?.removeAttribute('inert');
+    };
+  }, [open]);
+
+  // move focus into the dialog, keep Tab inside it, restore it on close
+  useEffect(() => {
+    if (!open) return undefined;
+    const previous = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
+    (first ?? panel)?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !panel) return;
+      const items = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (element) => element.offsetParent !== null,
+      );
+      if (items.length === 0) return;
+      const firstItem = items[0] as HTMLElement;
+      const lastItem = items[items.length - 1] as HTMLElement;
+      const active = document.activeElement;
+
+      if (!event.shiftKey && active === lastItem) {
+        event.preventDefault();
+        firstItem.focus();
+      } else if (event.shiftKey && (active === firstItem || active === panel)) {
+        event.preventDefault();
+        lastItem.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previous?.focus?.();
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open || persistent) return undefined;
     const onKey = (event: KeyboardEvent) => {
@@ -73,8 +131,11 @@ export function Modal({
         className={cn('fixed inset-0', LAYERS[layer].backdrop)}
       />
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
+        aria-label={ariaLabel}
+        tabIndex={-1}
         className={cn(
           'fixed left-1/2 flex -translate-x-1/2 flex-col border border-line-strong',
           surface === 'raised' ? 'bg-bg-raised' : 'bg-bg-panel',

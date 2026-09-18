@@ -33,10 +33,8 @@ export function Popover({
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (!open || !anchor) {
-      setPosition(null);
-      return undefined;
-    }
+    // nothing to place while closed; the component renders null anyway
+    if (!open || !anchor) return undefined;
 
     const place = () => {
       const rect = anchor.getBoundingClientRect();

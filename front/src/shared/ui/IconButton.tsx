@@ -37,7 +37,6 @@ export function IconButton({
 }: IconButtonProps) {
   return (
     <button
-      // eslint-disable-next-line react/button-has-type
       type={type}
       className={cn(
         'inline-flex flex-none items-center justify-center leading-none transition-colors',

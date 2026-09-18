@@ -92,9 +92,30 @@ export const QUADRANTS: readonly QuadrantMeta[] = [
   },
 ];
 
-export const QUADRANT_BY_ID: Record<Quadrant, QuadrantMeta> = Object.fromEntries(
-  QUADRANTS.map((q) => [q.id, q]),
-) as Record<Quadrant, QuadrantMeta>;
+/**
+ * Index a catalogue by id. The cast below is unavoidable with
+ * `Object.fromEntries`, so the size is verified at module load: a dropped or
+ * duplicated id fails loudly here instead of surfacing as `undefined` deep
+ * inside a render.
+ */
+function indexById<T extends { id: string }>(
+  items: readonly T[],
+  expected: number,
+  name: string,
+): Record<string, T> {
+  const index = Object.fromEntries(items.map((item) => [item.id, item]));
+  if (Object.keys(index).length !== expected) {
+    throw new Error(
+      `${name}: expected ${expected} unique ids, got ${Object.keys(index).length}`,
+    );
+  }
+  return index;
+}
+
+export const QUADRANT_BY_ID = indexById(QUADRANTS, 4, 'QUADRANTS') as Record<
+  Quadrant,
+  QuadrantMeta
+>;
 
 export interface TaskColorMeta {
   id: TaskColorId;
@@ -162,9 +183,10 @@ export const TASK_COLORS: readonly TaskColorMeta[] = [
   },
 ];
 
-export const TASK_COLOR_BY_ID: Record<TaskColorId, TaskColorMeta> = Object.fromEntries(
-  TASK_COLORS.map((c) => [c.id, c]),
-) as Record<TaskColorId, TaskColorMeta>;
+export const TASK_COLOR_BY_ID = indexById(TASK_COLORS, 7, 'TASK_COLORS') as Record<
+  TaskColorId,
+  TaskColorMeta
+>;
 
 export const LINK_TYPES: readonly LinkType[] = ["RELATED", "BLOCKS", "DEPENDS_ON", "CONNECTED_TO"];
 

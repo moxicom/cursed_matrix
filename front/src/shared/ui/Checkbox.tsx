@@ -20,7 +20,6 @@ export function Checkbox({
 }: CheckboxProps) {
   return (
     <button
-      // eslint-disable-next-line react/button-has-type
       type={type}
       role="checkbox"
       aria-checked={checked}

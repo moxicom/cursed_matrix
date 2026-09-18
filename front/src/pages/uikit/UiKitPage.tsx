@@ -236,7 +236,7 @@ export function UiKitPage() {
         </div>
       </Panel>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} size="lg">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} size="lg" ariaLabel="Modal preview">
         <ModalHeader>
           <span className="text-10 font-bold tracking-t7 text-quad-q1">Q1</span>
           <span className="text-95 text-txt-ghost">T01</span>

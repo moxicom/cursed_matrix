@@ -42,6 +42,10 @@ cursed_matrix/
   client only derives presentation values (`deadline_state` for coloring, the
   level progress bar, graph layout).
 
+**Access.** `landing` and `pricing` are public pages. Every other section
+requires an active subscription: a signed-out visitor, or one whose trial has
+expired, is redirected to `pricing` (section 19, rules 27–29).
+
 **Contract.**
 
 * Transport: HTTP API (JSON), `back` → `front`.
@@ -165,7 +169,7 @@ Lifetime XP, level and streak are **not stored on User** — they live in
 | `position` | integer (gap-based) | order inside its scope (see §7) |
 | `color` | string (hex `#RRGGBB`), nullable | metadata, never affects logic |
 | `deadline_at` | timestamptz, nullable | the deadline moment |
-| `deadline_has_time` | boolean | `false` = the deadline is date-only (see §17) |
+| `deadline_has_time` | boolean | `false` = the deadline is date-only: it is rendered without a time and expires at the end of that day in the user's timezone (§17) |
 | `status` | enum `TaskStatus` | `ACTIVE` / `COMPLETED` |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
@@ -182,6 +186,14 @@ Storing `quadrant = null` on a Subtask makes the "a Task is in at most one
 quadrant" invariant checkable in the database and removes any chance of drift
 when the parent is moved. `quadrant_at_completion` on a Subtask is filled with
 the **effective** value — that is the XP snapshot.
+
+**§3.3.2 Illegal states.** The flat shape above can express combinations the
+domain forbids: a subtask carrying a quadrant, or a `COMPLETED` task with a null
+`completed_at`. The backend contract should make them unrepresentable — a
+discriminated union over `status` and over regular/subtask, plus validation of
+incoming payloads at the API boundary. Until then the frontend narrows with
+explicit type guards (`isSubtask`, `isRegularTask`, `isCompleted`) instead of
+guessing with fallbacks.
 
 ### 3.4 Tag
 
@@ -645,6 +657,10 @@ subtasks completed, XP earned.
 the user's own maximum over the period rather than being fixed, otherwise the
 heatmap is unreadable for users with different workloads.
 
+**Achievement ordering.** The activity screen lists unlocked achievements
+first, then the locked ones by descending completion ratio, so the closest goal
+is always near the top.
+
 **Statistics (§51, §57).** The Profile aggregates lifetime XP, level and
 progress, current/longest streak, tasks created/completed, subtasks completed,
 achievements unlocked, activity data and leaderboard status. Every value is read
@@ -764,6 +780,12 @@ Additional system rules:
 25. A deadline never affects the quadrant (§17) — no automatic migration of
     tasks.
 26. Color is pure metadata and affects no system rule (§18).
+27. Every section except the landing and pricing pages requires an active
+    subscription; without one the user is redirected to pricing.
+28. The FREE plan is capped at 35 active tasks and 25 links. Reaching a cap
+    blocks creation and opens the quota wall; it never touches existing data.
+29. Quotas count active tasks only — completing or archiving a task frees a
+    slot, so a full account is never a dead end.
 
 ---
 
@@ -803,7 +825,7 @@ now < deadline - T            → FUTURE
 deadline - T ≤ now < deadline → APPROACHING   (T = threshold, 48h in the design)
 now ≥ deadline, still active  → OVERDUE
 completed_at ≤ deadline       → COMPLETED_ON_TIME
-completed_at > deadline       → COMPLETED_LATE
+completed_at > deadline       → COMPLETED_LATE   (the overrun is shown: "+26H")
 ```
 
 **Streak state:**
@@ -1146,6 +1168,13 @@ privacy. The client never computes anything that affects data.
     updates, and the ability to fully recompute aggregates from the logs.
 16. **Notifications:** producing internal notifications; a background job for
     deadlines (approaching/overdue).
+17. **Invalid state, not a default:** when the effective quadrant cannot be
+    resolved (a subtask whose parent is missing), the operation is refused and
+    reported. Silently falling back to a concrete quadrant would grant XP at an
+    arbitrary rate and hide the corruption.
+18. **Subscription and quotas:** the current plan, trial expiry, and enforcing
+    the FREE caps (35 active tasks, 25 links) on every creating endpoint. The
+    client may show the wall early, but the server is what refuses the write.
 
 **Go specifics.**
 
@@ -1194,6 +1223,17 @@ privacy. The client never computes anything that affects data.
     order, grouping. None of it is a source of truth.
 12. **Timezone:** sending the browser's IANA timezone on sign-in and from
     settings.
+13. **Access routing:** gated routes redirect to pricing when there is no active
+    subscription; the quota wall opens when a creating action hits a FREE cap.
+14. **Landing backdrop:** an animated task network on canvas (drifting nodes,
+    distance-faded edges, pulses along them) from a seeded layout, reduced to a
+    still frame under `prefers-reduced-motion`.
+15. **Input limits:** title 100, description 2000, tag name 24 characters. The
+    field turns red at the cap and shows a counter from 80% of it. The backend
+    enforces the same limits.
+16. **Dense filter rows:** the tag filter measures the available width and
+    collapses whatever does not fit into a searchable "+N" popover, so the
+    filter strip is never wider than the viewport.
 
 **React specifics.**
 
@@ -1320,21 +1360,25 @@ were invented — each item states the question and the proposed default.
     This decides whether a background scheduler is needed from day one.
 24. **Account deletion** — soft delete or full erasure (a GDPR-style
     requirement)? What happens to historical XP transactions in the rankings?
-25. **Offline / sync** — is offline work with conflict resolution required? The
+25. **Client-side timezone.** `UserSettings.timezone` is part of the contract and
+    §38 requires the streak day to be computed in it, but the client currently
+    formats every date in the browser's local zone and computes no streak days.
+    Confirm that all timezone-dependent logic stays server-side.
+26. **Offline / sync** — is offline work with conflict resolution required? The
     brief does not mention it.
-26. **Subscription plans.** The design ships FREE / OPERATOR / SELF_HOSTED with
+27. **Subscription plans.** The design ships FREE / OPERATOR / SELF_HOSTED with
     quotas (35 active tasks, 25 links) and a paywall, none of which appears in
     the brief. → *decision taken:* implemented as designed. Still open: the
     billing provider, trial length, and what happens to tasks above the quota
     when a subscription lapses.
-27. **Stack details inside `front` / `back`.** The monorepo, React + Golang and
+28. **Stack details inside `front` / `back`.** The monorepo, React + Golang and
     the folder layout are fixed (section 0). Undecided: the database (this
     specification assumes PostgreSQL — section 22 uses its types, JSONB and
     partial indexes), the Go HTTP router/framework, the database access layer
     and migration tool, the React bundler and router, the force-graph library,
     and how API types are generated from Go into TypeScript (OpenAPI? a manual
     contract?).
-28. **Monorepo infrastructure.** A shared Makefile / task runner, a CI pipeline
+29. **Monorepo infrastructure.** A shared Makefile / task runner, a CI pipeline
     covering both folders, a docker-compose for local development, and the
     deployment shape (separate services, or Go serving the React build) are not
     defined. Client-side routing needs an `index.html` fallback either way.

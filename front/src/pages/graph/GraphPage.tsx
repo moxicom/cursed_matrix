@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { useBoardStore } from '@/features/board/board.store';
 import {
@@ -12,6 +12,7 @@ import { useForceGraph } from '@/features/graph/useForceGraph';
 import { QUADRANTS, QUADRANT_BY_ID, TASK_COLORS } from '@/shared/config/domain';
 import { useLang, useLocalized, useT } from '@/shared/i18n';
 import { deadlineInfo } from '@/shared/lib/deadline';
+import { effectiveQuadrant } from '@/shared/lib/progression';
 import { mockTagStats } from '@/shared/mocks';
 import type { Quadrant, Task } from '@/shared/types/domain';
 import { Button, Chip, ColorSwatch, Select } from '@/shared/ui';
@@ -25,49 +26,82 @@ export function GraphPage({ onOpenTask }: GraphPageProps) {
   const t = useT();
   const lang = useLang();
   const localized = useLocalized();
-  const store = useBoardStore();
+  const tasks = useBoardStore((s) => s.tasks);
+  const links = useBoardStore((s) => s.links);
+  const taskById = useBoardStore((s) => s.taskById);
+  const subtasksOf = useBoardStore((s) => s.subtasksOf);
   const filters = useFiltersStore();
   const [hoverId, setHoverId] = useState<string | null>(null);
 
-  const quadrantOf = (task: Task): Quadrant => {
-    if (task.quadrant !== null) return task.quadrant;
-    const parent = task.parentTaskId === null ? undefined : store.taskById(task.parentTaskId);
-    return parent?.quadrant ?? 'IMPORTANT_URGENT';
-  };
+  const quadrantOf = useCallback(
+    (task: Task): Quadrant | null =>
+      effectiveQuadrant(
+        task,
+        task.parentTaskId === null ? undefined : taskById(task.parentTaskId),
+      ),
+    [taskById],
+  );
 
-  const criteria = {
-    status: filters.status,
-    tags: filters.tags,
-    colors: filters.colors,
-    quadrants: filters.quadrants,
-    deadline: filters.deadline,
-    topology: filters.topology,
-    query: filters.query,
-  };
-
-  const nodes = store.tasks.filter((task) =>
-    matchesFilters(task, criteria, {
-      quadrant: quadrantOf(task),
-      linkCount: store.linksOf(task.id).length,
+  const criteria = useMemo(
+    () => ({
+      status: filters.status,
+      tags: filters.tags,
+      colors: filters.colors,
+      quadrants: filters.quadrants,
+      deadline: filters.deadline,
+      topology: filters.topology,
+      query: filters.query,
     }),
-  );
-  const visibleIds = new Set(nodes.map((task) => task.id));
-  const edges = store.links.filter(
-    (link) => visibleIds.has(link.sourceTaskId) && visibleIds.has(link.targetTaskId),
+    [
+      filters.status,
+      filters.tags,
+      filters.colors,
+      filters.quadrants,
+      filters.deadline,
+      filters.topology,
+      filters.query,
+    ],
   );
 
-  const graph = useForceGraph({
+  const { nodes, edges, linkCountById } = useMemo(() => {
+    const counts = new Map<string, number>();
+    links.forEach((link) => {
+      counts.set(link.sourceTaskId, (counts.get(link.sourceTaskId) ?? 0) + 1);
+      counts.set(link.targetTaskId, (counts.get(link.targetTaskId) ?? 0) + 1);
+    });
+
+    const visible = tasks.filter((task) =>
+      matchesFilters(task, criteria, {
+        quadrant: quadrantOf(task),
+        linkCount: counts.get(task.id) ?? 0,
+      }),
+    );
+    const visibleIds = new Set(visible.map((task) => task.id));
+
+    return {
+      nodes: visible,
+      edges: links.filter(
+        (link) => visibleIds.has(link.sourceTaskId) && visibleIds.has(link.targetTaskId),
+      ),
+      linkCountById: counts,
+    };
+    // quadrantOf reads taskById, which is stable in the store
+  }, [tasks, links, criteria, quadrantOf]);
+
+  const { attachCanvas, zoom, zoomBy, fit } = useForceGraph({
     nodes,
     links: edges,
     quadrantOf,
-    linkCountOf: (id) => store.linksOf(id).length,
-    subtaskCountOf: (id) => store.subtasksOf(id).length,
+    linkCountOf: (id) => linkCountById.get(id) ?? 0,
+    subtaskCountOf: (id) => subtasksOf(id).length,
     selectedId: null,
     onSelect: onOpenTask,
     onHover: setHoverId,
   });
 
-  const hovered = hoverId === null ? undefined : store.taskById(hoverId);
+  const hovered = hoverId === null ? undefined : taskById(hoverId);
+  const hoveredQuadrant = hovered === undefined ? null : quadrantOf(hovered);
+  const hoveredMeta = hoveredQuadrant === null ? null : QUADRANT_BY_ID[hoveredQuadrant];
   const topologyOptions: Array<{ value: TopologyFilter; label: string }> = [
     { value: 'any', label: t.any },
     { value: 'linked', label: t.linked },
@@ -139,7 +173,7 @@ export function GraphPage({ onOpenTask }: GraphPageProps) {
                   {localized(meta.subtitle)}
                 </span>
                 <span className="text-txt-faint">
-                  {store.tasks.filter((task) => task.quadrant === meta.id).length}
+                  {tasks.filter((task) => task.quadrant === meta.id).length}
                 </span>
               </Chip>
             ))}
@@ -215,20 +249,20 @@ export function GraphPage({ onOpenTask }: GraphPageProps) {
       </GraphSidebar>
 
       <div className="relative min-w-0 flex-1 bg-bg-base">
-        <canvas ref={graph.canvasRef} className="absolute inset-0 block h-full w-full cursor-grab" />
+        <canvas ref={attachCanvas} className="absolute inset-0 block h-full w-full cursor-grab" />
 
         <div className="pointer-events-none absolute left-14 top-12 text-95 tracking-t9 text-txt-ghost">
           {t.netMap} :: {t.dragHint}
         </div>
 
         <div className="absolute right-14 top-10 flex gap-4">
-          <Button variant="solid" size="xs" className="h-26 w-26" onClick={() => graph.zoomBy(1.25)}>
+          <Button variant="solid" size="xs" className="h-26 w-26" onClick={() => zoomBy(1.25)}>
             +
           </Button>
-          <Button variant="solid" size="xs" className="h-26 w-26" onClick={() => graph.zoomBy(0.8)}>
+          <Button variant="solid" size="xs" className="h-26 w-26" onClick={() => zoomBy(0.8)}>
             −
           </Button>
-          <Button variant="solid" size="xs" className="h-26 w-26" onClick={graph.fit}>
+          <Button variant="solid" size="xs" className="h-26 w-26" onClick={fit}>
             ⊙
           </Button>
         </div>
@@ -239,9 +273,9 @@ export function GraphPage({ onOpenTask }: GraphPageProps) {
               <span className="text-txt-ghost">{hovered.id.toUpperCase()}</span>
               <span
                 className="font-bold"
-                style={{ color: QUADRANT_BY_ID[quadrantOf(hovered)].accent }}
+                style={{ color: hoveredMeta?.accent ?? '#7d878c' }}
               >
-                {QUADRANT_BY_ID[quadrantOf(hovered)].code}
+                {hoveredMeta?.code ?? 'SUB'}
               </span>
               <span className={hovered.status === 'COMPLETED' ? 'text-green' : 'text-txt-dim'}>
                 [{hovered.status === 'COMPLETED' ? t.completed : hovered.parentTaskId ? 'SUB' : t.active}]
@@ -252,7 +286,7 @@ export function GraphPage({ onOpenTask }: GraphPageProps) {
               {[
                 deadlineInfo(hovered, t.completed).text,
                 hovered.tags.map((tag) => `#${tag}`).join(' '),
-                `◈${store.linksOf(hovered.id).length}`,
+                `◈${linkCountById.get(hovered.id) ?? 0}`,
               ]
                 .filter((part) => part !== '')
                 .join('   ')}
@@ -261,7 +295,7 @@ export function GraphPage({ onOpenTask }: GraphPageProps) {
         )}
 
         <div className="absolute bottom-14 right-14 text-95 text-txt-ghost">
-          ZOOM {graph.zoom.toFixed(2)}x
+          ZOOM {zoom.toFixed(2)}x
         </div>
       </div>
     </div>

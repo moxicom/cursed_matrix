@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 
 import { useBoardStore } from '@/features/board/board.store';
 import { LINK_TYPES, QUADRANT_BY_ID, QUADRANTS, TASK_COLORS } from '@/shared/config/domain';
@@ -10,10 +11,11 @@ import {
   TITLE_MAX_LENGTH,
 } from '@/shared/config/limits';
 import { useLocalized, useT } from '@/shared/i18n';
+import { pad2 } from '@/shared/lib/ascii';
 import { cn } from '@/shared/lib/cn';
 import { deadlineInfo, DEADLINE_TONE_CLASS } from '@/shared/lib/deadline';
-import { xpForTask } from '@/shared/lib/progression';
-import type { LinkType, Quadrant, TaskColorId } from '@/shared/types/domain';
+import { effectiveQuadrant, xpForTask } from '@/shared/lib/progression';
+import { isSubtask, type LinkType } from '@/shared/types/domain';
 import {
   Badge,
   Button,
@@ -41,26 +43,54 @@ export interface TaskModalProps {
 export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
   const t = useT();
   const localized = useLocalized();
-  const store = useBoardStore();
+  // the modal must re-render on task changes, but it should not subscribe to
+  // unrelated store fields such as the toast
+  const tasks = useBoardStore((s) => s.tasks);
+  const store = useBoardStore(
+    useShallow((s) => ({
+      taskById: s.taskById,
+      subtasksOf: s.subtasksOf,
+      linksOf: s.linksOf,
+      patchTask: s.patchTask,
+      toggleDone: s.toggleDone,
+      createSubtask: s.createSubtask,
+      promoteSubtask: s.promoteSubtask,
+      moveTask: s.moveTask,
+      deleteTask: s.deleteTask,
+      addLink: s.addLink,
+      setLinkType: s.setLinkType,
+      removeLink: s.removeLink,
+      setTaskColor: s.setTaskColor,
+      addTag: s.addTag,
+      removeTag: s.removeTag,
+    })),
+  );
+  const fieldId = useId();
   const [newSub, setNewSub] = useState('');
   const [newTag, setNewTag] = useState('');
 
   const task = taskId === null ? undefined : store.taskById(taskId);
   if (!task) return null;
 
-  const isSub = task.parentTaskId !== null;
-  const parent = isSub ? store.taskById(task.parentTaskId as string) : undefined;
-  const quadrant: Quadrant = task.quadrant ?? parent?.quadrant ?? 'IMPORTANT_URGENT';
-  const meta = QUADRANT_BY_ID[quadrant];
+  const isSub = isSubtask(task);
+  const parent = task.parentTaskId === null ? undefined : store.taskById(task.parentTaskId);
+  const quadrant = effectiveQuadrant(task, parent);
+  const meta = quadrant === null ? null : QUADRANT_BY_ID[quadrant];
   const done = task.status === 'COMPLETED';
   const subs = store.subtasksOf(task.id);
   const links = store.linksOf(task.id);
   const dl = deadlineInfo(task, t.completed);
 
-  const deadlineDate = task.deadlineAt === null ? '' : task.deadlineAt.slice(0, 10);
-  const deadlineTime = task.deadlineAt === null ? '' : new Date(task.deadlineAt).toTimeString().slice(0, 5);
+  // both fields are read in local time — slicing the ISO string would use the
+  // UTC day and shift the date for anyone east or west of UTC
+  const deadline = task.deadlineAt === null ? null : new Date(task.deadlineAt);
+  const deadlineDate =
+    deadline === null
+      ? ''
+      : `${deadline.getFullYear()}-${pad2(deadline.getMonth() + 1)}-${pad2(deadline.getDate())}`;
+  const deadlineTime = deadline === null ? '' : deadline.toTimeString().slice(0, 5);
 
-  const linkCandidates = store.tasks
+  const linkCandidates = tasks
     .filter(
       (candidate) =>
         candidate.id !== task.id &&
@@ -86,10 +116,19 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
   };
 
   return (
-    <Modal open onClose={onClose} size="lg" layer="modal">
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      layer="modal"
+      ariaLabel={`${task.id.toUpperCase()} · ${task.title}`}
+    >
       <ModalHeader>
-        <span className="text-10 font-bold tracking-t7" style={{ color: meta.accent }}>
-          {meta.code}
+        <span
+          className="text-10 font-bold tracking-t7"
+          style={{ color: meta?.accent ?? '#7d878c' }}
+        >
+          {meta?.code ?? 'SUB'}
         </span>
         <span className="text-95 text-txt-ghost">{task.id.toUpperCase()}</span>
         <Badge tone={done ? 'green' : 'neutral'}>{done ? t.completed : t.active}</Badge>
@@ -101,7 +140,7 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
         <span className="flex-1" />
         <span className="text-95 text-violet-dim">
           {done ? `${t.xpLocked} ` : '+'}
-          {done ? (task.xpAwarded ?? 0) : xpForTask(quadrant, isSub)} XP
+          {done ? (task.xpAwarded ?? 0) : quadrant === null ? '—' : xpForTask(quadrant, isSub)} XP
         </span>
         <IconButton size="md" tone="danger" onClick={onClose}>
           ×
@@ -113,6 +152,7 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
           <div>
             <FieldLabel
               className="mb-5"
+              htmlFor={`${fieldId}-title`}
               {...(counterFor(task.title, TITLE_MAX_LENGTH) !== undefined
                 ? { aside: counterFor(task.title, TITLE_MAX_LENGTH) }
                 : {})}
@@ -120,6 +160,7 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
               {t.title}
             </FieldLabel>
             <Input
+              id={`${fieldId}-title`}
               inputSize="lg"
               maxLength={TITLE_MAX_LENGTH}
               value={task.title}
@@ -131,6 +172,7 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
           <div>
             <FieldLabel
               className="mb-5"
+              htmlFor={`${fieldId}-desc`}
               {...(counterFor(task.description, DESCRIPTION_MAX_LENGTH) !== undefined
                 ? { aside: counterFor(task.description, DESCRIPTION_MAX_LENGTH) }
                 : {})}
@@ -138,6 +180,7 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
               {t.description}
             </FieldLabel>
             <Textarea
+              id={`${fieldId}-desc`}
               value={task.description}
               maxLength={DESCRIPTION_MAX_LENGTH}
               placeholder={t.descPh}
@@ -189,7 +232,9 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
                       {sub.status === 'COMPLETED' ? '' : '+'}
                       {sub.status === 'COMPLETED'
                         ? (sub.xpAwarded ?? 0)
-                        : xpForTask(quadrant, true)}{' '}
+                        : quadrant === null
+                          ? '—'
+                          : xpForTask(quadrant, true)}{' '}
                       XP
                     </span>
                     <Button variant="ghost" size="xs" onClick={() => store.promoteSubtask(sub.id)}>
@@ -206,6 +251,7 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
                     variant="dashed"
                     inputSize="sm"
                     maxLength={TITLE_MAX_LENGTH}
+                    aria-label={t.newSub}
                     placeholder={t.newSub}
                     className={cn(atLimit(newSub, TITLE_MAX_LENGTH) && 'border-red focus:border-red')}
                     value={newSub}
@@ -242,7 +288,10 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
                 const otherId = link.sourceTaskId === task.id ? link.targetTaskId : link.sourceTaskId;
                 const other = store.taskById(otherId);
                 if (!other) return null;
-                const otherQuad = other.quadrant ?? 'IMPORTANT_URGENT';
+                const otherParent =
+                  other.parentTaskId === null ? undefined : store.taskById(other.parentTaskId);
+                const otherQuad = effectiveQuadrant(other, otherParent);
+                const otherMeta = otherQuad === null ? null : QUADRANT_BY_ID[otherQuad];
                 return (
                   <div
                     key={link.id}
@@ -251,9 +300,9 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
                     <span className="text-10 text-cyan">◈</span>
                     <span
                       className="text-9 font-bold"
-                      style={{ color: QUADRANT_BY_ID[otherQuad].accent }}
+                      style={{ color: otherMeta?.accent ?? '#7d878c' }}
                     >
-                      {QUADRANT_BY_ID[otherQuad].code}
+                      {other.parentTaskId === null ? (otherMeta?.code ?? 'SUB') : 'SUB'}
                     </span>
                     <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-105 text-txt-soft">
                       {other.title}
@@ -318,12 +367,14 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
             <FieldLabel className="mb-6">{t.deadline}</FieldLabel>
             <div className="flex gap-5">
               <Input
+                aria-label={t.deadline}
                 type="date"
                 inputSize="sm"
                 value={deadlineDate}
                 onChange={(event) => setDeadline(event.target.value, deadlineTime)}
               />
               <Input
+                aria-label={`${t.deadline} · time`}
                 type="time"
                 inputSize="sm"
                 className="w-82"
@@ -355,7 +406,7 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
                   color={option.hex}
                   title={localized(option.name)}
                   selected={task.color === option.id}
-                  onClick={() => store.setTaskColor(task.id, option.id as TaskColorId)}
+                  onClick={() => store.setTaskColor(task.id, option.id)}
                 />
               ))}
             </div>
@@ -381,6 +432,7 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
                 variant="dashed"
                 inputSize="sm"
                 maxLength={TAG_MAX_LENGTH}
+                aria-label={t.newTagPh}
                 placeholder={t.newTagPh}
                 className={cn(atLimit(newTag, TAG_MAX_LENGTH) && 'border-red focus:border-red')}
                 value={newTag}

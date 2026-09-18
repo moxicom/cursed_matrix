@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { useFiltersStore } from './filters.store';
 import { useLang, useT } from '@/shared/i18n';
@@ -68,9 +68,16 @@ export function TagFilter({ tags, layout = 'row', chipSize = 'sm' }: TagFilterPr
 
   const rowRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
-  const anchorRef = useRef<HTMLButtonElement>(null);
+  // the popover needs the element itself during render, so it lives in state
+  const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const maxRows = layout === 'wrap' ? 2 : 1;
+
+  // autoFocus would steal focus on mount; focus only when the popover opens
+  useEffect(() => {
+    if (open) searchRef.current?.focus();
+  }, [open]);
 
   useLayoutEffect(() => {
     const row = rowRef.current;
@@ -131,7 +138,7 @@ export function TagFilter({ tags, layout = 'row', chipSize = 'sm' }: TagFilterPr
 
       {hidden.length > 0 && (
         <button
-          ref={anchorRef}
+          ref={setAnchorEl}
           type="button"
           onClick={() => setOpen((value) => !value)}
           title={lang === 'RU' ? 'Все теги' : 'All tags'}
@@ -158,12 +165,13 @@ export function TagFilter({ tags, layout = 'row', chipSize = 'sm' }: TagFilterPr
         </button>
       </div>
 
-      <Popover open={open} anchor={anchorRef.current} onClose={() => setOpen(false)} width={248}>
+      <Popover open={open} anchor={anchorEl} onClose={() => setOpen(false)} width={248}>
         <div className="border-b border-line-subtle p-8">
           <input
-            autoFocus
+            ref={searchRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            aria-label={lang === 'RU' ? 'поиск тега…' : 'filter tags…'}
             placeholder={lang === 'RU' ? 'поиск тега…' : 'filter tags…'}
             className="w-full border border-line bg-bg-input px-8 py-6 text-105 text-txt outline-none focus:border-cyan"
           />

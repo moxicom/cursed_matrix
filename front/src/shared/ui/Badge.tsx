@@ -32,7 +32,7 @@ export function Badge({ children, tone = 'neutral', bracketed = false, className
         className,
       )}
     >
-      {bracketed ? `[ ${String(children)} ]` : children}
+      {bracketed ? <>[ {children} ]</> : children}
     </span>
   );
 }

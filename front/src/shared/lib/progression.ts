@@ -48,6 +48,6 @@ export function xpForTask(quadrant: Quadrant, isSubtask: boolean): number {
 }
 
 /** Effective quadrant of a task: its own, or the parent's for a subtask. */
-export function effectiveQuadrant(task: Task, parent?: Task | undefined): Quadrant | null {
+export function effectiveQuadrant(task: Task, parent?: Task): Quadrant | null {
   return task.quadrant ?? parent?.quadrant ?? null;
 }

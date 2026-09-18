@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { BoardColumn } from './BoardColumn';
 import { useBoardStore } from '@/features/board/board.store';
@@ -26,7 +26,12 @@ export function BoardPage({ onOpenTask, onQuotaHit }: BoardPageProps) {
   const t = useT();
   const lang = useLang();
   const localized = useLocalized();
-  const store = useBoardStore();
+  // select state slices, not the whole store: actions keep a stable identity
+  const tasks = useBoardStore((s) => s.tasks);
+  const links = useBoardStore((s) => s.links);
+  const createTask = useBoardStore((s) => s.createTask);
+  const moveTask = useBoardStore((s) => s.moveTask);
+  const activeTaskCount = useBoardStore((s) => s.activeTaskCount());
   const filters = useFiltersStore();
   const plan = useSessionStore((s) => s.user.plan);
 
@@ -35,28 +40,70 @@ export function BoardPage({ onOpenTask, onQuotaHit }: BoardPageProps) {
     null,
   );
 
-  const criteria = {
-    status: filters.status,
-    tags: filters.tags,
-    colors: filters.colors,
-    quadrants: filters.quadrants,
-    deadline: filters.deadline,
-    topology: filters.topology,
-    query: filters.query,
-  };
-
-  const passes = (task: Task): boolean => {
-    const parent = task.parentTaskId === null ? undefined : store.taskById(task.parentTaskId);
-    return matchesFilters(task, criteria, {
-      quadrant: task.quadrant ?? parent?.quadrant ?? null,
-      linkCount: store.linksOf(task.id).length,
-    });
-  };
-
-  const parents = store.tasks.filter((task) => task.parentTaskId === null);
-  const visibleParents = parents.filter(
-    (task) => passes(task) || store.subtasksOf(task.id).some(passes),
+  const criteria = useMemo(
+    () => ({
+      status: filters.status,
+      tags: filters.tags,
+      colors: filters.colors,
+      quadrants: filters.quadrants,
+      deadline: filters.deadline,
+      topology: filters.topology,
+      query: filters.query,
+    }),
+    [
+      filters.status,
+      filters.tags,
+      filters.colors,
+      filters.quadrants,
+      filters.deadline,
+      filters.topology,
+      filters.query,
+    ],
   );
+
+  /**
+   * One pass over the data per change instead of a nested scan per rendered row:
+   * subtasks are grouped by parent and link counts are tallied up front.
+   */
+  const { subtasksByParent, linkCountById, byId } = useMemo(() => {
+    const subtasks = new Map<string, Task[]>();
+    const counts = new Map<string, number>();
+    const index = new Map<string, Task>();
+
+    tasks.forEach((task) => {
+      index.set(task.id, task);
+      if (task.parentTaskId !== null) {
+        const bucket = subtasks.get(task.parentTaskId);
+        if (bucket) bucket.push(task);
+        else subtasks.set(task.parentTaskId, [task]);
+      }
+    });
+    subtasks.forEach((bucket) => bucket.sort((a, b) => a.position - b.position));
+    links.forEach((link) => {
+      counts.set(link.sourceTaskId, (counts.get(link.sourceTaskId) ?? 0) + 1);
+      counts.set(link.targetTaskId, (counts.get(link.targetTaskId) ?? 0) + 1);
+    });
+
+    return { subtasksByParent: subtasks, linkCountById: counts, byId: index };
+  }, [tasks, links]);
+
+  const { visibleParents, visibleSubCount } = useMemo(() => {
+    const passes = (task: Task): boolean => {
+      const parent = task.parentTaskId === null ? undefined : byId.get(task.parentTaskId);
+      return matchesFilters(task, criteria, {
+        quadrant: task.quadrant ?? parent?.quadrant ?? null,
+        linkCount: linkCountById.get(task.id) ?? 0,
+      });
+    };
+
+    const parents = tasks.filter((task) => task.parentTaskId === null);
+    return {
+      visibleParents: parents.filter(
+        (task) => passes(task) || (subtasksByParent.get(task.id) ?? []).some(passes),
+      ),
+      visibleSubCount: tasks.filter((task) => task.parentTaskId !== null && passes(task)).length,
+    };
+  }, [tasks, criteria, byId, linkCountById, subtasksByParent]);
 
   const statusOptions: Array<{ value: StatusFilter; label: string }> = [
     { value: 'active', label: t.active },
@@ -71,9 +118,6 @@ export function BoardPage({ onOpenTask, onQuotaHit }: BoardPageProps) {
     { value: 'week', label: t.dlWeek },
     { value: 'none', label: t.dlNone },
   ];
-
-  const visibleSubCount = store.tasks.filter((task) => task.parentTaskId !== null && passes(task))
-    .length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -142,15 +186,17 @@ export function BoardPage({ onOpenTask, onQuotaHit }: BoardPageProps) {
               meta={meta}
               tasks={columnTasks}
               count={columnTasks.length}
+              subtasksByParent={subtasksByParent}
+              linkCountById={linkCountById}
               draggingId={draggingId}
               dropIndex={dropTarget?.quadrant === meta.id ? dropTarget.index : null}
               onOpenTask={onOpenTask}
               onAdd={() => {
-                if (plan === 'FREE' && store.activeTaskCount() >= FREE_TASK_CAP) {
+                if (plan === 'FREE' && activeTaskCount >= FREE_TASK_CAP) {
                   onQuotaHit();
                   return;
                 }
-                store.createTask(meta.id, lang === 'RU' ? 'Новая задача' : 'New task');
+                createTask(meta.id, lang === 'RU' ? 'Новая задача' : 'New task');
               }}
               onDragStart={setDraggingId}
               onDragEnd={() => {
@@ -161,13 +207,13 @@ export function BoardPage({ onOpenTask, onQuotaHit }: BoardPageProps) {
               onDragOverColumn={() => setDropTarget({ quadrant: meta.id, index: null })}
               onDropOnCard={(beforeId) => {
                 if (draggingId !== null && draggingId !== beforeId) {
-                  store.moveTask(draggingId, meta.id, beforeId);
+                  moveTask(draggingId, meta.id, beforeId);
                 }
                 setDraggingId(null);
                 setDropTarget(null);
               }}
               onDropOnColumn={() => {
-                if (draggingId !== null) store.moveTask(draggingId, meta.id, null);
+                if (draggingId !== null) moveTask(draggingId, meta.id, null);
                 setDraggingId(null);
                 setDropTarget(null);
               }}

@@ -39,7 +39,6 @@ export function Chip({
 }: ChipProps) {
   return (
     <button
-      // eslint-disable-next-line react/button-has-type
       type={type}
       aria-pressed={active}
       className={cn(

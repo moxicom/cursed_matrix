@@ -37,6 +37,9 @@ export function HeatmapGrid({ days, onHover }: HeatmapGridProps) {
   const lang = useLang();
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const cellRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  /** Roving tabindex: the grid is one tab stop, arrows walk the days. */
+  const [focusedIndex, setFocusedIndex] = useState(0);
   const [tooltipLeft, setTooltipLeft] = useState(0);
 
   // keep the tooltip inside the viewport on both edges
@@ -65,6 +68,24 @@ export function HeatmapGrid({ days, onHover }: HeatmapGridProps) {
     return out;
   }, [days, lang]);
 
+  const describe = (day: ActivityDay): string =>
+    lang === 'RU'
+      ? `${day.date}: завершено ${day.completedCount}, создано ${day.createdCount}`
+      : `${day.date}: ${day.completedCount} completed, ${day.createdCount} created`;
+
+  const showDay = (day: ActivityDay, element: HTMLElement) => {
+    onHover(day);
+    const cell = element.getBoundingClientRect();
+    setTooltip({ day, x: cell.left + cell.width / 2, y: cell.top });
+  };
+
+  const moveFocus = (from: number, delta: number) => {
+    const next = Math.min(days.length - 1, Math.max(0, from + delta));
+    if (next === from) return;
+    setFocusedIndex(next);
+    cellRefs.current[next]?.focus();
+  };
+
   const dayLabels = lang === 'RU' ? ['ВС', '', 'ВТ', '', 'ЧТ', '', 'СБ'] : ['SUN', '', 'TUE', '', 'THU', '', 'SAT'];
 
   return (
@@ -92,21 +113,46 @@ export function HeatmapGrid({ days, onHover }: HeatmapGridProps) {
           </div>
 
           <div
+            role="group"
+            aria-label={t.heatmapTitle}
             className="grid gap-2"
             style={{ gridAutoFlow: 'column', gridTemplateRows: 'repeat(7, 11px)' }}
           >
-            {days.map((day) => {
+            {days.map((day, index) => {
               const level = levelOf(day.totalActivity);
               return (
-                <div
+                <button
                   key={day.date}
-                  // no title attribute: the native tooltip takes ~1s to appear
-                  onMouseEnter={(event) => {
-                    onHover(day);
-                    const cell = event.currentTarget.getBoundingClientRect();
-                    setTooltip({ day, x: cell.left + cell.width / 2, y: cell.top });
+                  type="button"
+                  ref={(element) => {
+                    cellRefs.current[index] = element;
                   }}
-                  className="h-11 w-11 cursor-crosshair border"
+                  // the level is colour-coded, so the counts go in the label
+                  aria-label={describe(day)}
+                  tabIndex={index === focusedIndex ? 0 : -1}
+                  // no title attribute: the native tooltip takes ~1s to appear
+                  onMouseEnter={(event) => showDay(day, event.currentTarget)}
+                  onFocus={(event) => {
+                    setFocusedIndex(index);
+                    showDay(day, event.currentTarget);
+                  }}
+                  onKeyDown={(event) => {
+                    // columns are weeks, rows are weekdays
+                    const step =
+                      event.key === 'ArrowRight'
+                        ? 7
+                        : event.key === 'ArrowLeft'
+                          ? -7
+                          : event.key === 'ArrowDown'
+                            ? 1
+                            : event.key === 'ArrowUp'
+                              ? -1
+                              : 0;
+                    if (step === 0) return;
+                    event.preventDefault();
+                    moveFocus(index, step);
+                  }}
+                  className="h-11 w-11 cursor-crosshair border p-0 outline-none focus-visible:border-txt"
                   style={{ background: SHADES[level], borderColor: BORDERS[level] }}
                 />
               );

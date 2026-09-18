@@ -52,6 +52,36 @@ export interface Task {
   tags: string[];
 }
 
+/**
+ * Narrowed views of `Task`.
+ *
+ * The flat `Task` above can express states the domain forbids — a subtask with
+ * a quadrant, or a COMPLETED task without `completedAt`. Making that
+ * unrepresentable belongs in the backend contract (a discriminated union plus
+ * response validation at the API boundary); until that exists, these guards let
+ * the code narrow explicitly instead of guessing with `??` fallbacks.
+ */
+export type RegularTask = Task & { parentTaskId: null; quadrant: Quadrant };
+export type Subtask = Task & { parentTaskId: string; quadrant: null };
+export type CompletedTask = Task & {
+  status: 'COMPLETED';
+  completedAt: string;
+  xpAwarded: number;
+  quadrantAtCompletion: Quadrant;
+};
+
+export function isSubtask(task: Task): task is Subtask {
+  return task.parentTaskId !== null;
+}
+
+export function isRegularTask(task: Task): task is RegularTask {
+  return task.parentTaskId === null && task.quadrant !== null;
+}
+
+export function isCompleted(task: Task): task is CompletedTask {
+  return task.status === 'COMPLETED' && task.completedAt !== null;
+}
+
 export interface Tag {
   id: string;
   userId: string;

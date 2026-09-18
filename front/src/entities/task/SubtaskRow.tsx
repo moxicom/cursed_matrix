@@ -38,6 +38,9 @@ export function SubtaskRow({
       <span className="w-12 flex-none pt-7 text-center text-11 text-txt-branch">
         {last ? '└' : '├'}
       </span>
+      {/* clicking the row is a mouse shortcut; the keyboard path is the title
+          button inside, so the row itself must not become a second tab stop */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
       <article
         draggable
         title={t.subDragHint}
@@ -51,14 +54,19 @@ export function SubtaskRow({
         )}
       >
         <Checkbox checked={done} size="sm" onChange={onToggle} />
-        <span
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen();
+          }}
           className={cn(
-            'min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-105',
+            'min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left text-105',
             done ? 'text-txt-tag line-through' : 'text-txt-soft',
           )}
         >
           {subtask.title}
-        </span>
+        </button>
         {!done && <DeadlineBadge task={subtask} bare />}
         <span className="flex-none whitespace-nowrap text-9 text-violet-sub">
           {done ? '' : '+'}

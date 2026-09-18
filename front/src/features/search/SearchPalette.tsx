@@ -37,13 +37,22 @@ export function SearchPalette({ open, query, onQueryChange, onClose, onOpenTask 
           .slice(0, 14);
 
   return (
-    <Modal open={open} onClose={onClose} size="md" placement="top" layer="search" surface="panel">
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="md"
+      placement="top"
+      layer="search"
+      surface="panel"
+      ariaLabel={t.searchPh}
+    >
       <div className="flex items-center gap-9 border-b border-line-subtle px-13 py-10">
         <span className="font-bold text-green">&gt;</span>
         <input
           ref={inputRef}
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
+          aria-label={t.searchPh}
           placeholder={t.searchPh}
           className="min-w-0 flex-1 border-0 bg-transparent text-12 text-txt outline-none"
         />

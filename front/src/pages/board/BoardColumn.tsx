@@ -16,6 +16,9 @@ export interface BoardColumnProps {
   tasks: readonly Task[];
   /** Total count shown in the header, before search narrowing. */
   count: number;
+  /** Derived once per data change by the page, not re-scanned per row. */
+  subtasksByParent: Map<string, Task[]>;
+  linkCountById: Map<string, number>;
   draggingId: string | null;
   dropIndex: number | null;
   onOpenTask: (id: string) => void;
@@ -32,6 +35,8 @@ export function BoardColumn({
   meta,
   tasks,
   count,
+  subtasksByParent,
+  linkCountById,
   draggingId,
   dropIndex,
   onOpenTask,
@@ -45,7 +50,8 @@ export function BoardColumn({
 }: BoardColumnProps) {
   const t = useT();
   const localized = useLocalized();
-  const store = useBoardStore();
+  const toggleDone = useBoardStore((s) => s.toggleDone);
+  const createSubtask = useBoardStore((s) => s.createSubtask);
   const expandedByDefault = usePreferencesStore((s) => s.subtasksExpandedByDefault);
   /** Per-card override of the "subtasks expanded by default" preference. */
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
@@ -94,7 +100,7 @@ export function BoardColumn({
         )}
 
         {tasks.map((task, index) => {
-          const subs = store.subtasksOf(task.id);
+          const subs = subtasksByParent.get(task.id) ?? [];
           const expanded = (overrides[task.id] ?? expandedByDefault) && subs.length > 0;
           return (
             <div key={task.id} className="mb-8">
@@ -107,10 +113,10 @@ export function BoardColumn({
                 quadrant={meta.id}
                 subtaskTotal={subs.length}
                 subtaskDone={subs.filter((s) => s.status === 'COMPLETED').length}
-                linkCount={store.linksOf(task.id).length}
+                linkCount={linkCountById.get(task.id) ?? 0}
                 expanded={expanded}
                 dragging={draggingId === task.id}
-                onToggle={() => store.toggleDone(task.id)}
+                onToggle={() => toggleDone(task.id)}
                 onOpen={() => onOpenTask(task.id)}
                 onToggleSubtasks={() =>
                   setOverrides((prev) => ({
@@ -141,7 +147,7 @@ export function BoardColumn({
                       quadrant={meta.id}
                       last={subIndex === subs.length - 1}
                       dragging={draggingId === sub.id}
-                      onToggle={() => store.toggleDone(sub.id)}
+                      onToggle={() => toggleDone(sub.id)}
                       onOpen={() => onOpenTask(sub.id)}
                       onDragStart={() => onDragStart(sub.id)}
                       onDragEnd={onDragEnd}
@@ -153,7 +159,7 @@ export function BoardColumn({
                       variant="dashed"
                       size="xs"
                       className="mr-14 flex-1 justify-start text-95"
-                      onClick={() => store.createSubtask(task.id, t.newSub)}
+                      onClick={() => createSubtask(task.id, t.newSub)}
                     >
                       + {t.newSub}
                     </Button>

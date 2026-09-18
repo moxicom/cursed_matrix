@@ -20,6 +20,7 @@ export function HeaderSearch({ value, onChange, onFocus, onClear }: HeaderSearch
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onFocus={onFocus}
+          aria-label={t.searchPh}
           placeholder={t.searchPh}
           className="min-w-0 flex-1 border-0 bg-transparent text-115 text-txt outline-none"
         />

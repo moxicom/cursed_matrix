@@ -14,7 +14,13 @@ npm run dev        # dev server on http://localhost:5173
 npm run build      # typecheck + production build
 npm run preview    # preview the production build
 npm run typecheck  # types only
+npm run lint       # eslint: typescript-eslint (type-aware), react-hooks, jsx-a11y
 ```
+
+`npm run lint` is expected to stay at zero problems. The two deliberate
+`eslint-disable` lines are on the task card and subtask row: clicking the card
+body is a mouse shortcut, and the keyboard path is the title button inside it,
+so the card must not become a second tab stop.
 
 ## Path aliases
 

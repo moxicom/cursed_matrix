@@ -28,6 +28,7 @@ export function PaywallModal({
       layer="pay"
       accent="#d2a04a"
       borderColor="#4a3f28"
+      ariaLabel={t.quotaCode}
     >
       <div className="flex items-center gap-9 border-b border-line-subtle px-16 py-12">
         <span className="text-amber">▲</span>

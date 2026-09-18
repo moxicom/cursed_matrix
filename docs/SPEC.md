@@ -159,8 +159,8 @@ Lifetime XP, level and streak are **not stored on User** — they live in
 | `id` | UUID | PK |
 | `user_id` | UUID | FK → User, required |
 | `parent_task_id` | UUID, nullable | FK → Task; `null` = regular Task, otherwise a Subtask |
-| `title` | string(1..200) | required |
-| `description` | text, nullable | |
+| `title` | string(1..100) | required |
+| `description` | text(0..2000), nullable | |
 | `quadrant` | enum `Quadrant`, nullable | NOT NULL for a regular Task; `null` for a Subtask (it inherits the parent's quadrant, see §3.3.1) |
 | `position` | integer (gap-based) | order inside its scope (see §7) |
 | `color` | string (hex `#RRGGBB`), nullable | metadata, never affects logic |
@@ -185,7 +185,7 @@ the **effective** value — that is the XP snapshot.
 
 ### 3.4 Tag
 
-`id` (UUID, PK), `user_id` (FK), `name` (string 1..32), `color` (nullable),
+`id` (UUID, PK), `user_id` (FK), `name` (string 1..24), `color` (nullable),
 `created_at`.
 Unique: `(user_id, lower(name))` — tags are private to their user.
 

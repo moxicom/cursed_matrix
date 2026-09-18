@@ -1,3 +1,4 @@
+import { useLandingGraph } from '@/features/landing-graph/useLandingGraph';
 import { GITHUB_URL, LINKEDIN_URL } from '@/shared/config/links';
 import { useT } from '@/shared/i18n';
 import { Button } from '@/shared/ui';
@@ -17,9 +18,23 @@ export interface LandingPageProps {
 /** Public page — rendered without the application header. */
 export function LandingPage({ onEnter, onPricing }: LandingPageProps) {
   const t = useT();
+  const bgCanvas = useLandingGraph();
 
   return (
     <div className="relative min-h-0 flex-1 overflow-y-auto bg-bg-base">
+      {/* animated task network behind the hero, masked out where the text sits */}
+      <canvas
+        ref={bgCanvas}
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 block h-full w-full"
+        style={{
+          opacity: 0.94,
+          maskImage:
+            'radial-gradient(74% 50% at 22% 30%, transparent 0%, transparent 34%, rgba(0,0,0,0.5) 66%, #000 94%)',
+          WebkitMaskImage:
+            'radial-gradient(74% 50% at 22% 30%, transparent 0%, transparent 34%, rgba(0,0,0,0.5) 66%, #000 94%)',
+        }}
+      />
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0"

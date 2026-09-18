@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { QUADRANT_BY_ID } from '@/shared/config/domain';
+import { TAG_MAX_LENGTH, TITLE_MAX_LENGTH } from '@/shared/config/limits';
 import { pad2 } from '@/shared/lib/ascii';
 import { xpForTask } from '@/shared/lib/progression';
 import { currentUser, mockLinks, mockTasks } from '@/shared/mocks';
@@ -101,7 +102,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       tasks: state.tasks.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: nowIso() } : t)),
     })),
 
-  createTask: (quadrant, title) => {
+  createTask: (quadrant, rawTitle) => {
+    const title = rawTitle.slice(0, TITLE_MAX_LENGTH);
     const id = `t${pad2(get().nextId)}`;
     const position =
       Math.max(
@@ -144,7 +146,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     );
   },
 
-  createSubtask: (parentId, title) => {
+  createSubtask: (parentId, rawTitle) => {
+    const title = rawTitle.slice(0, TITLE_MAX_LENGTH);
     const id = `t${pad2(get().nextId)}`;
     const position = Math.max(0, ...get().subtasksOf(parentId).map((t) => t.position)) + 1024;
     const parent = get().taskById(parentId);
@@ -272,8 +275,9 @@ export const useBoardStore = create<BoardState>((set, get) => ({
 
   addTag: (id, tag) => {
     const task = get().taskById(id);
-    if (!task || tag.trim() === '' || task.tags.includes(tag)) return;
-    get().patchTask(id, { tags: [...task.tags, tag.trim()] });
+    const name = tag.trim().slice(0, TAG_MAX_LENGTH);
+    if (!task || name === '' || task.tags.includes(name)) return;
+    get().patchTask(id, { tags: [...task.tags, name] });
   },
 
   removeTag: (id, tag) => {

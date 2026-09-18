@@ -2,6 +2,13 @@ import { useState } from 'react';
 
 import { useBoardStore } from '@/features/board/board.store';
 import { LINK_TYPES, QUADRANT_BY_ID, QUADRANTS, TASK_COLORS } from '@/shared/config/domain';
+import {
+  atLimit,
+  counterFor,
+  DESCRIPTION_MAX_LENGTH,
+  TAG_MAX_LENGTH,
+  TITLE_MAX_LENGTH,
+} from '@/shared/config/limits';
 import { useLocalized, useT } from '@/shared/i18n';
 import { cn } from '@/shared/lib/cn';
 import { deadlineInfo, DEADLINE_TONE_CLASS } from '@/shared/lib/deadline';
@@ -104,19 +111,39 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
       <ModalBody className="grid grid-cols-1 gap-px bg-line-subtle md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-14 bg-bg-raised p-14">
           <div>
-            <FieldLabel className="mb-5">{t.title}</FieldLabel>
+            <FieldLabel
+              className="mb-5"
+              {...(counterFor(task.title, TITLE_MAX_LENGTH) !== undefined
+                ? { aside: counterFor(task.title, TITLE_MAX_LENGTH) }
+                : {})}
+            >
+              {t.title}
+            </FieldLabel>
             <Input
               inputSize="lg"
+              maxLength={TITLE_MAX_LENGTH}
               value={task.title}
+              className={cn(atLimit(task.title, TITLE_MAX_LENGTH) && 'border-red focus:border-red')}
               onChange={(event) => store.patchTask(task.id, { title: event.target.value })}
             />
           </div>
 
           <div>
-            <FieldLabel className="mb-5">{t.description}</FieldLabel>
+            <FieldLabel
+              className="mb-5"
+              {...(counterFor(task.description, DESCRIPTION_MAX_LENGTH) !== undefined
+                ? { aside: counterFor(task.description, DESCRIPTION_MAX_LENGTH) }
+                : {})}
+            >
+              {t.description}
+            </FieldLabel>
             <Textarea
               value={task.description}
+              maxLength={DESCRIPTION_MAX_LENGTH}
               placeholder={t.descPh}
+              className={cn(
+                atLimit(task.description, DESCRIPTION_MAX_LENGTH) && 'border-red focus:border-red',
+              )}
               onChange={(event) => store.patchTask(task.id, { description: event.target.value })}
             />
           </div>
@@ -149,9 +176,11 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
                     <Input
                       variant="bare"
                       inputSize="sm"
+                      maxLength={TITLE_MAX_LENGTH}
                       className={cn(
                         'flex-1 px-0 py-0 text-11',
                         sub.status === 'COMPLETED' && 'text-txt-tag line-through',
+                        atLimit(sub.title, TITLE_MAX_LENGTH) && 'text-red',
                       )}
                       value={sub.title}
                       onChange={(event) => store.patchTask(sub.id, { title: event.target.value })}
@@ -176,7 +205,9 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
                   <Input
                     variant="dashed"
                     inputSize="sm"
+                    maxLength={TITLE_MAX_LENGTH}
                     placeholder={t.newSub}
+                    className={cn(atLimit(newSub, TITLE_MAX_LENGTH) && 'border-red focus:border-red')}
                     value={newSub}
                     onChange={(event) => setNewSub(event.target.value)}
                     onKeyDown={(event) => {
@@ -332,7 +363,14 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
           </div>
 
           <div>
-            <FieldLabel className="mb-6">{t.tags}</FieldLabel>
+            <FieldLabel
+              className="mb-6"
+              {...(counterFor(newTag, TAG_MAX_LENGTH) !== undefined
+                ? { aside: counterFor(newTag, TAG_MAX_LENGTH) }
+                : {})}
+            >
+              {t.tags}
+            </FieldLabel>
             <div className="flex flex-wrap gap-4">
               {task.tags.map((tag) => (
                 <TagChip key={tag} name={tag} onRemove={() => store.removeTag(task.id, tag)} />
@@ -342,7 +380,9 @@ export function TaskModal({ taskId, onClose, onOpenTask }: TaskModalProps) {
               <Input
                 variant="dashed"
                 inputSize="sm"
+                maxLength={TAG_MAX_LENGTH}
                 placeholder={t.newTagPh}
+                className={cn(atLimit(newTag, TAG_MAX_LENGTH) && 'border-red focus:border-red')}
                 value={newTag}
                 onChange={(event) => setNewTag(event.target.value)}
                 onKeyDown={(event) => {

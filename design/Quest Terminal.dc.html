@@ -1,0 +1,2090 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#0a0b0c; color:#d8dde0; font-family:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; }
+  a { color:#6fa8c0; text-decoration:none; }
+  a:hover { color:#9ecadb; text-decoration:underline; }
+  input, textarea, select, button, pre, code, kbd { font-family:inherit; }
+  ::placeholder { color:#4e565a; }
+  ::-webkit-scrollbar { width:9px; height:9px; }
+  ::-webkit-scrollbar-track { background:#0d0f10; }
+  ::-webkit-scrollbar-thumb { background:#262b2f; border:2px solid #0d0f10; }
+  ::-webkit-scrollbar-thumb:hover { background:#394045; }
+</style>
+</helmet>
+<div style="height:100vh; min-height:640px; display:flex; flex-direction:column; background:#0a0b0c; overflow:hidden; font-size:12px; letter-spacing:0.01em">
+
+  <header style="flex:none; height:46px; display:{{ shellDisplay }}; align-items:stretch; border-bottom:1px solid #23272b; background:#0d0f10">
+    <button onClick="{{ goLanding }}" title="cursed_matrix" style="display:flex; align-items:center; gap:9px; padding:0 16px; background:transparent; border:0; border-right:1px solid #23272b; cursor:pointer" style-hover="background:#14171a">
+      <span style="color:#5fb37f; font-size:13px">▚</span>
+      <span style="font-weight:700; font-size:12.5px; color:#d8dde0; white-space:nowrap; display:{{ wordmarkDisplay }}">cursed_matrix</span>
+    </button>
+
+    <nav style="flex:none; display:flex; align-items:stretch">
+      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="4">
+        <button onClick="{{ n.go }}" title="{{ n.label }}" style="display:flex; align-items:center; gap:7px; padding:{{ navPad }}; background:{{ n.bg }}; border:0; border-right:1px solid #23272b; border-bottom:2px solid {{ n.mark }}; color:{{ n.fg }}; font-size:11px; font-weight:500; letter-spacing:0.09em; cursor:pointer; white-space:nowrap" style-hover="color:#d8dde0; background:#14171a">
+          <span style="color:#6f797e; font-size:10px; display:{{ navKeyDisplay }}">{{ n.key }}</span>{{ n.label }}
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="flex:1 1 0; display:flex; align-items:center; padding:0 12px; border-right:1px solid #23272b; min-width:0; overflow:hidden">
+      <div style="width:100%; min-width:0; max-width:420px; display:flex; align-items:center; gap:8px; height:28px; padding:0 10px; background:#101214; border:1px solid #23272b">
+        <span style="color:#5fb37f; font-weight:700">&gt;</span>
+        <input value="{{ query }}" onChange="{{ onQuery }}" onFocus="{{ openSearch }}" placeholder="{{ L.searchPh }}" style="flex:1; min-width:0; background:transparent; border:0; outline:none; color:#d8dde0; font-size:11.5px" />
+        <span style="color:#6f797e; font-size:10px; white-space:nowrap">{{ searchHint }}</span>
+      </div>
+    </div>
+
+    <div style="flex:none; display:flex; align-items:center; gap:12px; padding:0 12px; border-right:1px solid #23272b">
+      <div style="display:flex; align-items:baseline; gap:7px">
+        <span style="color:#9b8fd0; font-size:11px; font-weight:700">LVL.{{ me.level }}</span>
+        <span style="color:#6a7479; font-size:12px; letter-spacing:-0.06em; display:{{ barDisplay }}">{{ me.bar }}</span>
+        <span style="color:#8b9599; font-size:10.5px; white-space:nowrap">{{ me.xpText }}</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:5px" title="{{ L.streakHint }}">
+        <span style="color:#d2a04a">◆</span>
+        <span style="color:#d8dde0; font-size:11px; white-space:nowrap">{{ me.streakText }}</span>
+      </div>
+    </div>
+
+    <div style="flex:none; display:flex; align-items:center; padding:0 10px; border-right:1px solid #23272b">
+      <button onClick="{{ goPlans }}" title="{{ L.planRowNote }}" style="display:flex; align-items:center; gap:7px; padding:5px 9px; background:{{ plan.bg }}; border:1px solid {{ plan.bd }}; color:{{ plan.fg }}; font-size:10px; letter-spacing:0.07em; cursor:pointer; white-space:nowrap" style-hover="border-color:#6f797e">
+        {{ plan.badge }}<span style="color:#8b9599">{{ plan.quota }}</span>
+      </button>
+    </div>
+
+    <div style="flex:none; display:flex; align-items:stretch">
+      <button onClick="{{ toggleLang }}" style="padding:0 12px; background:transparent; border:0; border-right:1px solid #23272b; color:#8b9599; font-size:11px; letter-spacing:0.06em; cursor:pointer" style-hover="color:#d8dde0; background:#14171a">{{ langLabel }}</button>
+      <button onClick="{{ goSettings }}" title="{{ L.settings }}" style="padding:0 12px; background:{{ setBg }}; border:0; border-right:1px solid #23272b; color:#8b9599; font-size:12px; cursor:pointer" style-hover="color:#d8dde0; background:#14171a">⚙</button>
+      <button onClick="{{ goProfile }}" style="display:flex; align-items:center; gap:8px; padding:0 14px; background:{{ profBg }}; border:0; color:#d8dde0; cursor:pointer" style-hover="background:#14171a">
+        <span style="display:grid; grid-template-columns:repeat(4,3px); grid-auto-rows:3px; gap:1px">
+          <sc-for list="{{ me.iconCells }}" as="c" hint-placeholder-count="16"><span style="background:{{ c.bg }}"></span></sc-for>
+        </span>
+        <span style="font-size:11px">{{ me.name }}</span>
+      </button>
+    </div>
+  </header>
+
+  <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ true }}">
+  <div style="flex:1; min-height:0; display:flex; flex-direction:column">
+
+    <div style="flex:none; display:flex; align-items:stretch; height:38px; border-bottom:1px solid #23272b; background:#0c0e0f; overflow-x:auto">
+      <div style="display:flex; align-items:center; gap:2px; padding:0 12px; border-right:1px solid #1c2023">
+        <span style="color:#6f797e; font-size:10px; margin-right:7px; letter-spacing:0.08em">{{ L.state }}</span>
+        <sc-for list="{{ statusFilters }}" as="f" hint-placeholder-count="3">
+          <button onClick="{{ f.pick }}" style="padding:4px 9px; background:{{ f.bg }}; border:1px solid {{ f.bd }}; color:{{ f.fg }}; font-size:10.5px; letter-spacing:0.06em; cursor:pointer; white-space:nowrap" style-hover="border-color:#3d4347">{{ f.label }}</button>
+        </sc-for>
+      </div>
+      <div style="display:flex; align-items:center; gap:5px; padding:0 12px; border-right:1px solid #1c2023">
+        <span style="color:#6f797e; font-size:10px; letter-spacing:0.08em">{{ L.tags }}</span>
+        <sc-for list="{{ tagFilters }}" as="f" hint-placeholder-count="5">
+          <button onClick="{{ f.pick }}" style="padding:3px 7px; background:{{ f.bg }}; border:1px solid {{ f.bd }}; color:{{ f.fg }}; font-size:10.5px; cursor:pointer; white-space:nowrap" style-hover="border-color:#3d4347">#{{ f.label }}</button>
+        </sc-for>
+      </div>
+      <div style="display:flex; align-items:center; gap:5px; padding:0 12px; border-right:1px solid #1c2023">
+        <span style="color:#6f797e; font-size:10px; letter-spacing:0.08em">{{ L.color }}</span>
+        <sc-for list="{{ colorFilters }}" as="c" hint-placeholder-count="6">
+          <button onClick="{{ c.pick }}" title="{{ c.name }}" style="width:16px; height:16px; padding:0; background:{{ c.swatch }}; border:1px solid {{ c.bd }}; cursor:pointer" style-hover="border-color:#d8dde0"></button>
+        </sc-for>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; padding:0 12px; border-right:1px solid #1c2023">
+        <span style="color:#6f797e; font-size:10px; letter-spacing:0.08em">{{ L.deadline }}</span>
+        <select value="{{ dlFilter }}" onChange="{{ onDlFilter }}" style="height:24px; background:#101214; border:1px solid #23272b; color:#d8dde0; font-size:10.5px; padding:0 6px; outline:none; cursor:pointer">
+          <sc-for list="{{ dlOptions }}" as="o" hint-placeholder-count="5"><option value="{{ o.v }}">{{ o.label }}</option></sc-for>
+        </select>
+      </div>
+      <div style="flex:1; display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:0 14px; white-space:nowrap">
+        <span style="color:{{ archiveFg }}; font-size:10.5px">{{ boardCountText }}</span>
+        <button onClick="{{ clearFilters }}" style="padding:4px 9px; background:transparent; border:1px solid #23272b; color:#8b9599; font-size:10.5px; letter-spacing:0.06em; cursor:pointer" style-hover="color:#d2685a; border-color:#4a3330">{{ L.reset }}</button>
+      </div>
+    </div>
+
+    <div style="flex:1; min-height:0; display:flex; gap:1px; background:#1c2023; overflow-x:auto">
+      <sc-for list="{{ columns }}" as="col" hint-placeholder-count="4">
+        <section data-screen-label="{{ col.code }}" onDragOver="{{ col.onDragOver }}" onDrop="{{ col.onDrop }}" style="flex:1 1 0; min-width:272px; display:flex; flex-direction:column; min-height:0; background:{{ col.bg }}">
+          <div style="flex:none; padding:10px 12px 9px; border-bottom:1px solid #23272b; background:#0e1112">
+            <div style="display:flex; align-items:center; gap:8px">
+              <span style="color:{{ col.accent }}; font-size:10.5px; font-weight:700; letter-spacing:0.08em">{{ col.code }}</span>
+              <span style="flex:1; min-width:0; color:#d8dde0; font-size:11.5px; font-weight:500; letter-spacing:0.07em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ col.name }}</span>
+              <span style="color:#79838a; font-size:10.5px">{{ col.count }}</span>
+              <button onClick="{{ col.add }}" title="{{ L.newTask }}" style="width:22px; height:22px; display:flex; align-items:center; justify-content:center; background:#14171a; border:1px solid #2e343a; color:#d8dde0; font-size:13px; line-height:1; cursor:pointer" style-hover="border-color:#5fb37f; color:#5fb37f">+</button>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:5px">
+              <span style="color:#79838a; font-size:9.5px; letter-spacing:0.07em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ col.sub }}</span>
+              <span style="color:#9b8fd0; font-size:9.5px; white-space:nowrap">+{{ col.xp }} XP</span>
+            </div>
+          </div>
+
+          <div style="flex:1; min-height:0; overflow-y:auto; padding:8px 8px 40px">
+            <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:20px; display:flex; flex-direction:column; align-items:center; gap:10px">
+                <pre style="margin:0; font-size:10px; line-height:1.35; color:#2a2f33">{{ col.emptyArt }}</pre>
+                <span style="font-size:9.5px; letter-spacing:0.06em; color:#79838a; text-align:center">{{ col.emptyMsg }}</span>
+                <button onClick="{{ col.add }}" style="padding:5px 10px; background:transparent; border:1px dashed #2e343a; color:#8b9599; font-size:10.5px; cursor:pointer" style-hover="border-color:#5fb37f; color:#5fb37f">{{ L.emptyCta }}</button>
+              </div>
+            </sc-if>
+
+            <sc-for list="{{ col.items }}" as="it" hint-placeholder-count="3">
+              <div style="margin-bottom:8px">
+                <sc-if value="{{ it.dropLine }}" hint-placeholder-val="{{ false }}">
+                  <div style="height:2px; margin-bottom:6px; background:#6fa8c0"></div>
+                </sc-if>
+                <article draggable="{{ true }}" onDragStart="{{ it.onDragStart }}" onDragEnd="{{ it.onDragEnd }}" onDragOver="{{ it.onDragOver }}" onDrop="{{ it.onDrop }}" onClick="{{ it.open }}" style="display:flex; background:{{ it.cardBg }}; border:1px solid {{ it.cardBd }}; border-style:{{ it.cardBdStyle }}; opacity:{{ it.opacity }}; cursor:grab" style-hover="border-color:#3d4347">
+                  <span style="flex:none; width:2px; background:{{ it.color }}"></span>
+                  <div style="flex:1; min-width:0; padding:8px 9px 7px 5px">
+                    <div style="display:flex; align-items:flex-start; gap:6px">
+                      <button onClick="{{ it.toggle }}" title="{{ L.complete }}" style="flex:none; width:24px; height:20px; margin-top:-1px; display:flex; align-items:center; justify-content:center; background:transparent; border:0; color:{{ it.checkFg }}; font-size:11.5px; white-space:nowrap; cursor:pointer" style-hover="color:#5fb37f">{{ it.check }}</button>
+                      <h3 style="flex:1; min-width:0; margin:0; font-size:11.5px; font-weight:500; line-height:1.45; color:{{ it.titleFg }}; text-decoration:{{ it.strike }}; overflow-wrap:anywhere">{{ it.title }}</h3>
+                      <span style="flex:none; color:#6a7479; font-size:9px; padding-top:2px">{{ it.code }}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px 9px; margin-top:7px; padding-left:24px">
+                      <span style="color:{{ it.dlFg }}; border:1px solid {{ it.dlBd }}; padding:1px 5px; font-size:9.5px; letter-spacing:0.05em; white-space:nowrap">{{ it.dlText }}</span>
+                      <sc-for list="{{ it.tags }}" as="tg" hint-placeholder-count="2">
+                        <span style="color:#7d878c; font-size:9.5px">#{{ tg }}</span>
+                      </sc-for>
+                      <span style="flex:1"></span>
+                      <sc-if value="{{ it.hasLinks }}" hint-placeholder-val="{{ false }}">
+                        <span title="{{ L.links }}" style="color:#6fa8c0; font-size:9.5px; white-space:nowrap">◈{{ it.linkCount }}</span>
+                      </sc-if>
+                      <span style="color:#8d84ad; font-size:9.5px; white-space:nowrap">{{ it.xpText }}</span>
+                    </div>
+                    <sc-if value="{{ it.hasSubs }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ it.chev }}" style="display:flex; align-items:center; gap:7px; width:100%; margin-top:7px; padding:5px 0 0 24px; background:transparent; border:0; border-top:1px solid #1c2023; color:#8b9599; font-size:9.5px; letter-spacing:0.05em; cursor:pointer; text-align:left" style-hover="color:#d8dde0">
+                        <span style="color:#79838a">{{ it.chevIcon }}</span>{{ it.subText }}
+                        <span style="flex:1"></span>
+                        <span style="color:#6b8a75; letter-spacing:-0.06em">{{ it.subBar }}</span>
+                      </button>
+                    </sc-if>
+                  </div>
+                </article>
+
+                <sc-if value="{{ it.subsOpen }}" hint-placeholder-val="{{ true }}">
+                  <div style="padding-left:13px">
+                    <sc-for list="{{ it.subs }}" as="s" hint-placeholder-count="2">
+                      <div style="display:flex; align-items:stretch; margin-top:3px">
+                        <span style="flex:none; width:12px; color:#58616a; font-size:11px; padding-top:7px; text-align:center">{{ s.branch }}</span>
+                        <article draggable="{{ true }}" onDragStart="{{ s.onDragStart }}" onDragEnd="{{ s.onDragEnd }}" onClick="{{ s.open }}" title="{{ L.subDragHint }}" style="flex:1; min-width:0; display:flex; align-items:center; gap:5px; margin-right:14px; padding:4px 7px 4px 4px; background:#101214; border:1px solid {{ s.bd }}; border-left:2px solid {{ s.color }}; opacity:{{ s.opacity }}; cursor:grab" style-hover="border-color:#3d4347">
+                          <button onClick="{{ s.toggle }}" style="flex:none; width:22px; height:19px; display:flex; align-items:center; justify-content:center; background:transparent; border:0; color:{{ s.checkFg }}; font-size:11px; white-space:nowrap; cursor:pointer" style-hover="color:#5fb37f">{{ s.check }}</button>
+                          <span style="flex:1; min-width:0; font-size:10.5px; color:{{ s.fg }}; text-decoration:{{ s.strike }}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ s.title }}</span>
+                          <span style="flex:none; color:{{ s.dlFg }}; font-size:9px; white-space:nowrap">{{ s.dlText }}</span>
+                          <span style="flex:none; color:#8279a6; font-size:9px; white-space:nowrap">{{ s.xpText }}</span>
+                        </article>
+                      </div>
+                    </sc-for>
+                    <div style="display:flex; align-items:stretch; margin-top:3px">
+                      <span style="flex:none; width:12px; color:#58616a; font-size:11px; padding-top:4px; text-align:center">└</span>
+                      <button onClick="{{ it.addSub }}" style="flex:1; margin-right:14px; padding:4px 8px; background:transparent; border:1px dashed #23272b; color:#79838a; font-size:9.5px; text-align:left; cursor:pointer" style-hover="color:#5fb37f; border-color:#3a4c40">+ {{ L.newSub }}</button>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+
+            <sc-if value="{{ col.dropTail }}" hint-placeholder-val="{{ false }}">
+              <div style="height:2px; background:#6fa8c0"></div>
+            </sc-if>
+          </div>
+        </section>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isGraph }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1; min-height:0; display:flex">
+    <aside style="flex:none; width:238px; display:flex; flex-direction:column; border-right:1px solid #23272b; background:#0c0e0f; overflow-y:auto">
+      <div style="padding:11px 13px; border-bottom:1px solid #1c2023">
+        <div style="color:#d8dde0; font-size:11px; font-weight:700; letter-spacing:0.09em">{{ L.netFilters }}</div>
+        <div style="color:#79838a; font-size:9.5px; margin-top:4px">{{ graphStats }}</div>
+      </div>
+      <div style="padding:11px 13px; border-bottom:1px solid #1c2023">
+        <div style="color:#6f797e; font-size:9.5px; letter-spacing:0.08em; margin-bottom:7px">{{ L.state }}</div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px">
+          <sc-for list="{{ statusFilters }}" as="f" hint-placeholder-count="3">
+            <button onClick="{{ f.pick }}" style="padding:4px 8px; background:{{ f.bg }}; border:1px solid {{ f.bd }}; color:{{ f.fg }}; font-size:10px; letter-spacing:0.05em; cursor:pointer" style-hover="border-color:#3d4347">{{ f.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:11px 13px; border-bottom:1px solid #1c2023">
+        <div style="color:#6f797e; font-size:9.5px; letter-spacing:0.08em; margin-bottom:7px">{{ L.quadrant }}</div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <sc-for list="{{ quadFilters }}" as="f" hint-placeholder-count="4">
+            <button onClick="{{ f.pick }}" style="display:flex; align-items:center; gap:7px; padding:4px 7px; background:{{ f.bg }}; border:1px solid {{ f.bd }}; color:{{ f.fg }}; font-size:10px; cursor:pointer; text-align:left" style-hover="border-color:#3d4347">
+              <span style="color:{{ f.accent }}; font-weight:700">{{ f.code }}</span>
+              <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ f.label }}</span>
+              <span style="color:#79838a">{{ f.count }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:11px 13px; border-bottom:1px solid #1c2023">
+        <div style="color:#6f797e; font-size:9.5px; letter-spacing:0.08em; margin-bottom:7px">{{ L.tags }}</div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px">
+          <sc-for list="{{ tagFilters }}" as="f" hint-placeholder-count="6">
+            <button onClick="{{ f.pick }}" style="padding:3px 6px; background:{{ f.bg }}; border:1px solid {{ f.bd }}; color:{{ f.fg }}; font-size:10px; cursor:pointer" style-hover="border-color:#3d4347">#{{ f.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:11px 13px; border-bottom:1px solid #1c2023">
+        <div style="color:#6f797e; font-size:9.5px; letter-spacing:0.08em; margin-bottom:7px">{{ L.color }}</div>
+        <div style="display:flex; gap:5px">
+          <sc-for list="{{ colorFilters }}" as="c" hint-placeholder-count="6">
+            <button onClick="{{ c.pick }}" title="{{ c.name }}" style="width:18px; height:18px; padding:0; background:{{ c.swatch }}; border:1px solid {{ c.bd }}; cursor:pointer" style-hover="border-color:#d8dde0"></button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:11px 13px; border-bottom:1px solid #1c2023">
+        <div style="color:#6f797e; font-size:9.5px; letter-spacing:0.08em; margin-bottom:7px">{{ L.topology }}</div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px">
+          <sc-for list="{{ linkFilters }}" as="f" hint-placeholder-count="3">
+            <button onClick="{{ f.pick }}" style="padding:4px 8px; background:{{ f.bg }}; border:1px solid {{ f.bd }}; color:{{ f.fg }}; font-size:10px; cursor:pointer" style-hover="border-color:#3d4347">{{ f.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:11px 13px; border-bottom:1px solid #1c2023">
+        <div style="color:#6f797e; font-size:9.5px; letter-spacing:0.08em; margin-bottom:7px">{{ L.deadline }}</div>
+        <select value="{{ dlFilter }}" onChange="{{ onDlFilter }}" style="width:100%; height:26px; background:#101214; border:1px solid #23272b; color:#d8dde0; font-size:10.5px; padding:0 6px; outline:none; cursor:pointer">
+          <sc-for list="{{ dlOptions }}" as="o" hint-placeholder-count="5"><option value="{{ o.v }}">{{ o.label }}</option></sc-for>
+        </select>
+      </div>
+      <div style="padding:11px 13px">
+        <div style="color:#6f797e; font-size:9.5px; letter-spacing:0.08em; margin-bottom:7px">{{ L.legend }}</div>
+        <div style="display:flex; flex-direction:column; gap:6px">
+          <sc-for list="{{ graphLegend }}" as="g" hint-placeholder-count="5">
+            <div style="display:flex; align-items:center; gap:8px; color:#8b9599; font-size:9.5px">
+              <span style="width:10px; height:10px; flex:none; border-radius:50%; background:{{ g.fill }}; border:1px solid {{ g.stroke }}; opacity:{{ g.op }}"></span>{{ g.label }}
+            </div>
+          </sc-for>
+        </div>
+        <button onClick="{{ clearFilters }}" style="width:100%; margin-top:12px; padding:5px; background:transparent; border:1px solid #23272b; color:#8b9599; font-size:10px; letter-spacing:0.06em; cursor:pointer" style-hover="color:#d2685a; border-color:#4a3330">{{ L.reset }}</button>
+      </div>
+    </aside>
+
+    <div style="flex:1; min-width:0; position:relative; background:#0a0b0c">
+      <canvas ref="{{ setCanvas }}" style="position:absolute; inset:0; width:100%; height:100%; display:block; cursor:grab"></canvas>
+      <div style="position:absolute; top:12px; left:14px; pointer-events:none; color:#6a7479; font-size:9.5px; letter-spacing:0.09em">{{ L.netMap }} :: {{ L.dragHint }}</div>
+      <div style="position:absolute; top:10px; right:14px; display:flex; gap:4px">
+        <sc-for list="{{ zoomBtns }}" as="z" hint-placeholder-count="3">
+          <button onClick="{{ z.act }}" title="{{ z.title }}" style="width:26px; height:26px; background:#101214; border:1px solid #23272b; color:#d8dde0; font-size:11px; cursor:pointer" style-hover="border-color:#3d4347">{{ z.label }}</button>
+        </sc-for>
+      </div>
+      <sc-if value="{{ hoverCard.on }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; bottom:14px; left:14px; max-width:360px; padding:9px 11px; background:#0e1112; border:1px solid #2e343a; pointer-events:none">
+          <div style="display:flex; align-items:center; gap:9px; font-size:9px; letter-spacing:0.05em">
+            <span style="color:#6a7479">{{ hoverCard.code }}</span>
+            <span style="color:{{ hoverCard.accent }}; font-weight:700">{{ hoverCard.quad }}</span>
+            <span style="color:{{ hoverCard.stateFg }}">{{ hoverCard.state }}</span>
+          </div>
+          <div style="margin-top:5px; color:#d8dde0; font-size:11px; line-height:1.4">{{ hoverCard.title }}</div>
+          <div style="margin-top:5px; color:#8b9599; font-size:9.5px">{{ hoverCard.meta }}</div>
+        </div>
+      </sc-if>
+      <div style="position:absolute; bottom:14px; right:14px; color:#6a7479; font-size:9.5px">{{ graphZoomText }}</div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isActivity }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1; min-height:0; overflow-y:auto">
+    <div style="max-width:1180px; margin:0 auto; padding:20px 22px 48px; display:flex; flex-direction:column; gap:18px">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(168px, 1fr)); gap:1px; background:#1c2023; border:1px solid #23272b">
+        <sc-for list="{{ statCards }}" as="s" hint-placeholder-count="5">
+          <div style="padding:13px 14px; background:#0e1112">
+            <div style="color:#79838a; font-size:9.5px; letter-spacing:0.08em">{{ s.label }}</div>
+            <div style="margin-top:7px; color:{{ s.fg }}; font-size:20px; font-weight:700">{{ s.value }}</div>
+            <div style="margin-top:4px; color:#6f797e; font-size:9.5px">{{ s.note }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <section style="border:1px solid #23272b; background:#0e1112">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; border-bottom:1px solid #1c2023; flex-wrap:wrap">
+          <div style="color:#d8dde0; font-size:11px; font-weight:700; letter-spacing:0.09em">{{ L.heatmapTitle }}</div>
+          <div style="color:#8b9599; font-size:9.5px">{{ heat.readout }}</div>
+        </div>
+        <div style="padding:14px; overflow-x:auto">
+          <div style="display:flex; gap:7px; min-width:780px">
+            <div style="display:grid; grid-template-rows:repeat(7, 11px); gap:2px; padding-top:14px">
+              <sc-for list="{{ heat.dayLabels }}" as="d" hint-placeholder-count="7">
+                <div style="color:#6f797e; font-size:8.5px; line-height:11px; text-align:right; width:22px">{{ d }}</div>
+              </sc-for>
+            </div>
+            <div style="flex:1">
+              <div style="display:flex; height:13px">
+                <sc-for list="{{ heat.months }}" as="m" hint-placeholder-count="12">
+                  <div style="width:{{ m.w }}px; color:#79838a; font-size:8.5px; letter-spacing:0.06em">{{ m.label }}</div>
+                </sc-for>
+              </div>
+              <div style="display:grid; grid-auto-flow:column; grid-template-rows:repeat(7, 11px); gap:2px">
+                <sc-for list="{{ heat.cells }}" as="c" hint-placeholder-count="180">
+                  <div onMouseEnter="{{ c.hover }}" style="width:11px; height:11px; background:{{ c.bg }}; border:1px solid {{ c.bd }}; cursor:crosshair"></div>
+                </sc-for>
+              </div>
+              <div style="display:flex; align-items:center; gap:7px; margin-top:11px; color:#6f797e; font-size:9px">
+                {{ L.less }}
+                <sc-for list="{{ heat.scale }}" as="s" hint-placeholder-count="5">
+                  <span style="width:11px; height:11px; background:{{ s.bg }}; border:1px solid {{ s.bd }}"></span>
+                </sc-for>
+                {{ L.more }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section style="border:1px solid #23272b; background:#0e1112">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #1c2023">
+          <div style="color:#d8dde0; font-size:11px; font-weight:700; letter-spacing:0.09em">{{ L.achievements }}</div>
+          <div style="color:#79838a; font-size:9.5px">{{ achText }}</div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(266px, 1fr)); gap:1px; background:#1c2023">
+          <sc-for list="{{ achievements }}" as="a" hint-placeholder-count="8">
+            <div style="padding:11px 13px; background:#0e1112">
+              <div style="display:flex; align-items:center; gap:8px">
+                <span style="color:{{ a.iconFg }}; font-size:12px">{{ a.icon }}</span>
+                <span style="flex:1; min-width:0; color:{{ a.titleFg }}; font-size:10.5px; font-weight:500; letter-spacing:0.06em; overflow-wrap:anywhere">{{ a.code }}</span>
+                <span style="color:{{ a.stateFg }}; font-size:9px; letter-spacing:0.05em; white-space:nowrap">{{ a.state }}</span>
+              </div>
+              <div style="margin-top:6px; color:#8b9599; font-size:9.5px; line-height:1.45">{{ a.desc }}</div>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:7px">
+                <span style="color:{{ a.barFg }}; font-size:11px; letter-spacing:-0.06em">{{ a.bar }}</span>
+                <span style="color:#79838a; font-size:9px">{{ a.progress }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isLeaderboard }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1; min-height:0; overflow-y:auto">
+    <div style="max-width:880px; margin:0 auto; padding:20px 22px 48px">
+      <div style="border:1px solid #23272b; background:#0e1112">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 14px; border-bottom:1px solid #1c2023; flex-wrap:wrap">
+          <div>
+            <div style="color:#d8dde0; font-size:11px; font-weight:700; letter-spacing:0.09em">{{ L.globalRanking }}</div>
+            <div style="color:#79838a; font-size:9.5px; margin-top:4px">{{ L.rankNote }}</div>
+          </div>
+          <div style="display:flex; gap:2px">
+            <sc-for list="{{ lbPeriods }}" as="p" hint-placeholder-count="3">
+              <button onClick="{{ p.pick }}" style="padding:5px 11px; background:{{ p.bg }}; border:1px solid {{ p.bd }}; color:{{ p.fg }}; font-size:10px; letter-spacing:0.07em; cursor:pointer; white-space:nowrap" style-hover="border-color:#3d4347">{{ p.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:46px 1fr 92px 62px 70px; gap:10px; padding:8px 14px; border-bottom:1px solid #1c2023; color:#6f797e; font-size:9px; letter-spacing:0.08em">
+          <span>{{ L.rank }}</span><span>{{ L.user }}</span><span style="text-align:right">XP</span><span style="text-align:right">{{ L.lvl }}</span><span style="text-align:right">{{ L.streakCol }}</span>
+        </div>
+        <sc-for list="{{ leaderboard }}" as="r" hint-placeholder-count="8">
+          <div style="display:grid; grid-template-columns:46px 1fr 92px 62px 70px; gap:10px; align-items:center; padding:9px 14px; border-bottom:1px solid #131718; background:{{ r.bg }}">
+            <span style="color:{{ r.rankFg }}; font-size:11px; font-weight:700">{{ r.rank }}</span>
+            <span style="display:flex; align-items:center; gap:9px; min-width:0">
+              <span style="display:grid; grid-template-columns:repeat(4,3px); grid-auto-rows:3px; gap:1px; flex:none">
+                <sc-for list="{{ r.iconCells }}" as="c" hint-placeholder-count="16"><span style="background:{{ c.bg }}"></span></sc-for>
+              </span>
+              <span style="color:{{ r.nameFg }}; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ r.name }}</span>
+              <span style="color:#6f797e; font-size:9px; white-space:nowrap">{{ r.badge }}</span>
+            </span>
+            <span style="color:#d8dde0; font-size:11px; text-align:right">{{ r.xp }}</span>
+            <span style="color:#9b8fd0; font-size:10.5px; text-align:right">{{ r.level }}</span>
+            <span style="color:#8b9599; font-size:10.5px; text-align:right">{{ r.streak }}</span>
+          </div>
+        </sc-for>
+        <div style="padding:11px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+          <span style="color:#79838a; font-size:9.5px">{{ lbVisibilityNote }}</span>
+          <button onClick="{{ goSettings }}" style="padding:4px 9px; background:transparent; border:1px solid #23272b; color:#6fa8c0; font-size:10px; cursor:pointer" style-hover="border-color:#6fa8c0">{{ L.openSettings }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isProfile }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1; min-height:0; overflow-y:auto">
+    <div style="max-width:880px; margin:0 auto; padding:20px 22px 48px; display:flex; flex-direction:column; gap:18px">
+      <section style="border:1px solid #23272b; background:#0e1112; padding:16px 18px; display:flex; gap:18px; flex-wrap:wrap; align-items:center">
+        <span style="display:grid; grid-template-columns:repeat(4,13px); grid-auto-rows:13px; gap:2px; flex:none">
+          <sc-for list="{{ me.iconCells }}" as="c" hint-placeholder-count="16"><span style="background:{{ c.bg }}"></span></sc-for>
+        </span>
+        <div style="flex:1; min-width:210px">
+          <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap">
+            <span style="color:#d8dde0; font-size:16px; font-weight:700">{{ me.name }}</span>
+            <span style="color:#6f797e; font-size:10px">{{ me.handle }}</span>
+          </div>
+          <div style="color:#79838a; font-size:9.5px; margin-top:5px">{{ me.joined }}</div>
+          <div style="display:flex; align-items:center; gap:9px; margin-top:12px; flex-wrap:wrap">
+            <span style="color:#9b8fd0; font-size:12px; font-weight:700">LVL.{{ me.level }}</span>
+            <span style="color:#6a7479; font-size:15px; letter-spacing:-0.06em">{{ me.barLong }}</span>
+            <span style="color:#8b9599; font-size:10.5px">{{ me.nextText }}</span>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(2, minmax(112px, 1fr)); gap:1px; background:#1c2023; border:1px solid #23272b">
+          <sc-for list="{{ profileStats }}" as="s" hint-placeholder-count="4">
+            <div style="padding:9px 11px; background:#101214">
+              <div style="color:#79838a; font-size:9px; letter-spacing:0.07em">{{ s.label }}</div>
+              <div style="color:{{ s.fg }}; font-size:14px; font-weight:700; margin-top:4px">{{ s.value }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <section style="border:1px solid #23272b; background:#0e1112">
+        <div style="padding:10px 14px; border-bottom:1px solid #1c2023; color:#d8dde0; font-size:11px; font-weight:700; letter-spacing:0.09em">{{ L.recentLog }}</div>
+        <sc-for list="{{ eventLog }}" as="e" hint-placeholder-count="6">
+          <div style="display:flex; align-items:baseline; gap:11px; padding:7px 14px; border-bottom:1px solid #131718; flex-wrap:wrap">
+            <span style="color:#6f797e; font-size:9.5px; width:86px; flex:none">{{ e.time }}</span>
+            <span style="color:{{ e.fg }}; font-size:10px; letter-spacing:0.05em; width:186px; flex:none">{{ e.code }}</span>
+            <span style="flex:1; min-width:120px; color:#8b9599; font-size:10px; overflow-wrap:anywhere">{{ e.detail }}</span>
+            <span style="color:#8d84ad; font-size:9.5px">{{ e.xp }}</span>
+          </div>
+        </sc-for>
+      </section>
+
+      <section style="border:1px solid #23272b; background:#0e1112; padding:13px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
+        <div>
+          <div style="color:#d8dde0; font-size:10.5px">show_in_leaderboard</div>
+          <div style="color:#79838a; font-size:9.5px; margin-top:4px">{{ L.lbToggleNote }}</div>
+        </div>
+        <button onClick="{{ toggleLb }}" style="padding:6px 11px; background:{{ lbToggle.bg }}; border:1px solid {{ lbToggle.bd }}; color:{{ lbToggle.fg }}; font-size:10.5px; letter-spacing:0.06em; cursor:pointer">{{ lbToggle.label }}</button>
+      </section>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1; min-height:0; overflow-y:auto">
+    <div style="max-width:720px; margin:0 auto; padding:20px 22px 48px">
+      <sc-for list="{{ settingsGroups }}" as="g" hint-placeholder-count="3">
+        <section style="background:#0e1112; border:1px solid #23272b; margin-bottom:16px">
+          <div style="padding:10px 14px; border-bottom:1px solid #1c2023; color:#d8dde0; font-size:11px; font-weight:700; letter-spacing:0.09em">{{ g.title }}</div>
+          <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 14px; border-bottom:1px solid #131718; flex-wrap:wrap">
+              <div style="flex:1; min-width:190px">
+                <div style="color:#d8dde0; font-size:10.5px">{{ r.label }}</div>
+                <div style="color:#79838a; font-size:9.5px; margin-top:4px; line-height:1.45">{{ r.note }}</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap; justify-content:flex-end">
+                <sc-for list="{{ r.controls }}" as="c" hint-placeholder-count="2">
+                  <button onClick="{{ c.act }}" style="padding:6px 11px; background:{{ c.bg }}; border:1px solid {{ c.bd }}; color:{{ c.fg }}; font-size:10.5px; letter-spacing:0.05em; cursor:pointer; white-space:nowrap" style-hover="border-color:#3d4347">{{ c.label }}</button>
+                </sc-for>
+                <span style="color:#8b9599; font-size:10.5px">{{ r.value }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </section>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isLanding }}" hint-placeholder-val="{{ false }}">
+  <div style="position:relative; flex:1; min-height:0; overflow-y:auto; background:#0a0b0c">
+    <canvas ref="{{ bgRef }}" aria-hidden="true" style="position:fixed; inset:0; zIndex:0; width:100%; height:100%; pointer-events:none; opacity:0.94; maskImage:radial-gradient(74% 50% at 22% 30%, transparent 0%, transparent 34%, rgba(0,0,0,0.5) 66%, #000 94%); WebkitMaskImage:radial-gradient(74% 50% at 22% 30%, transparent 0%, transparent 34%, rgba(0,0,0,0.5) 66%, #000 94%)"></canvas>
+    <div aria-hidden="true" style="position:fixed; inset:0; zIndex:0; pointer-events:none; background:linear-gradient(100deg, rgba(10,11,12,0.93) 0%, rgba(10,11,12,0.66) 29%, rgba(10,11,12,0.07) 60%, rgba(10,11,12,0.22) 100%)"></div>
+    <div aria-hidden="true" style="position:fixed; right:18px; bottom:14px; zIndex:0; color:#4e565b; font-size:9.5px; letter-spacing:0.08em; pointer-events:none">// LIVE_TASK_NETWORK · IDLE_RENDER</div>
+
+    <div style="position:relative; zIndex:1; max-width:1020px; margin:0 auto; padding:0 26px 64px">
+
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:18px; height:52px; border-bottom:1px solid #1c2023; flex-wrap:wrap">
+        <div style="display:flex; align-items:center; gap:9px">
+          <span style="color:#5fb37f; font-size:13px">▚</span>
+          <span style="color:#d8dde0; font-size:13px; font-weight:700">cursed_matrix</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:4px">
+          <a href="{{ gh }}" target="_blank" rel="noopener" style="padding:6px 10px; color:#8b9599; font-size:10.5px; letter-spacing:0.06em" style-hover="color:#d8dde0; text-decoration:none">{{ L.landSource }}</a>
+          <button onClick="{{ goPlans }}" style="padding:6px 10px; background:transparent; border:0; color:#8b9599; font-size:10.5px; letter-spacing:0.06em; cursor:pointer" style-hover="color:#d8dde0">{{ L.landPricing }}</button>
+          <button onClick="{{ toggleLang }}" style="padding:6px 10px; background:transparent; border:0; color:#8b9599; font-size:10.5px; letter-spacing:0.06em; cursor:pointer" style-hover="color:#d8dde0">{{ langLabel }}</button>
+        </div>
+      </div>
+
+      <div style="padding:64px 0 46px; max-width:760px">
+        <div style="display:flex; align-items:center; gap:8px; color:#6f797e; font-size:10.5px; letter-spacing:0.09em">
+          <span style="color:#5fb37f">&gt;</span>TASK_SYSTEM · EISENHOWER · GRAPH · XP
+        </div>
+        <h1 style="margin:16px 0 0; font-size:46px; line-height:1.05; font-weight:700; color:#e6eaec; letter-spacing:-0.01em">cursed_matrix</h1>
+        <p style="margin:18px 0 0; color:#b6bec3; font-size:13.5px; line-height:1.65; text-wrap:pretty">{{ L.landTag }}</p>
+        <p style="margin:8px 0 0; color:#79838a; font-size:11.5px; line-height:1.6">{{ L.landSub }}</p>
+        <div style="display:flex; align-items:center; gap:9px; margin-top:28px; flex-wrap:wrap">
+          <button onClick="{{ enterApp }}" style="display:flex; align-items:center; gap:8px; padding:11px 18px; background:#14201c; border:1px solid #3a5c46; color:#7fc89b; font-size:11.5px; letter-spacing:0.08em; cursor:pointer" style-hover="background:#18271f; border-color:#5fb37f">
+            <span>&gt;</span>{{ L.landEnter }}
+          </button>
+          <a href="{{ gh }}" target="_blank" rel="noopener" style="padding:11px 18px; background:transparent; border:1px solid #23272b; color:#8b9599; font-size:11.5px; letter-spacing:0.08em" style-hover="color:#d8dde0; border-color:#3d4347; text-decoration:none">{{ L.landSource }}</a>
+        </div>
+      </div>
+
+      <pre data-om-raster="" style="margin:0; padding:18px; overflow-x:auto; background:#0d0f10; border:1px solid #1c2023; color:#79838a; font-size:11px; line-height:1.1">{{ land.board }}</pre>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(186px, 1fr)); gap:1px; margin-top:34px; background:#1c2023; border:1px solid #1c2023">
+        <sc-for list="{{ land.feat }}" as="f" hint-placeholder-count="4">
+          <div style="padding:20px 18px; background:#0b0d0e">
+            <div style="display:flex; align-items:baseline; gap:9px">
+              <span style="color:#6f797e; font-size:10px">{{ f.n }}</span>
+              <span style="color:#d8dde0; font-size:11.5px; font-weight:700; letter-spacing:0.07em">{{ f.title }}</span>
+            </div>
+            <p style="margin:11px 0 0; color:#9aa4a9; font-size:11.5px; line-height:1.62; text-wrap:pretty">{{ f.body }}</p>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:34px; padding:22px; background:#0d0f10; border:1px solid #23272b; border-left:2px solid #5fb37f">
+        <div style="color:#7fc89b; font-size:11px; font-weight:700; letter-spacing:0.09em">{{ L.selfHostTitle }}</div>
+        <p style="margin:12px 0 0; max-width:720px; color:#b6bec3; font-size:12px; line-height:1.65; text-wrap:pretty">{{ L.selfHostBody }}</p>
+        <div style="display:flex; align-items:center; gap:10px; margin-top:16px; flex-wrap:wrap">
+          <a href="{{ gh }}" target="_blank" rel="noopener" style="padding:9px 14px; background:transparent; border:1px solid #2f4a3a; color:#7fc89b; font-size:11px; letter-spacing:0.07em" style-hover="border-color:#5fb37f; text-decoration:none">github ↗</a>
+          <code style="color:#79838a; font-size:11px">git clone {{ gh }}.git</code>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:14px; margin-top:12px; padding:14px 16px; background:#0b0d0e; border:1px solid #1c2023; border-left:2px solid #d2a04a; flex-wrap:wrap">
+        <span style="padding:3px 8px; border:1px solid #38332a; color:#d2a04a; font-size:9.5px; letter-spacing:0.07em; white-space:nowrap">[ {{ L.soon }} ]</span>
+        <span style="color:#d8dde0; font-size:11.5px; font-weight:700; letter-spacing:0.05em">{{ L.gcal }}</span>
+        <span style="flex:1; min-width:180px; color:#9aa4a9; font-size:11.5px; line-height:1.55; text-wrap:pretty">{{ L.gcalNote }}</span>
+      </div>
+
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:34px; padding-top:16px; border-top:1px solid #1c2023; flex-wrap:wrap">
+        <span style="color:#6f797e; font-size:10.5px; white-space:nowrap">cursed_matrix · {{ L.landFooter }}</span>
+        <div style="display:flex; align-items:center; gap:16px">
+          <a href="{{ gh }}" target="_blank" rel="noopener" style="font-size:10.5px; letter-spacing:0.06em">github ↗</a>
+          <a href="{{ li }}" target="_blank" rel="noopener" style="font-size:10.5px; letter-spacing:0.06em">linkedin ↗</a>
+          <button onClick="{{ goPlans }}" style="background:transparent; border:0; color:#8b9599; font-size:10.5px; letter-spacing:0.06em; cursor:pointer" style-hover="color:#d8dde0">{{ L.landPricing }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isUpgrade }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1; min-height:0; overflow-y:auto">
+    <div style="max-width:1080px; margin:0 auto; padding:22px 22px 52px">
+      <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap">
+        <span style="color:#d8dde0; font-size:12px; font-weight:700; letter-spacing:0.1em">{{ L.planTitle }}</span>
+        <span style="color:#79838a; font-size:10.5px">{{ plan.subtitle }}</span>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-top:16px">
+        <sc-for list="{{ plan.cards }}" as="p" hint-placeholder-count="3">
+          <section style="display:flex; flex-direction:column; background:#0e1112; border:1px solid #23272b; border-top:2px solid {{ p.accent }}">
+            <div style="padding:16px 16px 0">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px">
+                <span style="color:#d8dde0; font-size:11.5px; font-weight:700; letter-spacing:0.09em">{{ p.name }}</span>
+                <sc-if value="{{ p.current }}" hint-placeholder-val="{{ false }}">
+                  <span style="padding:2px 7px; border:1px solid #3a5c46; color:#7fc89b; font-size:9px; letter-spacing:0.06em">[ ACTIVE ]</span>
+                </sc-if>
+              </div>
+              <div style="display:flex; align-items:baseline; gap:6px; margin-top:14px">
+                <span style="color:#e6eaec; font-size:30px; font-weight:700">{{ p.price }}</span>
+                <span style="color:#8b9599; font-size:11px">{{ p.per }}</span>
+              </div>
+              <div style="margin-top:6px; color:#79838a; font-size:10px; letter-spacing:0.04em; min-height:14px">{{ p.note }}</div>
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column; gap:9px; padding:16px; margin-top:14px; border-top:1px solid #1c2023">
+              <sc-for list="{{ p.feats }}" as="ft" hint-placeholder-count="5">
+                <div style="display:flex; align-items:flex-start; gap:9px; color:#b6bec3; font-size:11.5px; line-height:1.5">
+                  <span style="color:{{ p.accent }}">·</span><span style="flex:1">{{ ft }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="padding:0 16px 16px">
+              <button onClick="{{ p.cta }}" style="width:100%; padding:11px 12px; background:{{ p.ctaBg }}; border:1px solid {{ p.ctaBd }}; color:{{ p.ctaFg }}; font-size:11px; letter-spacing:0.07em; cursor:pointer" style-hover="border-color:{{ p.accent }}">{{ p.ctaLabel }}</button>
+            </div>
+          </section>
+        </sc-for>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:12px; margin-top:16px; padding:13px 16px; background:#0d0f10; border:1px solid #23272b; border-left:2px solid #d2a04a; max-width:760px; flex-wrap:wrap">
+        <span style="color:#79838a; font-size:9.5px; letter-spacing:0.09em">{{ L.roadmapLabel }}</span>
+        <span style="padding:3px 8px; border:1px solid #38332a; color:#d2a04a; font-size:9.5px; letter-spacing:0.07em; white-space:nowrap">[ {{ L.soon }} ]</span>
+        <span style="flex:1; min-width:200px; color:#b6bec3; font-size:11.5px; line-height:1.55; text-wrap:pretty"><span style="color:#d8dde0; font-weight:700">{{ L.gcal }}</span> — {{ L.gcalNote }}</span>
+      </div>
+
+      <div style="margin-top:12px; padding:14px 16px; background:#0d0f10; border:1px solid #23272b; color:#8b9599; font-size:11px; line-height:1.6; max-width:760px; text-wrap:pretty">
+        <span style="color:#7fc89b">{{ L.selfHostTitle }}</span> — {{ L.selfHostBody }}
+        <a href="{{ gh }}" target="_blank" rel="noopener" style="margin-left:6px">github ↗</a>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ payWall }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closePay }}" style="position:fixed; inset:0; background:rgba(6,7,8,0.78); z-index:60"></div>
+    <div style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:min(520px, 94vw); background:#0d0f10; border:1px solid #4a3f28; border-top:2px solid #d2a04a; z-index:61">
+      <div style="display:flex; align-items:center; gap:9px; padding:12px 16px; border-bottom:1px solid #1c2023">
+        <span style="color:#d2a04a">▲</span>
+        <span style="color:#d8dde0; font-size:11px; font-weight:700; letter-spacing:0.08em">{{ L.quotaCode }}</span>
+        <span style="flex:1"></span>
+        <span style="color:#79838a; font-size:10px">{{ L.quotaLabel }} {{ plan.quota }}</span>
+      </div>
+      <div style="padding:18px 16px">
+        <p style="margin:0; color:#b6bec3; font-size:12px; line-height:1.65; text-wrap:pretty">{{ L.quotaBody }}</p>
+        <div style="display:flex; align-items:center; gap:9px; margin-top:18px; flex-wrap:wrap">
+          <button onClick="{{ goPlans }}" style="padding:10px 16px; background:#23204a; border:1px solid #4c4487; color:#d6cffb; font-size:11px; letter-spacing:0.07em; cursor:pointer" style-hover="border-color:#9b8fd0">{{ L.viewPlans }}</button>
+          <button onClick="{{ closePay }}" style="padding:10px 14px; background:transparent; border:1px solid #23272b; color:#8b9599; font-size:11px; letter-spacing:0.07em; cursor:pointer" style-hover="color:#d8dde0; border-color:#3d4347">{{ L.dismiss }}</button>
+          <a href="{{ gh }}" target="_blank" rel="noopener" style="margin-left:2px; font-size:10.5px; color:#7fc89b">{{ L.planHostCta }} ↗</a>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ searchOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeSearch }}" style="position:fixed; inset:0; background:rgba(6,7,8,0.72); z-index:40"></div>
+    <div style="position:fixed; top:54px; left:50%; transform:translateX(-50%); width:min(640px, 92vw); max-height:66vh; overflow-y:auto; background:#0e1112; border:1px solid #2e343a; z-index:41">
+      <div style="display:flex; align-items:center; gap:9px; padding:10px 13px; border-bottom:1px solid #1c2023">
+        <span style="color:#5fb37f; font-weight:700">&gt;</span>
+        <input value="{{ query }}" onChange="{{ onQuery }}" ref="{{ setSearchInput }}" placeholder="{{ L.searchPh }}" style="flex:1; min-width:0; background:transparent; border:0; outline:none; color:#d8dde0; font-size:12px" />
+        <button onClick="{{ closeSearch }}" style="background:transparent; border:1px solid #23272b; color:#79838a; font-size:9px; padding:3px 6px; cursor:pointer" style-hover="color:#d8dde0">ESC</button>
+      </div>
+      <div style="padding:7px 13px; color:#6f797e; font-size:9.5px; letter-spacing:0.06em; border-bottom:1px solid #131718">{{ searchSummary }}</div>
+      <sc-for list="{{ searchResults }}" as="r" hint-placeholder-count="4">
+        <button onClick="{{ r.open }}" style="display:block; width:100%; text-align:left; padding:9px 13px; background:transparent; border:0; border-bottom:1px solid #131718; cursor:pointer" style-hover="background:#14171a">
+          <div style="display:flex; align-items:center; gap:9px">
+            <span style="color:{{ r.accent }}; font-size:9.5px; font-weight:700">{{ r.quad }}</span>
+            <span style="flex:1; min-width:0; color:#d8dde0; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ r.title }}</span>
+            <span style="color:{{ r.stateFg }}; font-size:9px">{{ r.state }}</span>
+            <span style="color:#6a7479; font-size:9px">{{ r.code }}</span>
+          </div>
+          <div style="margin-top:4px; color:#7d878c; font-size:9.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ r.hit }}</div>
+        </button>
+      </sc-for>
+      <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:26px 13px; text-align:center; color:#79838a; font-size:10px; letter-spacing:0.06em">{{ L.noResults }}</div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ modal.open }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeTask }}" style="position:fixed; inset:0; background:rgba(6,7,8,0.74); z-index:50"></div>
+    <div style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:min(900px, 95vw); max-height:88vh; display:flex; flex-direction:column; background:#0d0f10; border:1px solid #2e343a; z-index:51">
+      <div style="flex:none; display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid #23272b; background:#101214; flex-wrap:wrap">
+        <span style="color:{{ modal.accent }}; font-size:10px; font-weight:700; letter-spacing:0.07em">{{ modal.quadCode }}</span>
+        <span style="color:#6a7479; font-size:9.5px">{{ modal.code }}</span>
+        <span style="color:{{ modal.stateFg }}; border:1px solid {{ modal.stateBd }}; padding:2px 6px; font-size:9px; letter-spacing:0.06em">{{ modal.state }}</span>
+        <span style="color:#8b9599; font-size:9.5px">{{ modal.parentLine }}</span>
+        <span style="flex:1"></span>
+        <span style="color:#8d84ad; font-size:9.5px">{{ modal.xpText }}</span>
+        <button onClick="{{ closeTask }}" style="width:24px; height:24px; background:transparent; border:1px solid #23272b; color:#8b9599; font-size:11px; cursor:pointer" style-hover="color:#d2685a; border-color:#4a3330">×</button>
+      </div>
+
+      <div style="flex:1; min-height:0; overflow-y:auto; display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:1px; background:#1c2023">
+        <div style="background:#0d0f10; padding:14px; display:flex; flex-direction:column; gap:14px">
+          <div>
+            <div style="color:#6f797e; font-size:9px; letter-spacing:0.08em; margin-bottom:5px">{{ L.title }}</div>
+            <input value="{{ modal.title }}" onChange="{{ modal.setTitle }}" style="width:100%; padding:8px 10px; background:#101214; border:1px solid #23272b; outline:none; color:#d8dde0; font-size:13px" style-focus="border-color:#6fa8c0" />
+          </div>
+          <div>
+            <div style="color:#6f797e; font-size:9px; letter-spacing:0.08em; margin-bottom:5px">{{ L.description }}</div>
+            <textarea value="{{ modal.desc }}" onChange="{{ modal.setDesc }}" rows="4" placeholder="{{ L.descPh }}" style="width:100%; padding:8px 10px; background:#101214; border:1px solid #23272b; outline:none; color:#c5cbcf; font-size:11px; line-height:1.55; resize:vertical" style-focus="border-color:#6fa8c0"></textarea>
+          </div>
+
+          <div>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px">
+              <span style="color:#6f797e; font-size:9px; letter-spacing:0.08em">{{ L.subtasks }}</span>
+              <span style="color:#79838a; font-size:9.5px">{{ modal.subSummary }}</span>
+            </div>
+            <sc-if value="{{ modal.isSub }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:9px 11px; background:#101214; border:1px solid #23272b; color:#8b9599; font-size:10px; line-height:1.5">{{ L.subNoNest }}</div>
+            </sc-if>
+            <sc-if value="{{ modal.canSub }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; flex-direction:column; gap:3px">
+                <sc-for list="{{ modal.subs }}" as="s" hint-placeholder-count="3">
+                  <div style="display:flex; align-items:center; gap:6px; padding:5px 7px; background:#101214; border:1px solid #1c2023; border-left:2px solid {{ s.color }}">
+                    <button onClick="{{ s.toggle }}" style="flex:none; width:24px; height:22px; background:transparent; border:0; color:{{ s.checkFg }}; font-size:11px; white-space:nowrap; cursor:pointer" style-hover="color:#5fb37f">{{ s.check }}</button>
+                    <input value="{{ s.title }}" onChange="{{ s.setTitle }}" style="flex:1; min-width:0; background:transparent; border:0; outline:none; color:{{ s.fg }}; font-size:11px; text-decoration:{{ s.strike }}" />
+                    <span style="color:#8279a6; font-size:9px; white-space:nowrap">{{ s.xpText }}</span>
+                    <button onClick="{{ s.up }}" title="{{ L.moveUp }}" style="width:22px; height:22px; background:transparent; border:1px solid #1c2023; color:#79838a; font-size:9px; cursor:pointer" style-hover="color:#d8dde0; border-color:#3d4347">↑</button>
+                    <button onClick="{{ s.down }}" title="{{ L.moveDown }}" style="width:22px; height:22px; background:transparent; border:1px solid #1c2023; color:#79838a; font-size:9px; cursor:pointer" style-hover="color:#d8dde0; border-color:#3d4347">↓</button>
+                    <button onClick="{{ s.promote }}" title="{{ L.promoteHint }}" style="padding:0 7px; height:22px; background:transparent; border:1px solid #1c2023; color:#6fa8c0; font-size:9px; letter-spacing:0.05em; cursor:pointer; white-space:nowrap" style-hover="border-color:#6fa8c0">{{ L.promote }}</button>
+                    <button onClick="{{ s.open }}" title="{{ L.openTask }}" style="width:22px; height:22px; background:transparent; border:1px solid #1c2023; color:#79838a; font-size:10px; cursor:pointer" style-hover="color:#d8dde0; border-color:#3d4347">→</button>
+                  </div>
+                </sc-for>
+                <div style="display:flex; gap:5px; margin-top:3px">
+                  <input value="{{ modal.newSub }}" onChange="{{ modal.setNewSub }}" placeholder="{{ L.newSubPh }}" style="flex:1; min-width:0; padding:7px 9px; background:#101214; border:1px dashed #23272b; outline:none; color:#d8dde0; font-size:10.5px" style-focus="border-color:#5fb37f" />
+                  <button onClick="{{ modal.addSub }}" style="padding:0 13px; background:#14171a; border:1px solid #2e343a; color:#5fb37f; font-size:10.5px; cursor:pointer" style-hover="border-color:#5fb37f">+ {{ L.add }}</button>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+          <div>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px">
+              <span style="color:#6f797e; font-size:9px; letter-spacing:0.08em">{{ L.linkedNodes }}</span>
+              <span style="color:#79838a; font-size:9.5px">{{ modal.linkSummary }}</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:3px">
+              <sc-for list="{{ modal.links }}" as="l" hint-placeholder-count="2">
+                <div style="display:flex; align-items:center; gap:8px; padding:6px 9px; background:#101214; border:1px solid #1c2023">
+                  <span style="color:#6fa8c0; font-size:10px">◈</span>
+                  <span style="color:{{ l.accent }}; font-size:9px; font-weight:700">{{ l.quad }}</span>
+                  <span style="flex:1; min-width:0; color:#c5cbcf; font-size:10.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ l.title }}</span>
+                  <select value="{{ l.type }}" onChange="{{ l.setType }}" style="height:22px; background:#0d0f10; border:1px solid #23272b; color:#8b9599; font-size:9px; outline:none; cursor:pointer">
+                    <sc-for list="{{ linkTypes }}" as="t" hint-placeholder-count="4"><option value="{{ t }}">{{ t }}</option></sc-for>
+                  </select>
+                  <button onClick="{{ l.open }}" style="width:22px; height:22px; background:transparent; border:1px solid #1c2023; color:#79838a; font-size:10px; cursor:pointer" style-hover="color:#d8dde0; border-color:#3d4347">→</button>
+                  <button onClick="{{ l.remove }}" style="width:22px; height:22px; background:transparent; border:1px solid #1c2023; color:#79838a; font-size:10px; cursor:pointer" style-hover="color:#d2685a; border-color:#4a3330">×</button>
+                </div>
+              </sc-for>
+              <select value="" onChange="{{ modal.addLink }}" style="margin-top:3px; height:30px; background:#101214; border:1px dashed #23272b; color:#8b9599; font-size:10.5px; padding:0 8px; outline:none; cursor:pointer">
+                <option value="">{{ L.addLinkPh }}</option>
+                <sc-for list="{{ modal.linkCandidates }}" as="c" hint-placeholder-count="4"><option value="{{ c.id }}">{{ c.label }}</option></sc-for>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:#0b0d0e; padding:14px; display:flex; flex-direction:column; gap:14px">
+          <div>
+            <div style="color:#6f797e; font-size:9px; letter-spacing:0.08em; margin-bottom:6px">{{ L.priority }}</div>
+            <div style="display:flex; flex-direction:column; gap:3px">
+              <sc-for list="{{ modal.quadOptions }}" as="q" hint-placeholder-count="4">
+                <button onClick="{{ q.pick }}" style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:{{ q.bg }}; border:1px solid {{ q.bd }}; color:{{ q.fg }}; font-size:10px; cursor:pointer; text-align:left" style-hover="border-color:#3d4347">
+                  <span style="color:{{ q.accent }}; font-weight:700; flex:none">{{ q.code }}</span>
+                  <span style="flex:1; min-width:0; overflow-wrap:anywhere">{{ q.label }}</span>
+                  <span style="color:#8d84ad; flex:none; white-space:nowrap">{{ q.xp }}</span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="margin-top:6px; color:#79838a; font-size:9px; line-height:1.5">{{ L.xpNote }}</div>
+          </div>
+
+          <div>
+            <div style="color:#6f797e; font-size:9px; letter-spacing:0.08em; margin-bottom:6px">{{ L.deadline }}</div>
+            <div style="display:flex; gap:5px">
+              <input type="date" value="{{ modal.date }}" onChange="{{ modal.setDate }}" style="flex:1; min-width:0; padding:6px 7px; background:#101214; border:1px solid #23272b; outline:none; color:#d8dde0; font-size:10.5px" />
+              <input type="time" value="{{ modal.time }}" onChange="{{ modal.setTime }}" style="width:82px; padding:6px 7px; background:#101214; border:1px solid #23272b; outline:none; color:#d8dde0; font-size:10.5px" />
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:6px">
+              <span style="color:{{ modal.dlFg }}; border:1px solid {{ modal.dlBd }}; padding:2px 6px; font-size:9.5px; letter-spacing:0.05em">{{ modal.dlText }}</span>
+              <button onClick="{{ modal.clearDate }}" style="background:transparent; border:1px solid #1c2023; color:#79838a; font-size:9px; padding:3px 6px; cursor:pointer" style-hover="color:#d2685a">{{ L.clear }}</button>
+            </div>
+          </div>
+
+          <div>
+            <div style="color:#6f797e; font-size:9px; letter-spacing:0.08em; margin-bottom:6px">{{ L.taskColor }}</div>
+            <div style="display:flex; gap:5px; flex-wrap:wrap">
+              <sc-for list="{{ modal.colorOptions }}" as="c" hint-placeholder-count="7">
+                <button onClick="{{ c.pick }}" title="{{ c.name }}" style="width:24px; height:24px; padding:0; background:{{ c.swatch }}; border:1px solid {{ c.bd }}; cursor:pointer" style-hover="border-color:#d8dde0">{{ c.mark }}</button>
+              </sc-for>
+            </div>
+            <div style="margin-top:6px; color:#79838a; font-size:9px; line-height:1.5">{{ L.colorNote }}</div>
+          </div>
+
+          <div>
+            <div style="color:#6f797e; font-size:9px; letter-spacing:0.08em; margin-bottom:6px">{{ L.tags }}</div>
+            <div style="display:flex; gap:4px; flex-wrap:wrap">
+              <sc-for list="{{ modal.tags }}" as="t" hint-placeholder-count="2">
+                <span style="display:flex; align-items:center; gap:5px; padding:3px 6px; background:#101214; border:1px solid #23272b; color:#c5cbcf; font-size:10px">#{{ t.name }}
+                  <button onClick="{{ t.remove }}" style="background:transparent; border:0; color:#79838a; font-size:10px; cursor:pointer; padding:0" style-hover="color:#d2685a">×</button>
+                </span>
+              </sc-for>
+            </div>
+            <div style="display:flex; gap:5px; margin-top:6px">
+              <input value="{{ modal.newTag }}" onChange="{{ modal.setNewTag }}" placeholder="{{ L.newTagPh }}" style="flex:1; min-width:0; padding:6px 8px; background:#101214; border:1px dashed #23272b; outline:none; color:#d8dde0; font-size:10px" style-focus="border-color:#6fa8c0" />
+              <button onClick="{{ modal.addTag }}" style="padding:0 10px; background:#14171a; border:1px solid #2e343a; color:#6fa8c0; font-size:10px; cursor:pointer" style-hover="border-color:#6fa8c0">+</button>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid #1c2023; padding-top:11px; display:flex; flex-direction:column; gap:5px">
+            <sc-for list="{{ modal.metaRows }}" as="m" hint-placeholder-count="4">
+              <div style="display:flex; align-items:baseline; gap:8px; font-size:9.5px">
+                <span style="color:#6f797e; width:96px; flex:none">{{ m.k }}</span>
+                <span style="color:#8b9599; flex:1; min-width:0; overflow-wrap:anywhere">{{ m.v }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:none; display:flex; align-items:center; gap:8px; padding:11px 14px; border-top:1px solid #23272b; background:#101214; flex-wrap:wrap">
+        <button onClick="{{ modal.toggleDone }}" style="padding:8px 14px; background:{{ modal.doneBg }}; border:1px solid {{ modal.doneBd }}; color:{{ modal.doneFg }}; font-size:11px; letter-spacing:0.07em; cursor:pointer" style-hover="border-color:#5fb37f">{{ modal.doneLabel }}</button>
+        <sc-if value="{{ modal.isSub }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ modal.promoteSelf }}" style="padding:8px 12px; background:transparent; border:1px solid #23272b; color:#6fa8c0; font-size:10.5px; letter-spacing:0.05em; cursor:pointer" style-hover="border-color:#6fa8c0">{{ L.promoteSelf }}</button>
+        </sc-if>
+        <span style="flex:1"></span>
+        <span style="color:#6f797e; font-size:9px">{{ L.autosave }}</span>
+        <button onClick="{{ modal.remove }}" style="padding:8px 12px; background:transparent; border:1px solid #23272b; color:#8b9599; font-size:10.5px; letter-spacing:0.05em; cursor:pointer" style-hover="color:#d2685a; border-color:#4a3330">{{ L.delete }}</button>
+        <button onClick="{{ closeTask }}" style="padding:8px 14px; background:#14171a; border:1px solid #2e343a; color:#d8dde0; font-size:10.5px; letter-spacing:0.05em; cursor:pointer" style-hover="border-color:#3d4347">{{ L.close }}</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ toast.on }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed; bottom:18px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:10px; padding:9px 14px; background:#0e1112; border:1px solid {{ toast.bd }}; z-index:60">
+      <span style="color:{{ toast.fg }}; font-size:11px; letter-spacing:0.07em">{{ toast.code }}</span>
+      <span style="color:#8b9599; font-size:10px">{{ toast.detail }}</span>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1600,&quot;height&quot;:950},&quot;githubUrl&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;https://github.com/nullptr-ok/cursed_matrix&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Landing&quot;},&quot;linkedinUrl&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;https://www.linkedin.com/in/your-handle/&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Landing&quot;},&quot;monthlyPrice&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;$6&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Landing&quot;}}">
+const QC = ['#d2685a', '#c8973c', '#6fa8c0', '#7d878c'];
+const XPQ = [50, 35, 20, 10];
+const FREE_CAP = 35;
+const GH_URL = 'https://github.com/nullptr-ok/cursed_matrix';
+const LI_URL = 'https://www.linkedin.com/in/your-handle/';
+const FREE_LINKS = 25;
+const COLORS = [
+  { id: 0, hex: '#23272b', en: 'NONE', ru: 'НЕТ' },
+  { id: 1, hex: '#4f93ad', en: 'CYAN', ru: 'ГОЛУБОЙ' },
+  { id: 2, hex: '#8f7fc4', en: 'VIOLET', ru: 'ФИОЛЕТОВЫЙ' },
+  { id: 3, hex: '#c8973c', en: 'AMBER', ru: 'ЯНТАРНЫЙ' },
+  { id: 4, hex: '#c05b6a', en: 'ROSE', ru: 'РОЗОВЫЙ' },
+  { id: 5, hex: '#3f9e8f', en: 'TEAL', ru: 'БИРЮЗОВЫЙ' },
+  { id: 6, hex: '#6b7780', en: 'SLATE', ru: 'СЕРЫЙ' }
+];
+const LINK_TYPES = ['RELATED', 'BLOCKS', 'DEPENDS_ON', 'CONNECTED_TO'];
+
+const STR = {
+  en: {
+    board: 'BOARD', graph: 'GRAPH', activity: 'ACTIVITY', leaderboard: 'RANKING',
+    searchPh: 'search tasks, #tags, descriptions…', streakHint: 'Daily login streak',
+    settings: 'Settings', profile: 'Profile', state: 'STATE', tags: 'TAGS', color: 'COLOR',
+    deadline: 'DEADLINE', reset: 'RESET', newTask: 'New task in this column',
+    active: 'ACTIVE', completed: 'COMPLETED', all: 'ALL', complete: 'Mark completed',
+    emptyCta: '+ new task', newSub: 'subtask', links: 'linked tasks',
+    subDragHint: 'Drag out of the parent to promote to a standalone task',
+    netFilters: 'NETWORK_FILTERS', quadrant: 'QUADRANT', topology: 'TOPOLOGY', legend: 'LEGEND',
+    netMap: 'TASK_NETWORK_MAP', dragHint: 'drag nodes · scroll to zoom · drag background to pan',
+    linked: 'LINKED', unlinked: 'ISOLATED', any: 'ANY',
+    dlAny: 'ANY', dlOverdue: 'OVERDUE', dlToday: 'TODAY', dlWeek: 'NEXT 7 DAYS', dlNone: 'NO DEADLINE',
+    heatmapTitle: 'ACTIVITY_MATRIX · LAST 365 DAYS', less: 'LOW', more: 'HIGH',
+    achievements: 'ACHIEVEMENTS', globalRanking: 'GLOBAL_RANKING',
+    rankNote: 'Only operators with show_in_leaderboard enabled are listed',
+    rank: 'RANK', user: 'OPERATOR', lvl: 'LVL', streakCol: 'STREAK', week: 'WEEK', month: 'MONTH', allTime: 'ALL TIME',
+    openSettings: 'OPEN SETTINGS', recentLog: 'SYSTEM_LOG', lbToggleNote: 'Appear publicly in global ranking',
+    on: 'ENABLED', off: 'DISABLED', title: 'TITLE', description: 'DESCRIPTION',
+    descPh: 'context, links, acceptance criteria…', subtasks: 'SUBTASKS',
+    subNoNest: 'This node is a subtask. Hierarchy is limited to one level, so it cannot own subtasks. Promote it to a standalone task first.',
+    linkedNodes: 'LINKED_NODES', addLinkPh: '+ link another task…', priority: 'EISENHOWER_PRIORITY',
+    xpNote: 'XP reward is set by the system from the quadrant and locked in at the moment of completion.',
+    taskColor: 'TASK_COLOR', colorNote: 'Personal accent only. System states (deadline, completion) never use it.',
+    newTagPh: 'tag name', moveUp: 'Move up', moveDown: 'Move down', promote: 'PROMOTE',
+    promoteHint: 'Promote to standalone task', promoteSelf: 'PROMOTE TO TASK', openTask: 'Open',
+    add: 'ADD', clear: 'CLEAR', delete: 'DELETE', close: 'CLOSE', autosave: 'changes saved automatically',
+    noResults: 'NO_MATCHING_QUESTS_DETECTED', resolve: 'RESOLVE QUEST', reopen: 'REOPEN QUEST',
+    created: 'created', completedAt: 'completed', position: 'position', xpLocked: 'xp locked at',
+    nodeId: 'node id', parentNode: 'parent node', lang: 'Language',
+    langNote: 'Interface language. Russian strings are longer, layout is built for both.',
+    accountNote: 'Operator identity used across ranking and profile.',
+    exportNote: 'Full task graph as JSON, including archived nodes.',
+    export: 'EXPORT', dangerNote: 'Irreversible. All tasks, links and progression are removed.',
+    wipe: 'WIPE ACCOUNT', account: 'ACCOUNT', interface: 'INTERFACE', privacy: 'PRIVACY_AND_DATA',
+    username: 'Username', email: 'Email', exportData: 'Export data', dangerZone: 'Delete account',
+    density: 'Board density', densityNote: 'Card padding on the board. Compact fits more tasks per screen.',
+    compact: 'COMPACT', cozy: 'COZY', subDefault: 'Subtasks expanded by default',
+    subDefaultNote: 'Applies to every parent task with subtasks on the board.',
+    resolved: 'QUEST_RESOLVED', reopened: 'QUEST_REOPENED', linkMade: 'NODE_LINK_ESTABLISHED',
+    promoted: 'NODE_PROMOTED', moved: 'PRIORITY_REASSIGNED', createdMsg: 'QUEST_REGISTERED',
+    deleted: 'NODE_PURGED', levelBar: 'to next level', archiveMode: 'ARCHIVE_MODE · completed history',
+    subsOf: 'subtasks', done: 'done',
+    landTag: 'A task terminal built on the Eisenhower matrix, a live graph of everything you are working on, and XP you actually earn.',
+    landSub: 'Desktop-first. Keyboard-driven. Yours to host.',
+    landEnter: 'ENTER_TERMINAL', landSource: 'VIEW_SOURCE', landPricing: 'PRICING',
+    landFeat: [
+      ['01', 'MATRIX_BOARD', 'Four Eisenhower columns instead of a 2x2 grid. Drag a task across columns to reassign its priority.'],
+      ['02', 'TASK_NETWORK', 'Link any task to any other and walk the whole system as a force-directed graph.'],
+      ['03', 'PROGRESSION', 'XP per completed task, levels from lifetime XP, a login streak and a 365-day activity map.'],
+      ['04', 'SELF_HOSTED', 'Run the same build on your own server. Open source, plain JSON data, no lock-in.']
+    ],
+    selfHostTitle: 'RUN_IT_YOURSELF',
+    selfHostBody: 'cursed_matrix is open source. Clone the repository, point it at your own database and keep every node on your own hardware — free, with no account and no quota.',
+    landFooter: 'operator build',
+    planTitle: 'PLANS', planSubCapped: 'Your free account is full. Pick a plan to keep registering nodes.',
+    planSub: 'One account, three ways to run it.',
+    planFreeName: 'FREE', planProName: 'OPERATOR', planHostName: 'SELF_HOSTED',
+    planPerMonth: '/ month', planFreeNote: 'current plan', planHostNote: 'your own server', planProNote: 'monthly, cancel anytime',
+    planFree: ['35 active tasks', '25 node links', '90-day activity history', 'Board, graph and core filters', 'JSON export'],
+    planPro: ['Unlimited tasks and subtasks', 'Unlimited links', 'Full 365-day activity map', 'All graph filters and saved views', 'Achievements and leaderboard', 'Cloud sync across devices'],
+    planHost: ['Everything in OPERATOR', 'Your infrastructure, your data', 'Docker compose in the repo', 'Community support'],
+    planCta: 'ACTIVATE_SUBSCRIPTION', planCtaOn: 'SUBSCRIPTION_ACTIVE', planKeepFree: 'STAY_ON_FREE', planHostCta: 'DEPLOY_FROM_SOURCE',
+    quotaCode: 'QUOTA_LIMIT_REACHED',
+    quotaBody: 'Your free account holds 35 active tasks. Complete or archive one, or switch to OPERATOR for unlimited nodes.',
+    viewPlans: 'VIEW_PLANS', dismiss: 'DISMISS', upgrade: 'UPGRADE', quotaLabel: 'QUOTA',
+    planRow: 'Subscription', planRowNote: 'Free accounts are capped at 35 active tasks and 25 links.',
+    session: 'Session', sessionNote: 'Return to the public landing page.', signOut: 'SIGN_OUT',
+    integrations: 'INTEGRATIONS', gcal: 'Google Calendar',
+    gcalNote: 'Two-way sync between task deadlines and your calendar events.', soon: 'COMING_SOON',
+    roadmapLabel: 'ROADMAP'
+  },
+  ru: {
+    board: 'ДОСКА', graph: 'ГРАФ', activity: 'АКТИВНОСТЬ', leaderboard: 'РЕЙТИНГ',
+    searchPh: 'поиск задач, #тегов, описаний…', streakHint: 'Серия ежедневных входов',
+    settings: 'Настройки', profile: 'Профиль', state: 'СТАТУС', tags: 'ТЕГИ', color: 'ЦВЕТ',
+    deadline: 'СРОК', reset: 'СБРОС', newTask: 'Новая задача в этой колонке',
+    active: 'АКТИВНЫЕ', completed: 'ЗАВЕРШЁННЫЕ', all: 'ВСЕ', complete: 'Отметить выполненной',
+    emptyCta: '+ новая задача', newSub: 'подзадача', links: 'связанные задачи',
+    subDragHint: 'Вытащите из родителя, чтобы сделать самостоятельной задачей',
+    netFilters: 'ФИЛЬТРЫ_СЕТИ', quadrant: 'КВАДРАНТ', topology: 'ТОПОЛОГИЯ', legend: 'ЛЕГЕНДА',
+    netMap: 'КАРТА_СЕТИ_ЗАДАЧ', dragHint: 'тяните узлы · колесо — зум · фон — панорама',
+    linked: 'СО СВЯЗЯМИ', unlinked: 'БЕЗ СВЯЗЕЙ', any: 'ЛЮБЫЕ',
+    dlAny: 'ЛЮБОЙ', dlOverdue: 'ПРОСРОЧЕНО', dlToday: 'СЕГОДНЯ', dlWeek: 'БЛИЖАЙШИЕ 7 ДНЕЙ', dlNone: 'БЕЗ СРОКА',
+    heatmapTitle: 'МАТРИЦА_АКТИВНОСТИ · 365 ДНЕЙ', less: 'МАЛО', more: 'МНОГО',
+    achievements: 'ДОСТИЖЕНИЯ', globalRanking: 'ГЛОБАЛЬНЫЙ_РЕЙТИНГ',
+    rankNote: 'В списке только операторы с включённым show_in_leaderboard',
+    rank: 'МЕСТО', user: 'ОПЕРАТОР', lvl: 'УР', streakCol: 'СЕРИЯ', week: 'НЕДЕЛЯ', month: 'МЕСЯЦ', allTime: 'ЗА ВСЁ ВРЕМЯ',
+    openSettings: 'ОТКРЫТЬ НАСТРОЙКИ', recentLog: 'СИСТЕМНЫЙ_ЖУРНАЛ', lbToggleNote: 'Публично отображаться в глобальном рейтинге',
+    on: 'ВКЛЮЧЕНО', off: 'ОТКЛЮЧЕНО', title: 'НАЗВАНИЕ', description: 'ОПИСАНИЕ',
+    descPh: 'контекст, ссылки, критерии готовности…', subtasks: 'ПОДЗАДАЧИ',
+    subNoNest: 'Этот узел — подзадача. Иерархия ограничена одним уровнем, поэтому своих подзадач у неё быть не может. Сначала сделайте её самостоятельной задачей.',
+    linkedNodes: 'СВЯЗАННЫЕ_УЗЛЫ', addLinkPh: '+ связать с другой задачей…', priority: 'ПРИОРИТЕТ_ЭЙЗЕНХАУЭРА',
+    xpNote: 'XP назначается системой по квадранту и фиксируется в момент выполнения.',
+    taskColor: 'ЦВЕТ_ЗАДАЧИ', colorNote: 'Только личный акцент. Системные состояния (срок, выполнение) его не используют.',
+    newTagPh: 'имя тега', moveUp: 'Выше', moveDown: 'Ниже', promote: 'ПОВЫСИТЬ',
+    promoteHint: 'Сделать самостоятельной задачей', promoteSelf: 'СДЕЛАТЬ ЗАДАЧЕЙ', openTask: 'Открыть',
+    add: 'ДОБАВИТЬ', clear: 'ОЧИСТИТЬ', delete: 'УДАЛИТЬ', close: 'ЗАКРЫТЬ', autosave: 'изменения сохраняются автоматически',
+    noResults: 'СОВПАДЕНИЙ_НЕ_ОБНАРУЖЕНО', resolve: 'ЗАВЕРШИТЬ ЗАДАЧУ', reopen: 'ВЕРНУТЬ В РАБОТУ',
+    created: 'создано', completedAt: 'завершено', position: 'позиция', xpLocked: 'xp зафиксирован',
+    nodeId: 'id узла', parentNode: 'родительский узел', lang: 'Язык',
+    langNote: 'Язык интерфейса. Русские строки длиннее, вёрстка рассчитана на оба языка.',
+    accountNote: 'Идентификатор оператора в рейтинге и профиле.',
+    exportNote: 'Полный граф задач в JSON, включая архивные узлы.',
+    export: 'ЭКСПОРТ', dangerNote: 'Необратимо. Все задачи, связи и прогресс будут удалены.',
+    wipe: 'УДАЛИТЬ АККАУНТ', account: 'АККАУНТ', interface: 'ИНТЕРФЕЙС', privacy: 'ПРИВАТНОСТЬ_И_ДАННЫЕ',
+    username: 'Имя пользователя', email: 'Email', exportData: 'Экспорт данных', dangerZone: 'Удаление аккаунта',
+    density: 'Плотность доски', densityNote: 'Внутренние отступы карточек. Компактный режим показывает больше задач.',
+    compact: 'КОМПАКТНО', cozy: 'СВОБОДНО', subDefault: 'Подзадачи раскрыты по умолчанию',
+    subDefaultNote: 'Действует для всех родительских задач на доске.',
+    resolved: 'QUEST_RESOLVED', reopened: 'QUEST_REOPENED', linkMade: 'NODE_LINK_ESTABLISHED',
+    promoted: 'NODE_PROMOTED', moved: 'PRIORITY_REASSIGNED', createdMsg: 'QUEST_REGISTERED',
+    deleted: 'NODE_PURGED', levelBar: 'до следующего уровня', archiveMode: 'ARCHIVE_MODE · история завершённых',
+    subsOf: 'подзадач', done: 'готово',
+    landTag: 'Терминал задач на матрице Эйзенхауэра, живой граф всего, над чем вы работаете, и XP, которые действительно нужно заработать.',
+    landSub: 'Сделано для десктопа. Управляется с клавиатуры. Можно развернуть у себя.',
+    landEnter: 'ВОЙТИ_В_ТЕРМИНАЛ', landSource: 'ИСХОДНЫЙ_КОД', landPricing: 'ТАРИФЫ',
+    landFeat: [
+      ['01', 'МАТРИЦА', 'Четыре колонки Эйзенхауэра вместо сетки 2x2. Перетащите задачу в другую колонку — приоритет изменится.'],
+      ['02', 'СЕТЬ_ЗАДАЧ', 'Связывайте любые задачи друг с другом и исследуйте систему как force-directed граф.'],
+      ['03', 'ПРОГРЕССИЯ', 'XP за выполненные задачи, уровни по общему XP, серия входов и карта активности за 365 дней.'],
+      ['04', 'SELF_HOSTED', 'Та же сборка на вашем сервере. Открытый код, данные в обычном JSON, без привязки к вендору.']
+    ],
+    selfHostTitle: 'РАЗВЕРНУТЬ_У_СЕБЯ',
+    selfHostBody: 'cursed_matrix — проект с открытым кодом. Клонируйте репозиторий, подключите свою базу и держите все узлы на собственном железе — бесплатно, без аккаунта и без ограничений.',
+    landFooter: 'сборка оператора',
+    planTitle: 'ТАРИФЫ', planSubCapped: 'Бесплатный аккаунт заполнен. Выберите тариф, чтобы продолжить создавать узлы.',
+    planSub: 'Один аккаунт, три способа его запустить.',
+    planFreeName: 'БЕСПЛАТНО', planProName: 'OPERATOR', planHostName: 'SELF_HOSTED',
+    planPerMonth: '/ месяц', planFreeNote: 'текущий тариф', planHostNote: 'ваш сервер', planProNote: 'ежемесячно, отмена в любой момент',
+    planFree: ['35 активных задач', '25 связей между узлами', 'История активности 90 дней', 'Доска, граф и базовые фильтры', 'Экспорт в JSON'],
+    planPro: ['Неограниченные задачи и подзадачи', 'Неограниченные связи', 'Полная карта активности за 365 дней', 'Все фильтры графа и сохранённые виды', 'Достижения и рейтинг', 'Синхронизация между устройствами'],
+    planHost: ['Всё из тарифа OPERATOR', 'Ваша инфраструктура и ваши данные', 'Docker compose в репозитории', 'Поддержка сообщества'],
+    planCta: 'ОФОРМИТЬ_ПОДПИСКУ', planCtaOn: 'ПОДПИСКА_АКТИВНА', planKeepFree: 'ОСТАТЬСЯ_НА_FREE', planHostCta: 'РАЗВЕРНУТЬ_ИЗ_КОДА',
+    quotaCode: 'QUOTA_LIMIT_REACHED',
+    quotaBody: 'В бесплатном аккаунте — 35 активных задач. Завершите или архивируйте одну, либо перейдите на OPERATOR без ограничений.',
+    viewPlans: 'СМОТРЕТЬ_ТАРИФЫ', dismiss: 'ЗАКРЫТЬ', upgrade: 'ТАРИФ', quotaLabel: 'ЛИМИТ',
+    planRow: 'Подписка', planRowNote: 'Бесплатный аккаунт ограничен 35 активными задачами и 25 связями.',
+    session: 'Сессия', sessionNote: 'Вернуться на публичную страницу продукта.', signOut: 'ВЫЙТИ',
+    integrations: 'ИНТЕГРАЦИИ', gcal: 'Google Calendar',
+    gcalNote: 'Двусторонняя синхронизация дедлайнов задач и событий календаря.', soon: 'СКОРО',
+    roadmapLabel: 'ПЛАНЫ'
+  }
+};
+
+const COLS = [
+  { code: 'Q1', en: 'CRITICAL_PATH', ru: 'КРИТИЧЕСКИЙ_ПУТЬ', enSub: 'IMPORTANT + URGENT', ruSub: 'ВАЖНО + СРОЧНО', enEmpty: 'NO_CRITICAL_QUESTS', ruEmpty: 'КРИТИЧЕСКИХ_ЗАДАЧ_НЕТ' },
+  { code: 'Q2', en: 'SCHEDULED_OPS', ru: 'ПЛАНОВЫЕ_ОПЕРАЦИИ', enSub: 'IMPORTANT · NOT URGENT', ruSub: 'ВАЖНО · НЕ СРОЧНО', enEmpty: 'NO_SCHEDULED_QUESTS', ruEmpty: 'ПЛАНОВЫХ_ЗАДАЧ_НЕТ' },
+  { code: 'Q3', en: 'DELEGATE_QUEUE', ru: 'ОЧЕРЕДЬ_ДЕЛЕГИРОВАНИЯ', enSub: 'NOT IMPORTANT · URGENT', ruSub: 'НЕ ВАЖНО · СРОЧНО', enEmpty: 'QUEUE_EMPTY', ruEmpty: 'ОЧЕРЕДЬ_ПУСТА' },
+  { code: 'Q4', en: 'BACKLOG_SINK', ru: 'ОТСТОЙНИК_БЭКЛОГА', enSub: 'NOT IMPORTANT · NOT URGENT', ruSub: 'НЕ ВАЖНО · НЕ СРОЧНО', enEmpty: 'SINK_EMPTY', ruEmpty: 'ОТСТОЙНИК_ПУСТ' }
+];
+
+const RAW = [
+  [0, 'Patch auth token refresh race condition', ['backend', 'project-x'], 4, -26, false, [['Reproduce on staging', true], ['Add mutex around refresh call', false], ['Ship hotfix behind flag', false]]],
+  [0, 'Investor update deck — final numbers', ['work'], 3, 9, false, [['Pull Q3 revenue export', true], ['Rewrite traction slide', false]]],
+  [0, 'Respond to security audit findings', ['backend', 'work'], 0, 40, false, []],
+  [0, 'Renew production TLS certificates', ['backend'], 1, 3, false, []],
+  [0, 'Hiring panel debrief for senior role', ['work'], 0, -4, false, []],
+  [0, 'Fix billing webhook duplicate charges', ['backend', 'project-x'], 4, 20, true, [['Add idempotency key', true], ['Backfill affected invoices', true]]],
+  [1, 'Design system: define motion tokens', ['design', 'project-x'], 2, 120, false, [['Audit current transitions', true], ['Draft duration scale', false], ['Review with engineering', false]]],
+  [1, 'Write architecture decision record for graph store', ['backend'], 1, 190, false, []],
+  [1, 'Quarterly roadmap draft', ['work'], 3, 260, false, [['Collect team input', false], ['Cut scope to 3 bets', false]]],
+  [1, 'Learn shader basics for node rendering', ['personal', 'design'], 2, null, false, []],
+  [1, 'Migrate CI to reusable workflows', ['backend'], 0, 340, false, [['Inventory duplicated steps', true]]],
+  [1, 'Set up automated deadline digest email', ['backend', 'project-x'], 5, 400, false, []],
+  [1, 'Strength training block — week 3', ['personal', 'health'], 5, 30, false, [['Mon: lower body', true], ['Wed: upper body', false], ['Fri: full body', false]]],
+  [1, 'Read "Thinking in Systems" chapters 4-6', ['personal'], 0, null, false, []],
+  [1, 'Refactor localization loader', ['backend', 'design'], 1, 170, true, []],
+  [2, 'Reply to vendor procurement thread', ['work'], 0, 6, false, []],
+  [2, 'Approve marketing copy for changelog', ['work', 'design'], 6, 14, false, []],
+  [2, 'Book meeting room for onsite', ['work'], 0, 2, false, []],
+  [2, 'Forward analytics export to finance', ['work'], 0, -12, false, [['Verify column mapping', false]]],
+  [2, 'Confirm conference travel dates', ['personal', 'work'], 3, 46, false, []],
+  [2, 'Triage inbound support escalations', ['work', 'backend'], 4, 5, true, []],
+  [3, 'Clean up unused Figma branches', ['design'], 0, null, false, []],
+  [3, 'Try alternative monospace font pairing', ['design', 'personal'], 2, null, false, [['Collect 5 candidates', true], ['Test at 10px', false]]],
+  [3, 'Archive 2023 project folders', ['work'], 6, null, false, []],
+  [3, 'Sort bookmark library', ['personal'], 0, null, false, []],
+  [3, 'Evaluate ambient noise apps', ['personal', 'health'], 0, null, true, []]
+];
+
+const LINK_PAIRS = [[0, 2], [0, 5], [1, 8], [6, 22], [6, 14], [7, 10], [10, 11], [11, 5], [12, 25], [15, 18], [16, 8], [19, 12], [3, 2], [9, 6], [13, 9], [17, 15], [23, 21], [4, 1]];
+
+const ACH = [
+  ['FIRST_BLOOD', 'Complete your first task', 'Завершите первую задачу', 1, 1],
+  ['CENTURION', 'Complete 100 tasks', 'Завершите 100 задач', 100, 74],
+  ['XP_10K', 'Reach 10 000 lifetime XP', 'Наберите 10 000 XP за всё время', 10000, 7420],
+  ['STREAK_30', 'Keep a 30-day login streak', 'Держите серию входов 30 дней', 30, 18],
+  ['NETWORK_BUILDER', 'Create 50 links between tasks', 'Создайте 50 связей между задачами', 50, 31],
+  ['FIREFIGHTER', 'Clear 25 Q1 critical tasks', 'Закройте 25 критических задач Q1', 25, 25],
+  ['ARCHITECT', 'Reach level 20', 'Достигните 20 уровня', 20, 12],
+  ['CARTOGRAPHER', 'Open the graph on 14 separate days', 'Откройте граф в 14 разных дней', 14, 9]
+];
+
+const LB = [
+  ['nullbyte', 41280, 24, 96, [12400, 3210]],
+  ['k.orlov', 33150, 21, 61, [9800, 2740]],
+  ['void_walker', 29870, 20, 44, [8100, 2980]],
+  ['operator_07', 21440, 17, 12, [7300, 2100]],
+  ['m.kuznetsova', 18900, 16, 29, [6050, 3320]],
+  ['sysop_jane', 12010, 13, 7, [4900, 1180]],
+  ['grep_master', 9120, 11, 21, [3100, 1420]],
+  ['ada.l', 6380, 9, 3, [2200, 860]]
+];
+const ME_ROW = ['nullptr_ok', 7420, 12, 18, [2870, 1640]];
+
+function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+function rnd(seed) { let x = seed || 1; return () => { x ^= x << 13; x >>>= 0; x ^= x >> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; }; }
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+function levelOf(xp) { return Math.max(1, Math.floor(Math.sqrt(xp / 45)) + 1); }
+function xpForLevel(l) { return Math.round(45 * Math.pow(l - 1, 2)); }
+function bar(ratio, size) { const f = Math.max(0, Math.min(size, Math.round(ratio * size))); return '[' + '█'.repeat(f) + '░'.repeat(size - f) + ']'; }
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const now = Date.now();
+    const tasks = [];
+    let id = 1;
+    RAW.forEach((r, i) => {
+      const tid = 't' + pad(id++);
+      tasks.push({
+        id: tid, idx: i, title: r[1], desc: r[1] + '. ' + (r[2][0] === 'backend' ? 'Touches the sync layer; keep the migration reversible.' : 'Keep the scope tight and close it in one session.'),
+        quad: r[0], tags: r[2].slice(), color: r[3], deadline: r[4] === null ? null : now + r[4] * 3600e3,
+        done: r[5], parent: null, position: i, createdAt: now - (86400e3 * (3 + (i % 40))),
+        completedAt: r[5] ? now - 86400e3 * (1 + (i % 9)) : null, xpLocked: r[5] ? XPQ[r[0]] : null
+      });
+      r[6].forEach((s, j) => {
+        const sid = 't' + pad(id++);
+        tasks.push({
+          id: sid, idx: -1, title: s[0], desc: '', quad: r[0], tags: [], color: r[3],
+          deadline: r[4] === null ? null : now + (r[4] + 6 * (j + 1)) * 3600e3,
+          done: r[5] ? true : s[1], parent: tid, position: j, createdAt: now - 86400e3 * (2 + j),
+          completedAt: (r[5] || s[1]) ? now - 86400e3 : null, xpLocked: (r[5] || s[1]) ? Math.round(XPQ[r[0]] * 0.35) : null
+        });
+      });
+    });
+    const byIdx = {};
+    tasks.forEach(t => { if (t.idx >= 0) byIdx[t.idx] = t.id; });
+    const links = LINK_PAIRS.map((p, i) => ({ a: byIdx[p[0]], b: byIdx[p[1]], type: LINK_TYPES[i % 4] })).filter(l => l.a && l.b);
+
+    this.state = {
+      lang: 'en', tab: 'landing', plan: 'free', payWall: false, tasks, links, nextId: id,
+      status: 'active', tagSel: [], colorSel: [], dl: 'any', quadSel: [], linkSel: 'any',
+      query: '', searchOpen: false, modalId: null, newSub: '', newTag: '',
+      collapsed: {}, drag: null, dropCol: null, dropIdx: null,
+      lbPeriod: 'all', showInLb: true, density: 'compact', subsDefault: true,
+      hover: null, zoom: 1, heatSel: null, toast: null,
+      winW: typeof window === 'undefined' ? 1600 : window.innerWidth
+    };
+    this.nodes = {}; this.view = { x: 0, y: 0, k: 1 }; this.canvas = null;
+    this.today = new Date();
+  }
+
+  componentDidMount() {
+    this.resizeHandler = () => {
+      const w = window.innerWidth;
+      if (w !== this.state.winW) this.setState({ winW: w });
+    };
+    window.addEventListener('resize', this.resizeHandler);
+    this.resizeHandler();
+    this.keyHandler = e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); this.setState({ searchOpen: true }); }
+      if (e.key === 'Escape') this.setState({ searchOpen: false, modalId: null });
+    };
+    window.addEventListener('keydown', this.keyHandler);
+  }
+  componentWillUnmount() {
+    window.removeEventListener('keydown', this.keyHandler);
+    window.removeEventListener('resize', this.resizeHandler);
+    this.stopBg();
+    if (this.raf) cancelAnimationFrame(this.raf);
+    if (this.ro) this.ro.disconnect();
+  }
+
+  bgGraph(el) {
+    if (!el) { this.stopBg(); return; }
+    if (this.bgEl === el) return;
+    this.stopBg();
+    this.bgEl = el;
+    const ctx = el.getContext('2d');
+    const N = 30;
+    let W = 0, H = 0, dpr = 1;
+    const rnd = (() => { let s = 20260918; return () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff; })();
+    const nodes = [];
+    for (let i = 0; i < N; i++) nodes.push({
+      id: 'N' + pad(i + 1), x: rnd(), y: rnd(),
+      vx: (rnd() - 0.5) * 0.000075, vy: (rnd() - 0.5) * 0.000075,
+      r: rnd() < 0.18 ? 3.5 : rnd() < 0.55 ? 2.6 : 1.9,
+      done: rnd() < 0.3, label: i % 5 === 2
+    });
+    const edges = [];
+    const seen = {};
+    nodes.forEach((n, i) => {
+      const near = nodes.map((m, j) => ({ j, d: Math.hypot(m.x - n.x, m.y - n.y) }))
+        .filter(o => o.j !== i).sort((a, b) => a.d - b.d).slice(0, rnd() < 0.3 ? 3 : 2);
+      near.forEach(o => {
+        const key = Math.min(i, o.j) + '-' + Math.max(i, o.j);
+        if (seen[key]) return;
+        seen[key] = 1;
+        edges.push({ a: i, b: o.j, pulse: -rnd() * 7 });
+      });
+    });
+    const size = () => {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = el.clientWidth; H = el.clientHeight;
+      el.width = Math.round(W * dpr); el.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    size();
+    this.bgResize = size;
+    window.addEventListener('resize', size);
+    const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let t0 = performance.now();
+    const frame = now => {
+      const dt = Math.min(now - t0, 48); t0 = now;
+      if (!W || !H) size();
+      ctx.clearRect(0, 0, W, H);
+      if (!still) nodes.forEach(n => {
+        n.x += n.vx * dt; n.y += n.vy * dt;
+        if (n.x < 0.02 || n.x > 0.98) n.vx *= -1;
+        if (n.y < 0.02 || n.y > 0.98) n.vy *= -1;
+      });
+      edges.forEach(e => {
+        const a = nodes[e.a], b = nodes[e.b];
+        const ax = a.x * W, ay = a.y * H, bx = b.x * W, by = b.y * H;
+        const d = Math.hypot(bx - ax, by - ay);
+        const lim = Math.max(W, H) * 0.52;
+        if (d > lim) return;
+        const k = 1 - d / lim;
+        ctx.lineWidth = 0.8 + k * 0.35;
+        ctx.strokeStyle = 'rgba(154,168,176,' + (0.07 + k * 0.2).toFixed(3) + ')';
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+        if (!still) e.pulse += dt / 2200;
+        if (e.pulse > 0 && e.pulse < 1) {
+          const px = ax + (bx - ax) * e.pulse, py = ay + (by - ay) * e.pulse;
+          ctx.fillStyle = 'rgba(95,179,127,' + (0.64 * Math.sin(e.pulse * Math.PI)).toFixed(3) + ')';
+          ctx.beginPath(); ctx.arc(px, py, 2, 0, 6.2832); ctx.fill();
+        } else if (e.pulse >= 1) e.pulse = -1.5 - rnd() * 9;
+      });
+      nodes.forEach(n => {
+        const x = n.x * W, y = n.y * H;
+        ctx.fillStyle = '#0a0b0c';
+        ctx.beginPath(); ctx.arc(x, y, n.r + 2.6, 0, 6.2832); ctx.fill();
+        ctx.fillStyle = n.done ? 'rgba(128,140,146,0.46)' : 'rgba(216,225,230,0.76)';
+        ctx.beginPath(); ctx.arc(x, y, n.r, 0, 6.2832); ctx.fill();
+        if (n.r > 3) {
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(95,179,127,0.42)';
+          ctx.beginPath(); ctx.arc(x, y, n.r + 4.5, 0, 6.2832); ctx.stroke();
+        }
+        if (n.label) {
+          ctx.font = '9px "JetBrains Mono", monospace';
+          ctx.fillStyle = 'rgba(152,166,174,0.38)';
+          ctx.fillText(n.id, x + 7, y + 3);
+        }
+      });
+      this.bgRaf = requestAnimationFrame(frame);
+    };
+    this.bgRaf = requestAnimationFrame(frame);
+  }
+
+  stopBg() {
+    if (this.bgRaf) cancelAnimationFrame(this.bgRaf);
+    if (this.bgResize) window.removeEventListener('resize', this.bgResize);
+    this.bgRaf = null; this.bgResize = null; this.bgEl = null;
+  }
+
+  T() { return STR[this.state.lang]; }
+  gh() { return this.props.githubUrl ?? GH_URL; }
+  flash(code, detail) {
+    clearTimeout(this.toastT);
+    this.setState({ toast: { code, detail } });
+    this.toastT = setTimeout(() => this.setState({ toast: null }), 2600);
+  }
+  patch(id, fn) {
+    this.setState(s => ({ tasks: s.tasks.map(t => (t.id === id ? Object.assign({}, t, typeof fn === 'function' ? fn(t) : fn) : t)) }));
+  }
+  get(id) { return this.state.tasks.find(t => t.id === id); }
+  subsOf(id) { return this.state.tasks.filter(t => t.parent === id).sort((a, b) => a.position - b.position); }
+  linksOf(id) { return this.state.links.filter(l => l.a === id || l.b === id); }
+
+  xpOf(t) { return t.parent ? Math.round(XPQ[t.quad] * 0.35) : XPQ[t.quad]; }
+
+  toggleDone(id) {
+    const t = this.get(id); if (!t) return;
+    const now = Date.now();
+    const next = !t.done;
+    this.setState(s => ({
+      tasks: s.tasks.map(x => {
+        if (x.id === id) return Object.assign({}, x, { done: next, completedAt: next ? now : null, xpLocked: next ? this.xpOf(x) : null });
+        if (next && x.parent === id && !x.done) return Object.assign({}, x, { done: true, completedAt: now, xpLocked: this.xpOf(x) });
+        return x;
+      })
+    }));
+    const T = this.T();
+    this.flash(next ? T.resolved : T.reopened, (next ? '+' : '−') + this.xpOf(t) + ' XP · ' + t.title);
+  }
+
+  dlInfo(t) {
+    const T = this.T();
+    if (t.done) return { text: T.completed, fg: '#5fb37f', bd: '#2c4536' };
+    if (!t.deadline) return { text: '—', fg: '#79838a', bd: '#1c2023' };
+    const h = (t.deadline - Date.now()) / 3600e3;
+    const d = new Date(t.deadline);
+    const stamp = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][d.getMonth()] + ' ' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    if (h < 0) return { text: '! OVERDUE ' + (Math.abs(h) < 24 ? Math.round(Math.abs(h)) + 'H' : Math.round(Math.abs(h) / 24) + 'D'), fg: '#e0776a', bd: '#4a3330' };
+    if (h < 48) return { text: '» T-' + (h < 24 ? Math.round(h) + 'H' : Math.round(h / 24) + 'D'), fg: '#d8a94f', bd: '#453a24' };
+    return { text: stamp, fg: '#8b9599', bd: '#23272b' };
+  }
+
+  passes(t) {
+    const s = this.state;
+    if (s.status === 'active' && t.done) return false;
+    if (s.status === 'completed' && !t.done) return false;
+    if (s.tagSel.length && !s.tagSel.some(tg => (t.tags || []).indexOf(tg) >= 0)) return false;
+    if (s.colorSel.length && s.colorSel.indexOf(t.color) < 0) return false;
+    if (s.quadSel.length && s.quadSel.indexOf(t.quad) < 0) return false;
+    if (s.dl !== 'any') {
+      const h = t.deadline === null ? null : (t.deadline - Date.now()) / 3600e3;
+      if (s.dl === 'none' && h !== null) return false;
+      if (s.dl === 'overdue' && (h === null || h >= 0)) return false;
+      if (s.dl === 'today' && (h === null || h < 0 || h > 24)) return false;
+      if (s.dl === 'week' && (h === null || h < 0 || h > 168)) return false;
+    }
+    if (s.linkSel !== 'any') {
+      const n = this.linksOf(t.id).length;
+      if (s.linkSel === 'linked' && n === 0) return false;
+      if (s.linkSel === 'unlinked' && n > 0) return false;
+    }
+    const q = s.query.trim().toLowerCase();
+    if (q) {
+      const hay = (t.title + ' ' + (t.desc || '') + ' ' + (t.tags || []).map(x => '#' + x).join(' ')).toLowerCase();
+      if (hay.indexOf(q.replace(/^#/, '#')) < 0) return false;
+    }
+    return true;
+  }
+
+  allTags() {
+    const set = {};
+    this.state.tasks.forEach(t => (t.tags || []).forEach(g => { set[g] = 1; }));
+    return Object.keys(set).sort();
+  }
+
+  moveTask(id, quad, beforeId) {
+    const t = this.get(id); if (!t) return;
+    const wasSub = !!t.parent;
+    const siblings = this.state.tasks.filter(x => !x.parent && x.quad === quad && x.id !== id).sort((a, b) => a.position - b.position);
+    let pos = siblings.length;
+    if (beforeId) { const i = siblings.findIndex(x => x.id === beforeId); if (i >= 0) pos = i; }
+    this.setState(s => ({
+      tasks: s.tasks.map(x => {
+        if (x.id === id) return Object.assign({}, x, { parent: null, quad, position: pos - 0.5 });
+        return x;
+      })
+    }), () => {
+      this.setState(s => {
+        const list = s.tasks.filter(x => !x.parent && x.quad === quad).sort((a, b) => a.position - b.position);
+        const order = {}; list.forEach((x, i) => { order[x.id] = i; });
+        return { tasks: s.tasks.map(x => (order[x.id] === undefined ? x : Object.assign({}, x, { position: order[x.id] }))) };
+      });
+    });
+    const T = this.T();
+    if (wasSub) this.flash(T.promoted, t.title + ' → ' + COLS[quad].code);
+    else if (t.quad !== quad) this.flash(T.moved, COLS[t.quad].code + ' → ' + COLS[quad].code + ' · ' + this.xpOf(t) + ' XP');
+  }
+
+  activeCount() { return this.state.tasks.filter(t => !t.done).length; }
+  capped() { return this.state.plan === 'free' && this.activeCount() >= FREE_CAP; }
+  hitCap() {
+    const T = this.T();
+    this.setState({ payWall: true });
+    this.flash(T.quotaCode, this.activeCount() + ' / ' + FREE_CAP + (this.state.lang === 'ru' ? ' активных задач' : ' active tasks'));
+  }
+
+  addTask(quad) {
+    const T = this.T();
+    if (this.capped()) { this.hitCap(); return; }
+    const id = 't' + pad(this.state.nextId);
+    const count = this.state.tasks.filter(x => !x.parent && x.quad === quad).length;
+    const t = { id, idx: -1, title: this.state.lang === 'ru' ? 'Новая задача' : 'New task', desc: '', quad, tags: [], color: 0, deadline: null, done: false, parent: null, position: count, createdAt: Date.now(), completedAt: null, xpLocked: null };
+    this.setState(s => ({ tasks: s.tasks.concat([t]), nextId: s.nextId + 1, modalId: id, status: s.status === 'completed' ? 'active' : s.status }));
+    this.flash(T.createdMsg, COLS[quad].code + ' · +' + XPQ[quad] + ' XP ' + (this.state.lang === 'ru' ? 'при выполнении' : 'on completion'));
+  }
+
+  addSub(parentId, title) {
+    const p = this.get(parentId); if (!p) return;
+    if (this.capped()) { this.hitCap(); return; }
+    const id = 't' + pad(this.state.nextId);
+    const pos = this.subsOf(parentId).length;
+    const t = { id, idx: -1, title: title || (this.state.lang === 'ru' ? 'Новая подзадача' : 'New subtask'), desc: '', quad: p.quad, tags: [], color: p.color, deadline: null, done: false, parent: parentId, position: pos, createdAt: Date.now(), completedAt: null, xpLocked: null };
+    this.setState(s => ({ tasks: s.tasks.concat([t]), nextId: s.nextId + 1, newSub: '' }));
+  }
+
+  promote(id) {
+    const t = this.get(id); if (!t) return;
+    this.moveTask(id, t.quad, null);
+  }
+
+  removeTask(id) {
+    this.setState(s => ({
+      tasks: s.tasks.filter(t => t.id !== id && t.parent !== id),
+      links: s.links.filter(l => l.a !== id && l.b !== id),
+      modalId: null
+    }));
+    this.flash(this.T().deleted, id);
+  }
+
+  // ---------- graph ----------
+  setCanvas = el => {
+    if (!el) { if (this.raf) cancelAnimationFrame(this.raf); this.raf = null; if (this.ro) { this.ro.disconnect(); this.ro = null; } this.canvas = null; return; }
+    if (this.canvas === el) return;
+    this.canvas = el;
+    this.ctx = el.getContext('2d');
+    this.ro = new ResizeObserver(() => this.sizeCanvas());
+    this.ro.observe(el.parentNode);
+    this.sizeCanvas();
+    this.seedNodes();
+    el.addEventListener('wheel', this.onWheel, { passive: false });
+    el.addEventListener('pointerdown', this.onDown);
+    el.addEventListener('pointermove', this.onMove);
+    window.addEventListener('pointerup', this.onUp);
+    this.loop();
+  };
+  sizeCanvas() {
+    const el = this.canvas; if (!el) return;
+    const r = el.parentNode.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    el.width = Math.max(1, Math.round(r.width * dpr));
+    el.height = Math.max(1, Math.round(r.height * dpr));
+    this.w = r.width; this.h = r.height; this.dpr = dpr;
+    if (!this.seeded) { this.view.x = r.width / 2; this.view.y = r.height / 2; }
+  }
+  seedNodes() {
+    if (this.seeded) return;
+    const list = this.state.tasks;
+    const r = rnd(9173);
+    list.forEach((t, i) => {
+      const a = i * 2.399963;
+      const rad = 30 + Math.sqrt(i + 1) * 46;
+      this.nodes[t.id] = { x: Math.cos(a) * rad + (r() - 0.5) * 30, y: Math.sin(a) * rad + (r() - 0.5) * 30, vx: 0, vy: 0 };
+    });
+    this.view.k = 0.82;
+    this.seeded = true;
+  }
+  toWorld(px, py) { return { x: (px - this.view.x) / this.view.k, y: (py - this.view.y) / this.view.k }; }
+  nodeAt(px, py) {
+    const p = this.toWorld(px, py);
+    const vis = this.visibleNodes();
+    for (let i = vis.length - 1; i >= 0; i--) {
+      const t = vis[i], n = this.nodes[t.id]; if (!n) continue;
+      const rr = this.radius(t) + 5;
+      if ((p.x - n.x) ** 2 + (p.y - n.y) ** 2 < rr * rr) return t;
+    }
+    return null;
+  }
+  radius(t) { return (t.parent ? 3.6 : 5.6) + Math.min(5, this.linksOf(t.id).length * 0.9) + (t.parent ? 0 : this.subsOf(t.id).length * 0.5); }
+  visibleNodes() { return this.state.tasks.filter(t => this.passes(t)); }
+
+  onWheel = e => {
+    e.preventDefault();
+    const r = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const before = this.toWorld(mx, my);
+    const k = Math.max(0.28, Math.min(3.4, this.view.k * (e.deltaY < 0 ? 1.12 : 0.893)));
+    this.view.k = k;
+    this.view.x = mx - before.x * k; this.view.y = my - before.y * k;
+    this.setState({ zoom: k });
+  };
+  onDown = e => {
+    const r = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const t = this.nodeAt(mx, my);
+    this.pointer = { mx, my, moved: false, node: t ? t.id : null, panX: this.view.x, panY: this.view.y, sx: mx, sy: my };
+    this.alpha = 1;
+    if (this.canvas.setPointerCapture) this.canvas.setPointerCapture(e.pointerId);
+  };
+  onMove = e => {
+    const r = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    if (this.pointer) {
+      const dx = mx - this.pointer.sx, dy = my - this.pointer.sy;
+      if (Math.abs(dx) + Math.abs(dy) > 3) this.pointer.moved = true;
+      if (this.pointer.node) {
+        const p = this.toWorld(mx, my);
+        const n = this.nodes[this.pointer.node];
+        if (n) { n.x = p.x; n.y = p.y; n.vx = 0; n.vy = 0; n.fixed = true; }
+        this.alpha = Math.max(this.alpha, 0.7);
+      } else {
+        this.view.x = this.pointer.panX + dx; this.view.y = this.pointer.panY + dy;
+      }
+      return;
+    }
+    const t = this.nodeAt(mx, my);
+    const id = t ? t.id : null;
+    if (id !== this.state.hover) this.setState({ hover: id });
+  };
+  onUp = e => {
+    if (!this.pointer) return;
+    const p = this.pointer; this.pointer = null;
+    if (p.node) { const n = this.nodes[p.node]; if (n) n.fixed = false; }
+    if (!p.moved && p.node) this.setState({ modalId: p.node });
+  };
+  tick() {
+    const nodes = this.visibleNodes();
+    const a = this.alpha === undefined ? 1 : this.alpha;
+    nodes.forEach(t => { if (!this.nodes[t.id]) this.nodes[t.id] = { x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200, vx: 0, vy: 0 }; });
+    for (let i = 0; i < nodes.length; i++) {
+      const ni = this.nodes[nodes[i].id];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const nj = this.nodes[nodes[j].id];
+        let dx = nj.x - ni.x, dy = nj.y - ni.y;
+        let d2 = dx * dx + dy * dy; if (d2 < 1) { d2 = 1; dx = (Math.random() - 0.5); dy = (Math.random() - 0.5); }
+        const d = Math.sqrt(d2);
+        const f = Math.min(6, 2600 / d2);
+        ni.vx -= (dx / d) * f * 0.02; ni.vy -= (dy / d) * f * 0.02;
+        nj.vx += (dx / d) * f * 0.02; nj.vy += (dy / d) * f * 0.02;
+      }
+    }
+    const ids = {}; nodes.forEach(t => { ids[t.id] = 1; });
+    const springs = this.state.links.filter(l => ids[l.a] && ids[l.b]).map(l => [l.a, l.b, 108])
+      .concat(this.state.tasks.filter(t => t.parent && ids[t.id] && ids[t.parent]).map(t => [t.id, t.parent, 46]));
+    springs.forEach(sp => {
+      const na = this.nodes[sp[0]], nb = this.nodes[sp[1]]; if (!na || !nb) return;
+      const dx = nb.x - na.x, dy = nb.y - na.y;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      const f = (d - sp[2]) * 0.012;
+      na.vx += (dx / d) * f; na.vy += (dy / d) * f;
+      nb.vx -= (dx / d) * f; nb.vy -= (dy / d) * f;
+    });
+    nodes.forEach(t => {
+      const n = this.nodes[t.id];
+      n.vx -= n.x * 0.0016; n.vy -= n.y * 0.0016;
+      if (n.fixed) { n.vx = 0; n.vy = 0; return; }
+      n.vx *= 0.86; n.vy *= 0.86;
+      n.x += n.vx * (0.35 + a); n.y += n.vy * (0.35 + a);
+    });
+    this.alpha = Math.max(0.06, a * 0.995);
+  }
+  draw() {
+    const ctx = this.ctx; if (!ctx) return;
+    const { w, h, dpr } = this;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#0a0b0c'; ctx.fillRect(0, 0, w, h);
+    const k = this.view.k, ox = this.view.x, oy = this.view.y;
+    const step = 56 * k;
+    ctx.strokeStyle = '#14171a'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = ox % step; x < w; x += step) { ctx.moveTo(Math.round(x) + 0.5, 0); ctx.lineTo(Math.round(x) + 0.5, h); }
+    for (let y = oy % step; y < h; y += step) { ctx.moveTo(0, Math.round(y) + 0.5); ctx.lineTo(w, Math.round(y) + 0.5); }
+    ctx.stroke();
+
+    const vis = this.visibleNodes();
+    const ids = {}; vis.forEach(t => { ids[t.id] = t; });
+    const sel = this.state.modalId, hov = this.state.hover;
+    const P = (n) => ({ x: n.x * k + ox, y: n.y * k + oy });
+
+    this.state.tasks.filter(t => t.parent && ids[t.id] && ids[t.parent]).forEach(t => {
+      const a = this.nodes[t.id], b = this.nodes[t.parent]; if (!a || !b) return;
+      const pa = P(a), pb = P(b);
+      ctx.strokeStyle = '#242a2e'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    this.state.links.forEach(l => {
+      if (!ids[l.a] || !ids[l.b]) return;
+      const a = this.nodes[l.a], b = this.nodes[l.b]; if (!a || !b) return;
+      const pa = P(a), pb = P(b);
+      const hot = sel === l.a || sel === l.b || hov === l.a || hov === l.b;
+      const dim = ids[l.a].done && ids[l.b].done;
+      ctx.strokeStyle = hot ? '#5d8ea3' : dim ? '#1d2225' : '#2b3236';
+      ctx.lineWidth = hot ? 1.4 : 1;
+      ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+    });
+
+    vis.forEach(t => {
+      const n = this.nodes[t.id]; if (!n) return;
+      const p = P(n);
+      const r = this.radius(t) * k;
+      const col = t.color ? COLORS[t.color].hex : QC[t.quad];
+      const isSel = sel === t.id, isHov = hov === t.id;
+      ctx.globalAlpha = t.done ? 0.34 : 1;
+      ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(2, r), 0, 6.2832);
+      ctx.fillStyle = t.done ? '#191d20' : t.color ? col : '#1c2226';
+      ctx.fill();
+      ctx.lineWidth = isSel ? 2 : 1;
+      ctx.strokeStyle = isSel ? '#d8dde0' : isHov ? '#8fb6c6' : t.done ? '#2b3236' : QC[t.quad];
+      ctx.stroke();
+      if (t.parent) {
+        ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(1, r * 0.35), 0, 6.2832);
+        ctx.fillStyle = '#0a0b0c'; ctx.fill();
+      }
+      if (k > 0.72) {
+        ctx.globalAlpha = t.done ? 0.4 : 0.92;
+        ctx.font = (t.parent ? 9 : 10) + "px 'JetBrains Mono', monospace";
+        ctx.fillStyle = isSel || isHov ? '#d8dde0' : '#7d878c';
+        ctx.textAlign = 'center';
+        const label = t.title.length > 26 ? t.title.slice(0, 25) + '…' : t.title;
+        ctx.fillText(label, p.x, p.y + r + 12);
+        if (k > 1.25) { ctx.fillStyle = '#6f797e'; ctx.font = "8px 'JetBrains Mono', monospace"; ctx.fillText(t.id.toUpperCase() + ' · ' + COLS[t.quad].code, p.x, p.y + r + 23); }
+      }
+      ctx.globalAlpha = 1;
+    });
+  }
+  loop = () => {
+    if (!this.canvas) return;
+    this.tick(); this.draw();
+    this.raf = requestAnimationFrame(this.loop);
+  };
+  zoomBy(f) {
+    const k = Math.max(0.28, Math.min(3.4, this.view.k * f));
+    const cx = this.w / 2, cy = this.h / 2;
+    const b = this.toWorld(cx, cy);
+    this.view.k = k; this.view.x = cx - b.x * k; this.view.y = cy - b.y * k;
+    this.setState({ zoom: k });
+  }
+  fit() {
+    const vis = this.visibleNodes().map(t => this.nodes[t.id]).filter(Boolean);
+    if (!vis.length) return;
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    vis.forEach(n => { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); });
+    const pad = 70;
+    const k = Math.max(0.28, Math.min(2.4, Math.min(this.w / (x1 - x0 + pad * 2), this.h / (y1 - y0 + pad * 2))));
+    this.view.k = k;
+    this.view.x = this.w / 2 - ((x0 + x1) / 2) * k;
+    this.view.y = this.h / 2 - ((y0 + y1) / 2) * k;
+    this.setState({ zoom: k });
+  }
+
+  // ---------- heatmap ----------
+  heatData() {
+    const days = [];
+    const end = new Date(this.today.getFullYear(), this.today.getMonth(), this.today.getDate());
+    const r = rnd(4242);
+    let start = new Date(end.getTime() - 364 * 86400e3);
+    start = new Date(start.getTime() - start.getDay() * 86400e3);
+    for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86400e3)) {
+      const wd = d.getDay();
+      const base = wd === 0 || wd === 6 ? 0.1 : 0.26;
+      const active = r() < base;
+      const completed = active ? 1 + Math.floor(r() * 2.2) : 0;
+      const created = active ? Math.floor(r() * 3.2) : 0;
+      days.push({ date: new Date(d), completed, created, total: completed + created });
+    }
+    return days;
+  }
+  render_heat() {
+    const T = this.T();
+    if (!this.days) this.days = this.heatData();
+    const days = this.days;
+    const MON = this.state.lang === 'ru'
+      ? ['ЯНВ', 'ФЕВ', 'МАР', 'АПР', 'МАЙ', 'ИЮН', 'ИЮЛ', 'АВГ', 'СЕН', 'ОКТ', 'НОЯ', 'ДЕК']
+      : ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const SHADES = ['#121517', '#1c3226', '#2a5238', '#3d7a4e', '#5fb37f'];
+    const BD = ['#1a1e21', '#24392c', '#33603f', '#478857', '#6cbf8b'];
+    const lvl = n => (n === 0 ? 0 : n === 1 ? 1 : n <= 2 ? 2 : n <= 4 ? 3 : 4);
+    const cells = days.map((d, i) => {
+      const l = lvl(d.total);
+      return {
+        bg: SHADES[l], bd: BD[l],
+        hover: () => this.setState({ heatSel: i })
+      };
+    });
+    const weeks = Math.ceil(days.length / 7);
+    const months = [];
+    for (let wI = 0; wI < weeks; wI++) {
+      const d = days[wI * 7]; if (!d) continue;
+      const m = d.date.getMonth();
+      const last = months[months.length - 1];
+      if (!last || last.m !== m) months.push({ m, label: MON[m], weeks: 1 });
+      else last.weeks++;
+    }
+    const sel = this.state.heatSel === null ? days[days.length - 1] : days[this.state.heatSel];
+    const fmt = d => pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear();
+    const readout = sel
+      ? fmt(sel.date) + '  ·  ' + sel.completed + ' ' + (this.state.lang === 'ru' ? 'завершено' : 'completed') + '  ·  ' + sel.created + ' ' + (this.state.lang === 'ru' ? 'создано' : 'created')
+      : '';
+    const DL = this.state.lang === 'ru' ? ['ВС', '', 'ВТ', '', 'ЧТ', '', 'СБ'] : ['SUN', '', 'TUE', '', 'THU', '', 'SAT'];
+    return {
+      cells, readout,
+      months: months.map(m => ({ label: m.weeks > 2 ? m.label : '', w: m.weeks * 13 })),
+      dayLabels: DL,
+      scale: SHADES.map((s, i) => ({ bg: s, bd: BD[i] })),
+      totals: days.reduce((a, d) => ({ c: a.c + d.completed, n: a.n + d.created }), { c: 0, n: 0 })
+    };
+  }
+
+  identicon(name, accent) {
+    const h = hash(name);
+    return Array.from({ length: 16 }, (_, i) => ({ bg: ((h >> (i % 30)) & 1) ? accent : '#1c2023' }));
+  }
+
+  renderVals() {
+    const T = this.T();
+    const s = this.state;
+    const lang = s.lang;
+    const tasks = s.tasks;
+    const heat = this.render_heat();
+    const me = { name: ME_ROW[0], xp: Math.round(heat.totals.c * 32 / 10) * 10, streak: ME_ROW[3] };
+    const lvl = levelOf(me.xp);
+    const cur = xpForLevel(lvl), next = xpForLevel(lvl + 1);
+    const ratio = (me.xp - cur) / Math.max(1, next - cur);
+
+    const chip = on => ({ bg: on ? '#14201c' : 'transparent', bd: on ? '#3a5c46' : '#23272b', fg: on ? '#7fc89b' : '#8b9599' });
+    const chipB = on => ({ bg: on ? '#141b20' : 'transparent', bd: on ? '#3a5260' : '#23272b', fg: on ? '#8fbdd0' : '#8b9599' });
+
+    const statusFilters = [
+      { k: 'active', label: T.active }, { k: 'completed', label: T.completed }, { k: 'all', label: T.all }
+    ].map(f => Object.assign({ label: f.label, pick: () => this.setState({ status: f.k }) }, chip(s.status === f.k)));
+
+    const tagFilters = this.allTags().map(tg => Object.assign({
+      label: tg, pick: () => this.setState(st => ({ tagSel: st.tagSel.indexOf(tg) >= 0 ? st.tagSel.filter(x => x !== tg) : st.tagSel.concat([tg]) }))
+    }, chipB(s.tagSel.indexOf(tg) >= 0)));
+
+    const colorFilters = COLORS.map(c => ({
+      name: lang === 'ru' ? c.ru : c.en, swatch: c.id === 0 ? 'transparent' : c.hex,
+      bd: s.colorSel.indexOf(c.id) >= 0 ? '#d8dde0' : '#2e343a',
+      pick: () => this.setState(st => ({ colorSel: st.colorSel.indexOf(c.id) >= 0 ? st.colorSel.filter(x => x !== c.id) : st.colorSel.concat([c.id]) }))
+    }));
+
+    const quadFilters = COLS.map((c, i) => Object.assign({
+      code: c.code, accent: QC[i], label: lang === 'ru' ? c.ruSub : c.enSub,
+      count: tasks.filter(t => t.quad === i && (s.status === 'all' || (s.status === 'active' ? !t.done : t.done))).length,
+      pick: () => this.setState(st => ({ quadSel: st.quadSel.indexOf(i) >= 0 ? st.quadSel.filter(x => x !== i) : st.quadSel.concat([i]) }))
+    }, chipB(s.quadSel.indexOf(i) >= 0)));
+
+    const linkFilters = [['any', T.any], ['linked', T.linked], ['unlinked', T.unlinked]].map(f =>
+      Object.assign({ label: f[1], pick: () => this.setState({ linkSel: f[0] }) }, chipB(s.linkSel === f[0])));
+
+    const dlOptions = [['any', T.dlAny], ['overdue', T.dlOverdue], ['today', T.dlToday], ['week', T.dlWeek], ['none', T.dlNone]]
+      .map(o => ({ v: o[0], label: o[1] }));
+
+    const visibleParents = tasks.filter(t => !t.parent);
+    const pad3 = s.density === 'compact' ? '8px 9px 7px 5px' : '11px 11px 10px 6px';
+
+    const columns = COLS.map((c, qi) => {
+      const items = visibleParents.filter(t => t.quad === qi && (this.passes(t) || this.subsOf(t.id).some(x => this.passes(x))))
+        .sort((a, b) => a.position - b.position);
+      return {
+        code: c.code, name: lang === 'ru' ? c.ru : c.en, sub: lang === 'ru' ? c.ruSub : c.enSub,
+        accent: QC[qi], xp: XPQ[qi], count: items.length,
+        bg: s.dropCol === qi ? '#0f1315' : '#0a0b0c',
+        empty: items.length === 0,
+        emptyArt: '┌───────────────┐\n│               │\n│       ·       │\n│               │\n└───────────────┘',
+        emptyMsg: lang === 'ru' ? c.ruEmpty : c.enEmpty,
+        add: () => this.addTask(qi),
+        onDragOver: e => { e.preventDefault(); if (s.dropCol !== qi || s.dropIdx !== null) this.setState({ dropCol: qi, dropIdx: null }); },
+        onDrop: e => { e.preventDefault(); if (s.drag) this.moveTask(s.drag, qi, null); this.setState({ drag: null, dropCol: null, dropIdx: null }); },
+        dropTail: s.dropCol === qi && s.dropIdx === null && !!s.drag,
+        items: items.map((t, idx) => {
+          const subs = this.subsOf(t.id);
+          const open = s.subsDefault ? !s.collapsed[t.id] : !!s.collapsed[t.id] === false ? false : false;
+          const expanded = s.collapsed[t.id] === undefined ? s.subsDefault : !s.collapsed[t.id];
+          const doneSubs = subs.filter(x => x.done).length;
+          const di = this.dlInfo(t);
+          const lk = this.linksOf(t.id).length;
+          const dragging = s.drag === t.id;
+          return {
+            title: t.title, code: t.id.toUpperCase(),
+            color: t.color ? COLORS[t.color].hex : '#23272b',
+            cardBg: t.done ? '#0c0e0f' : dragging ? '#101416' : '#0e1112',
+            cardBd: dragging ? '#6fa8c0' : t.done ? '#191d20' : '#23272b',
+            cardBdStyle: dragging ? 'dashed' : 'solid',
+            opacity: dragging ? 0.45 : t.done ? 0.62 : 1,
+            pad: pad3,
+            titleFg: t.done ? '#7d878c' : '#d8dde0',
+            strike: t.done ? 'line-through' : 'none',
+            check: t.done ? '[×]' : '[ ]',
+            checkFg: t.done ? '#5fb37f' : '#79838a',
+            dlText: di.text, dlFg: di.fg, dlBd: di.bd,
+            tags: t.tags, hasLinks: lk > 0, linkCount: lk,
+            xpText: (t.done ? '' : '+') + (t.done ? t.xpLocked : this.xpOf(t)) + ' XP',
+            hasSubs: subs.length > 0,
+            subsOpen: expanded && subs.length > 0,
+            chevIcon: expanded ? '▾' : '▸',
+            chevText: '',
+            subText: doneSubs + '/' + subs.length + ' ' + T.subsOf,
+            subBar: bar(subs.length ? doneSubs / subs.length : 0, 6),
+            chev: e => { e.stopPropagation(); this.setState(st => ({ collapsed: Object.assign({}, st.collapsed, { [t.id]: expanded }) })); },
+            open: () => this.setState({ modalId: t.id }),
+            toggle: e => { e.stopPropagation(); this.toggleDone(t.id); },
+            addSub: e => { e.stopPropagation(); this.addSub(t.id); },
+            onDragStart: e => { e.stopPropagation(); this.setState({ drag: t.id }); },
+            onDragEnd: () => this.setState({ drag: null, dropCol: null, dropIdx: null }),
+            onDragOver: e => { e.preventDefault(); e.stopPropagation(); if (s.dropCol !== qi || s.dropIdx !== idx) this.setState({ dropCol: qi, dropIdx: idx }); },
+            onDrop: e => { e.preventDefault(); e.stopPropagation(); if (s.drag && s.drag !== t.id) this.moveTask(s.drag, qi, t.id); this.setState({ drag: null, dropCol: null, dropIdx: null }); },
+            dropLine: s.dropCol === qi && s.dropIdx === idx && !!s.drag && s.drag !== t.id,
+            subs: subs.map((x, j) => {
+              const xdi = this.dlInfo(x);
+              return {
+                title: x.title, branch: j === subs.length - 1 ? '└' : '├',
+                color: x.color ? COLORS[x.color].hex : '#2e343a',
+                bd: s.drag === x.id ? '#6fa8c0' : '#1c2023',
+                opacity: s.drag === x.id ? 0.45 : x.done ? 0.6 : 1,
+                fg: x.done ? '#7d878c' : '#c5cbcf',
+                strike: x.done ? 'line-through' : 'none',
+                check: x.done ? '[×]' : '[ ]',
+                checkFg: x.done ? '#5fb37f' : '#79838a',
+                dlText: x.done ? '' : xdi.text === '—' ? '' : xdi.text,
+                dlFg: xdi.fg,
+                xpText: (x.done ? '' : '+') + (x.done ? x.xpLocked : this.xpOf(x)) + ' XP',
+                open: () => this.setState({ modalId: x.id }),
+                toggle: e => { e.stopPropagation(); this.toggleDone(x.id); },
+                onDragStart: e => { e.stopPropagation(); this.setState({ drag: x.id }); },
+                onDragEnd: () => this.setState({ drag: null, dropCol: null, dropIdx: null })
+              };
+            })
+          };
+        })
+      };
+    });
+
+    // search
+    const q = s.query.trim().toLowerCase();
+    const searchResults = q ? tasks.filter(t => (t.title + ' ' + (t.desc || '') + ' ' + (t.tags || []).map(x => '#' + x).join(' ')).toLowerCase().indexOf(q) >= 0).slice(0, 14).map(t => {
+      const hitTag = (t.tags || []).find(x => ('#' + x).indexOf(q) >= 0);
+      return {
+        title: t.title, code: t.id.toUpperCase(), quad: COLS[t.quad].code, accent: QC[t.quad],
+        state: t.done ? '[' + T.completed + ']' : t.parent ? '[SUB]' : '[' + T.active + ']',
+        stateFg: t.done ? '#5fb37f' : '#8b9599',
+        hit: hitTag ? '#' + hitTag + (t.tags.length > 1 ? '  ' + t.tags.filter(x => x !== hitTag).map(x => '#' + x).join(' ') : '') : (t.desc || t.title).slice(0, 96),
+        open: () => this.setState({ modalId: t.id, searchOpen: false })
+      };
+    }) : [];
+
+    // modal
+    const mt = s.modalId ? this.get(s.modalId) : null;
+    let modal = { open: false, subs: [], links: [], tags: [], quadOptions: [], colorOptions: [], metaRows: [], linkCandidates: [] };
+    if (mt) {
+      const subs = this.subsOf(mt.id);
+      const doneSubs = subs.filter(x => x.done).length;
+      const di = this.dlInfo(mt);
+      const d = mt.deadline ? new Date(mt.deadline) : null;
+      const parent = mt.parent ? this.get(mt.parent) : null;
+      const lks = this.linksOf(mt.id);
+      const fmtDate = ts => { const x = new Date(ts); return pad(x.getDate()) + '.' + pad(x.getMonth() + 1) + '.' + x.getFullYear() + ' ' + pad(x.getHours()) + ':' + pad(x.getMinutes()); };
+      modal = {
+        open: true, title: mt.title, desc: mt.desc || '',
+        code: mt.id.toUpperCase(), quadCode: COLS[mt.quad].code + ' · ' + (lang === 'ru' ? COLS[mt.quad].ruSub : COLS[mt.quad].enSub),
+        accent: QC[mt.quad],
+        state: mt.done ? '[ ' + T.completed + ' ]' : '[ ' + T.active + ' ]',
+        stateFg: mt.done ? '#5fb37f' : '#8b9599', stateBd: mt.done ? '#2c4536' : '#23272b',
+        isSub: !!mt.parent, canSub: !mt.parent,
+        parentLine: parent ? '└ ' + T.parentNode + ': ' + parent.title : '',
+        xpText: (mt.done ? T.xpLocked + ' ' : '+') + (mt.done ? mt.xpLocked : this.xpOf(mt)) + ' XP',
+        subSummary: subs.length ? doneSubs + '/' + subs.length + ' ' + T.done + '  ' + bar(doneSubs / subs.length, 8) : '0/0',
+        linkSummary: lks.length + '',
+        newSub: s.newSub, newTag: s.newTag,
+        date: d ? d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) : '',
+        time: d ? pad(d.getHours()) + ':' + pad(d.getMinutes()) : '',
+        dlText: di.text, dlFg: di.fg, dlBd: di.bd,
+        doneLabel: mt.done ? T.reopen : T.resolve,
+        doneBg: mt.done ? 'transparent' : '#14201c',
+        doneBd: mt.done ? '#23272b' : '#3a5c46',
+        doneFg: mt.done ? '#8b9599' : '#7fc89b',
+        setTitle: e => this.patch(mt.id, { title: e.target.value }),
+        setDesc: e => this.patch(mt.id, { desc: e.target.value }),
+        setNewSub: e => this.setState({ newSub: e.target.value }),
+        addSub: () => this.addSub(mt.id, s.newSub.trim()),
+        setNewTag: e => this.setState({ newTag: e.target.value }),
+        addTag: () => { const v = s.newTag.trim().replace(/^#/, ''); if (!v) return; this.patch(mt.id, t => ({ tags: t.tags.indexOf(v) >= 0 ? t.tags : t.tags.concat([v]) })); this.setState({ newTag: '' }); },
+        setDate: e => {
+          const v = e.target.value; if (!v) return this.patch(mt.id, { deadline: null });
+          const base = mt.deadline ? new Date(mt.deadline) : new Date();
+          const p = v.split('-');
+          this.patch(mt.id, { deadline: new Date(+p[0], +p[1] - 1, +p[2], base.getHours(), base.getMinutes()).getTime() });
+        },
+        setTime: e => {
+          const v = e.target.value; if (!v) return;
+          const base = mt.deadline ? new Date(mt.deadline) : new Date();
+          const p = v.split(':');
+          this.patch(mt.id, { deadline: new Date(base.getFullYear(), base.getMonth(), base.getDate(), +p[0], +p[1]).getTime() });
+        },
+        clearDate: () => this.patch(mt.id, { deadline: null }),
+        toggleDone: () => this.toggleDone(mt.id),
+        promoteSelf: () => this.promote(mt.id),
+        remove: () => this.removeTask(mt.id),
+        addLink: e => {
+          const v = e.target.value; if (!v) return;
+          this.setState(st => ({ links: st.links.concat([{ a: mt.id, b: v, type: 'RELATED' }]) }));
+          this.flash(T.linkMade, mt.id.toUpperCase() + ' ◈ ' + v.toUpperCase());
+        },
+        linkCandidates: tasks.filter(t => t.id !== mt.id && t.parent !== mt.id && !lks.some(l => l.a === t.id || l.b === t.id))
+          .slice(0, 40).map(t => ({ id: t.id, label: COLS[t.quad].code + ' · ' + t.title.slice(0, 44) })),
+        quadOptions: COLS.map((c, i) => Object.assign({
+          code: c.code, accent: QC[i], label: lang === 'ru' ? c.ruSub : c.enSub,
+          xp: '+' + (mt.parent ? Math.round(XPQ[i] * 0.35) : XPQ[i]) + ' XP',
+          pick: () => { if (mt.parent) this.patch(mt.id, { quad: i }); else this.moveTask(mt.id, i, null); }
+        }, chipB(mt.quad === i))),
+        colorOptions: COLORS.map(c => ({
+          name: lang === 'ru' ? c.ru : c.en, swatch: c.id === 0 ? 'transparent' : c.hex,
+          bd: mt.color === c.id ? '#d8dde0' : '#2e343a', mark: c.id === 0 ? '∅' : '',
+          pick: () => this.patch(mt.id, { color: c.id })
+        })),
+        tags: (mt.tags || []).map(name => ({ name, remove: () => this.patch(mt.id, t => ({ tags: t.tags.filter(x => x !== name) })) })),
+        subs: subs.map((x, j) => ({
+          title: x.title, color: x.color ? COLORS[x.color].hex : '#2e343a',
+          check: x.done ? '[×]' : '[ ]', checkFg: x.done ? '#5fb37f' : '#79838a',
+          fg: x.done ? '#7d878c' : '#d8dde0', strike: x.done ? 'line-through' : 'none',
+          xpText: (x.done ? '' : '+') + (x.done ? x.xpLocked : this.xpOf(x)) + ' XP',
+          setTitle: e => this.patch(x.id, { title: e.target.value }),
+          toggle: () => this.toggleDone(x.id),
+          up: () => { if (j === 0) return; const prev = subs[j - 1]; this.patch(x.id, { position: prev.position }); this.patch(prev.id, { position: x.position }); },
+          down: () => { if (j === subs.length - 1) return; const nx = subs[j + 1]; this.patch(x.id, { position: nx.position }); this.patch(nx.id, { position: x.position }); },
+          promote: () => this.promote(x.id),
+          open: () => this.setState({ modalId: x.id })
+        })),
+        links: lks.map(l => {
+          const other = this.get(l.a === mt.id ? l.b : l.a) || { title: '—', quad: 0, id: '' };
+          return {
+            title: other.title, quad: COLS[other.quad].code, accent: QC[other.quad], type: l.type,
+            setType: e => { const v = e.target.value; this.setState(st => ({ links: st.links.map(z => (z === l ? Object.assign({}, z, { type: v }) : z)) })); },
+            open: () => this.setState({ modalId: other.id }),
+            remove: () => this.setState(st => ({ links: st.links.filter(z => z !== l) }))
+          };
+        }),
+        metaRows: [
+          { k: T.nodeId, v: mt.id.toUpperCase() },
+          { k: T.created, v: fmtDate(mt.createdAt) },
+          { k: T.completedAt, v: mt.completedAt ? fmtDate(mt.completedAt) : '—' },
+          { k: T.position, v: COLS[mt.quad].code + ' / ' + (Math.round(mt.position) + 1) },
+          { k: T.xpLocked, v: mt.xpLocked === null ? '—' : mt.xpLocked + ' XP (' + COLS[mt.quad].code + ')' }
+        ]
+      };
+    }
+
+    const totalDone = tasks.filter(t => t.done).length;
+    const totalActive = tasks.filter(t => !t.done).length;
+
+    const statCards = [
+      { label: lang === 'ru' ? 'ЗАВЕРШЕНО ЗА 365Д' : 'COMPLETED · 365D', value: heat.totals.c, fg: '#5fb37f', note: lang === 'ru' ? 'из журнала активности' : 'from activity log' },
+      { label: lang === 'ru' ? 'СОЗДАНО ЗА 365Д' : 'CREATED · 365D', value: heat.totals.n, fg: '#d8dde0', note: lang === 'ru' ? 'новых узлов' : 'new nodes' },
+      { label: lang === 'ru' ? 'СЕРИЯ ВХОДОВ' : 'LOGIN STREAK', value: me.streak + 'D', fg: '#d2a04a', note: lang === 'ru' ? 'лучший результат 31Д' : 'best 31D' },
+      { label: 'LIFETIME XP', value: me.xp.toLocaleString('en-US').replace(/,/g, ' '), fg: '#9b8fd0', note: 'LVL.' + lvl },
+      { label: lang === 'ru' ? 'АКТИВНО / АРХИВ' : 'ACTIVE / ARCHIVED', value: totalActive + ' / ' + totalDone, fg: '#d8dde0', note: lang === 'ru' ? 'узлов в графе' : 'nodes in graph' }
+    ];
+
+    const liveProgress = { CENTURION: heat.totals.c, XP_10K: me.xp, STREAK_30: me.streak, NETWORK_BUILDER: s.links.length, ARCHITECT: lvl };
+    const achievements = ACH.map(a => {
+      if (liveProgress[a[0]] !== undefined) a = a.slice(0, 4).concat([liveProgress[a[0]]]);
+      const done = a[4] >= a[3];
+      const r = Math.min(1, a[4] / a[3]);
+      return {
+        code: a[0], desc: lang === 'ru' ? a[2] : a[1], icon: done ? '◆' : '◇',
+        iconFg: done ? '#d2a04a' : '#6a7479',
+        titleFg: done ? '#d8dde0' : '#8b9599',
+        state: done ? 'UNLOCKED' : 'LOCKED',
+        stateFg: done ? '#5fb37f' : '#6f797e',
+        bar: bar(r, 10), barFg: done ? '#5fb37f' : '#6f7a80',
+        progress: a[4] + '/' + a[3]
+      };
+    });
+
+    const per = s.lbPeriod;
+    const rows = LB.concat([[ME_ROW[0], me.xp, lvl, ME_ROW[3], ME_ROW[4]]]).map(r => ({
+      name: r[0], lvl: r[2], streak: r[3],
+      xp: per === 'all' ? r[1] : per === 'month' ? r[4][0] : r[4][1],
+      isMe: r[0] === ME_ROW[0]
+    })).filter(r => !r.isMe || s.showInLb).sort((a, b) => b.xp - a.xp);
+
+    const leaderboard = rows.map((r, i) => ({
+      rank: pad(i + 1), name: r.name,
+      badge: r.isMe ? (lang === 'ru' ? '· вы' : '· you') : '',
+      rankFg: i === 0 ? '#d2a04a' : i < 3 ? '#c5cbcf' : '#79838a',
+      nameFg: r.isMe ? '#7fc89b' : '#d8dde0',
+      bg: r.isMe ? '#101512' : 'transparent',
+      xp: r.xp.toLocaleString('en-US').replace(/,/g, ' '),
+      level: 'LVL.' + r.lvl, streak: r.streak + 'D',
+      iconCells: this.identicon(r.name, r.isMe ? '#3f7a55' : '#2e343a')
+    }));
+
+    const lbPeriods = [['week', T.week], ['month', T.month], ['all', T.allTime]].map(p =>
+      Object.assign({ label: p[1], pick: () => this.setState({ lbPeriod: p[0] }) }, chipB(per === p[0])));
+
+    const eventLog = [
+      { time: '14:22:07', code: T.resolved, detail: 'Fix billing webhook duplicate charges', xp: '+50 XP', fg: '#5fb37f' },
+      { time: '14:21:55', code: 'SUBTASK_RESOLVED', detail: 'Backfill affected invoices', xp: '+18 XP', fg: '#5fb37f' },
+      { time: '11:04:31', code: T.linkMade, detail: 'T01 ◈ T03 · DEPENDS_ON', xp: '', fg: '#6fa8c0' },
+      { time: '09:47:12', code: T.createdMsg, detail: 'Renew production TLS certificates · Q1', xp: '', fg: '#8b9599' },
+      { time: '09:12:00', code: 'STREAK_EXTENDED', detail: (lang === 'ru' ? 'серия ' : 'streak ') + me.streak + 'D', xp: '', fg: '#d2a04a' },
+      { time: '08:58:40', code: 'ACHIEVEMENT_UNLOCKED', detail: 'FIREFIGHTER · 25/25', xp: '', fg: '#d2a04a' }
+    ];
+
+    const btn = on => ({ bg: on ? '#14201c' : 'transparent', bd: on ? '#3a5c46' : '#23272b', fg: on ? '#7fc89b' : '#8b9599' });
+    const settingsGroups = [
+      {
+        title: T.interface, rows: [
+          { label: T.lang, note: T.langNote, value: '', controls: [Object.assign({ label: 'ENGLISH', act: () => this.setState({ lang: 'en' }) }, btn(lang === 'en')), Object.assign({ label: 'РУССКИЙ', act: () => this.setState({ lang: 'ru' }) }, btn(lang === 'ru'))] },
+          { label: T.density, note: T.densityNote, value: '', controls: [Object.assign({ label: T.compact, act: () => this.setState({ density: 'compact' }) }, btn(s.density === 'compact')), Object.assign({ label: T.cozy, act: () => this.setState({ density: 'cozy' }) }, btn(s.density === 'cozy'))] },
+          { label: T.subDefault, note: T.subDefaultNote, value: '', controls: [Object.assign({ label: s.subsDefault ? T.on : T.off, act: () => this.setState({ subsDefault: !s.subsDefault }) }, btn(s.subsDefault))] }
+        ]
+      },
+      {
+        title: T.privacy, rows: [
+          { label: 'show_in_leaderboard', note: T.lbToggleNote, value: '', controls: [Object.assign({ label: s.showInLb ? T.on : T.off, act: () => this.setState({ showInLb: !s.showInLb }) }, btn(s.showInLb))] },
+          { label: T.exportData, note: T.exportNote, value: '', controls: [{ label: T.export, bg: 'transparent', bd: '#23272b', fg: '#6fa8c0', act: () => this.flash('EXPORT_QUEUED', 'quest_graph.json') }] }
+        ]
+      },
+      {
+        title: T.integrations, rows: [
+          { label: T.gcal, note: T.gcalNote, value: '', controls: [{ label: '[ ' + T.soon + ' ]', bg: 'transparent', bd: '#38332a', fg: '#d2a04a', act: () => this.flash('FEATURE_NOT_SHIPPED', T.gcal + ' · ' + T.soon) }] }
+        ]
+      },
+      {
+        title: T.account, rows: [
+          { label: T.username, note: T.accountNote, value: ME_ROW[0], controls: [] },
+          { label: T.email, note: '', value: 'operator@quest.terminal', controls: [] },
+          { label: T.planRow, note: T.planRowNote, value: '', controls: [{ label: s.plan === 'pro' ? T.planProName : T.planFreeName + ' · ' + this.activeCount() + '/' + FREE_CAP, bg: s.plan === 'pro' ? '#171526' : 'transparent', bd: s.plan === 'pro' ? '#3f3a63' : '#23272b', fg: s.plan === 'pro' ? '#b6abe4' : '#d2a04a', act: () => this.setState({ tab: 'upgrade' }) }] },
+          { label: T.session, note: T.sessionNote, value: '', controls: [{ label: T.signOut, bg: 'transparent', bd: '#23272b', fg: '#6fa8c0', act: () => this.setState({ tab: 'landing', payWall: false, searchOpen: false, modalId: null }) }] },
+          { label: T.dangerZone, note: T.dangerNote, value: '', controls: [{ label: T.wipe, bg: 'transparent', bd: '#4a3330', fg: '#d2685a', act: () => this.flash('CONFIRMATION_REQUIRED', lang === 'ru' ? 'действие требует подтверждения по email' : 'action requires email confirmation') }] }
+        ]
+      }
+    ];
+
+    const pro = s.plan === 'pro';
+    const plans = [
+      { name: T.planFreeName, price: '$0', per: '', note: pro ? '' : T.planFreeNote, feats: T.planFree, accent: '#7d878c', current: !pro,
+        ctaLabel: T.planKeepFree, ctaBg: 'transparent', ctaBd: '#23272b', ctaFg: '#8b9599', cta: () => this.setState({ tab: 'board', payWall: false }) },
+      { name: T.planProName, price: this.props.monthlyPrice ?? '$6', per: T.planPerMonth, note: T.planProNote, feats: T.planPro.concat([T.gcal + ' · ' + T.soon]), accent: '#9b8fd0', current: pro,
+        ctaLabel: pro ? T.planCtaOn : T.planCta, ctaBg: pro ? '#171526' : '#23204a', ctaBd: pro ? '#3f3a63' : '#4c4487', ctaFg: pro ? '#b6abe4' : '#d6cffb',
+        cta: () => { if (!pro) { this.setState({ plan: 'pro', payWall: false }); this.flash('SUBSCRIPTION_ACTIVE', T.planProName + ' · ' + T.planProNote); } } },
+      { name: T.planHostName, price: '$0', per: '', note: T.planHostNote, feats: T.planHost, accent: '#5fb37f', current: false,
+        ctaLabel: T.planHostCta, ctaBg: 'transparent', ctaBd: '#2f4a3a', ctaFg: '#7fc89b', cta: () => window.open(this.gh(), '_blank', 'noopener') }
+    ];
+
+    const navDef = [['board', T.board, '01'], ['graph', T.graph, '02'], ['activity', T.activity, '03'], ['leaderboard', T.leaderboard, '04']];
+    const nav = navDef.map(n => ({
+      label: n[1], key: n[2], go: () => this.setState({ tab: n[0] }),
+      bg: s.tab === n[0] ? '#14171a' : 'transparent',
+      fg: s.tab === n[0] ? '#d8dde0' : '#8b9599',
+      mark: s.tab === n[0] ? '#5fb37f' : 'transparent'
+    }));
+
+    const hv = s.hover ? this.get(s.hover) : null;
+    const hoverCard = hv ? {
+      on: true, code: hv.id.toUpperCase(), quad: COLS[hv.quad].code, accent: QC[hv.quad],
+      state: hv.done ? '[' + T.completed + ']' : hv.parent ? '[SUB]' : '[' + T.active + ']',
+      stateFg: hv.done ? '#5fb37f' : '#8b9599',
+      title: hv.title,
+      meta: [this.dlInfo(hv).text, (hv.tags || []).map(x => '#' + x).join(' '), '◈' + this.linksOf(hv.id).length, (hv.done ? hv.xpLocked : this.xpOf(hv)) + ' XP'].filter(Boolean).join('   ')
+    } : { on: false };
+
+    const totalVis = this.visibleNodes ? this.state.tasks.filter(t => this.passes(t)).length : 0;
+    const visIds = {}; this.state.tasks.filter(t => this.passes(t)).forEach(t => { visIds[t.id] = 1; });
+
+    return {
+      wordmarkDisplay: s.winW < 1000 ? 'none' : 'inline',
+      navPad: s.winW < 1180 ? '0 10px' : '0 15px',
+      navKeyDisplay: s.winW < 1280 ? 'none' : 'inline',
+      barDisplay: s.winW < 1180 ? 'none' : 'inline',
+      searchHint: s.winW < 1100 ? '' : 'CTRL+K',
+      L: T, langLabel: lang === 'en' ? 'EN / RU' : 'RU / EN',
+      toggleLang: () => { this.days = null; this.setState({ lang: lang === 'en' ? 'ru' : 'en' }); },
+      isLanding: s.tab === 'landing', isUpgrade: s.tab === 'upgrade',
+      shellDisplay: s.tab === 'landing' ? 'none' : 'flex',
+      gh: this.gh(), li: this.props.linkedinUrl ?? LI_URL,
+      bgRef: el => this.bgGraph(el),
+      enterApp: () => this.setState({ tab: 'board', payWall: false }),
+      goLanding: () => this.setState({ tab: 'landing', payWall: false, searchOpen: false, modalId: null }),
+      goPlans: () => this.setState({ tab: 'upgrade', payWall: false, searchOpen: false, modalId: null }),
+      closePay: () => this.setState({ payWall: false }),
+      payWall: s.payWall,
+      land: {
+        feat: T.landFeat.map(x => ({ n: x[0], title: x[1], body: x[2] })),
+        board: '┌─ Q1 ─────────┬─ Q2 ─────────┬─ Q3 ─────────┬─ Q4 ─────────┐\n│ ship hotfix  │ write spec   │ reply inbox  │ read backlog │\n│ ├─ patch     │ ├─ outline   │ triage bugs  │              │\n│ └─ deploy    │ └─ review    │              │              │\n└──────────────┴──────────────┴──────────────┴──────────────┘'
+      },
+      plan: {
+        badge: s.plan === 'pro' ? T.planProName : T.planFreeName,
+        quota: s.plan === 'pro' ? '∞' : this.activeCount() + '/' + FREE_CAP,
+        bg: s.plan === 'pro' ? '#171526' : 'transparent',
+        bd: s.plan === 'pro' ? '#3f3a63' : '#38332a',
+        fg: s.plan === 'pro' ? '#b6abe4' : '#d2a04a',
+        subtitle: this.capped() ? T.planSubCapped : T.planSub,
+        cards: plans
+      },
+      nav, isBoard: s.tab === 'board', isGraph: s.tab === 'graph', isActivity: s.tab === 'activity',
+      isLeaderboard: s.tab === 'leaderboard', isProfile: s.tab === 'profile', isSettings: s.tab === 'settings',
+      goProfile: () => this.setState({ tab: 'profile' }), goSettings: () => this.setState({ tab: 'settings' }),
+      profBg: s.tab === 'profile' ? '#14171a' : 'transparent', setBg: s.tab === 'settings' ? '#14171a' : 'transparent',
+      me: {
+        name: me.name, handle: '@' + me.name + ' · UID_4417', level: lvl,
+        bar: bar(ratio, 8), barLong: bar(ratio, 16),
+        xpText: (me.xp - cur) + '/' + (next - cur) + ' XP',
+        nextText: (next - me.xp) + ' XP ' + T.levelBar,
+        streakText: (s.winW < 1180 ? '' : 'STREAK ') + me.streak + 'D',
+        joined: (lang === 'ru' ? 'в системе с ' : 'operator since ') + 'MAR 2024',
+        iconCells: this.identicon(me.name, '#3f7a55')
+      },
+      query: s.query,
+      onQuery: e => this.setState({ query: e.target.value, searchOpen: true }),
+      openSearch: () => this.setState({ searchOpen: true }),
+      closeSearch: () => this.setState({ searchOpen: false }),
+      setSearchInput: el => { if (el) setTimeout(() => el.focus(), 0); },
+      searchOpen: s.searchOpen && !!s.query.trim(),
+      searchResults, noResults: !!s.query.trim() && searchResults.length === 0,
+      searchSummary: searchResults.length + (lang === 'ru' ? ' совпадений · title, description, tags' : ' matches · title, description, tags'),
+      statusFilters, tagFilters, colorFilters, quadFilters, linkFilters, dlOptions, dlFilter: s.dl,
+      onDlFilter: e => this.setState({ dl: e.target.value }),
+      clearFilters: () => this.setState({ status: 'active', tagSel: [], colorSel: [], quadSel: [], dl: 'any', linkSel: 'any', query: '' }),
+      columns,
+      boardCountText: s.status === 'completed' ? T.archiveMode : (this.state.tasks.filter(t => !t.parent && this.passes(t)).length + (lang === 'ru' ? ' задач · ' : ' tasks · ') + this.state.tasks.filter(t => t.parent && this.passes(t)).length + (lang === 'ru' ? ' подзадач' : ' subtasks')),
+      archiveFg: s.status === 'completed' ? '#5fb37f' : '#79838a',
+      graphStats: totalVis + (lang === 'ru' ? ' узлов · ' : ' nodes · ') + s.links.filter(l => visIds[l.a] && visIds[l.b]).length + (lang === 'ru' ? ' связей' : ' edges'),
+      graphZoomText: 'ZOOM ' + s.zoom.toFixed(2) + 'x',
+      graphLegend: [
+        { fill: '#1c2226', stroke: QC[0], op: 1, label: 'Q1 ' + (lang === 'ru' ? 'активный узел' : 'active node') },
+        { fill: '#1c2226', stroke: QC[1], op: 1, label: 'Q2' },
+        { fill: '#1c2226', stroke: QC[2], op: 1, label: 'Q3' },
+        { fill: '#1c2226', stroke: QC[3], op: 1, label: 'Q4' },
+        { fill: '#191d20', stroke: '#2b3236', op: 0.4, label: lang === 'ru' ? 'завершённый узел' : 'completed node' },
+        { fill: '#4f93ad', stroke: '#4f93ad', op: 1, label: lang === 'ru' ? 'цвет задачи' : 'user task color' },
+        { fill: '#0a0b0c', stroke: '#8b9599', op: 1, label: lang === 'ru' ? 'подзадача (полый)' : 'subtask (hollow)' }
+      ],
+      zoomBtns: [
+        { label: '+', title: 'Zoom in', act: () => this.zoomBy(1.25) },
+        { label: '−', title: 'Zoom out', act: () => this.zoomBy(0.8) },
+        { label: '⊙', title: 'Fit to view', act: () => this.fit() }
+      ],
+      setCanvas: this.setCanvas,
+      hoverCard,
+      heat, statCards, achievements,
+      achText: achievements.filter(a => a.state === 'UNLOCKED').length + ' / ' + achievements.length + ' UNLOCKED',
+      leaderboard, lbPeriods,
+      lbVisibilityNote: s.showInLb ? (lang === 'ru' ? 'вы отображаетесь публично' : 'you are listed publicly') : (lang === 'ru' ? 'вы скрыты из рейтинга' : 'you are hidden from the ranking'),
+      profileStats: [
+        { label: lang === 'ru' ? 'ЗАВЕРШЕНО' : 'COMPLETED', value: heat.totals.c, fg: '#5fb37f' },
+        { label: lang === 'ru' ? 'СОЗДАНО' : 'CREATED', value: heat.totals.n, fg: '#d8dde0' },
+        { label: lang === 'ru' ? 'СВЯЗЕЙ' : 'LINKS', value: s.links.length, fg: '#6fa8c0' },
+        { label: lang === 'ru' ? 'СЕРИЯ' : 'STREAK', value: me.streak + 'D', fg: '#d2a04a' }
+      ],
+      eventLog, settingsGroups, linkTypes: LINK_TYPES,
+      lbToggle: Object.assign({ label: s.showInLb ? T.on : T.off }, btn(s.showInLb)),
+      toggleLb: () => this.setState({ showInLb: !s.showInLb }),
+      modal, closeTask: () => this.setState({ modalId: null }),
+      toast: s.toast ? { on: true, code: s.toast.code, detail: s.toast.detail, fg: '#7fc89b', bd: '#3a5c46' } : { on: false }
+    };
+  }
+}
+</script>
+</body>
+</html>

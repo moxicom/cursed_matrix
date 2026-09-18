@@ -19,7 +19,8 @@ cursed_matrix/
 ├── front/          # React application (frontend)
 ├── back/           # Golang application (backend, HTTP API)
 ├── docs/
-│   └── SPEC.md     # this document
+│   ├── SPEC.md     # this document
+│   └── API.md      # HTTP contract back/ must expose for front/
 ├── CLAUDE.md       # product brief / requirements source
 └── LICENSE
 ```
@@ -58,6 +59,8 @@ expired, is redirected to `pricing` (section 19, rules 27–29).
   `{code, params}`, never rendered text.
 * The backend defines the contract (Go structs → OpenAPI schema → React types).
   How those types are generated is an Open Question.
+* `docs/API.md` states the endpoints, payloads, authentication and validation
+  rules derived from what the frontend actually does.
 
 **Monorepo conventions.**
 
@@ -742,6 +745,39 @@ not exist.
 6. Email is never shown publicly and does not participate in user search.
 7. Account deletion is a soft delete plus removal from the rankings; a full
    erasure policy is not defined (see Open Questions).
+
+### 18.1 Trust boundary
+
+The frontend is not a security boundary. Everything it enforces can be changed
+by anyone with the browser console: stores are reachable at runtime, `maxLength`
+is an attribute, route guards are ordinary components, and the production bundle
+can simply be edited. The rule is therefore absolute: **every limit the UI shows
+must be re-checked by the backend**, and the UI enforces it only so the user
+learns about it early.
+
+| Rule | Why the client cannot be trusted with it |
+|---|---|
+| Authentication and subscription state | A signed-out visitor can flip the session flag; the server authorises every request instead |
+| Plan quotas (35 active tasks, 25 links) | The counter in the UI is advisory; the creating endpoint refuses |
+| XP amount, level, streak | The client must never *send* XP — only display what was granted. Otherwise a crafted request grants any amount |
+| Field limits (title 100, description 2000, tag 24) | `maxLength` is an affordance; the payload is validated server-side |
+| Subscription price | Determined by the server and the billing provider, never taken from a client payload |
+| `show_in_leaderboard`, ownership of tasks/tags/links | Filtered by the `user_id` of the session, never by ids supplied in the request |
+
+Two frontend-side rules that support this boundary:
+
+* **Redirects stay internal.** A path taken from router state, a query parameter
+  or any other user-controlled source is validated (`isInternalPath`) before a
+  navigation: absolute, protocol-relative and backslash-containing values are
+  rejected, otherwise a post-login redirect becomes an open redirect. React
+  Router 6 has a known backslash bypass, which is why backslashes are refused
+  outright.
+* **Task text is never rendered as markup.** Titles, descriptions and tags are
+  rendered as text. If rich text is introduced later, it must be sanitized —
+  that is the first XSS vector this application would have.
+
+Session tokens, once they exist, belong in an httpOnly cookie with `SameSite`,
+not in `localStorage`, which any script on the page can read.
 
 ---
 ## 19. Main business rules

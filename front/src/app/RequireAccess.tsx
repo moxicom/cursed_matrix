@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 
 import { useHasAccess } from '@/features/session/session.store';
 import { ROUTES } from '@/shared/config/navigation';
+import { internalPathOr } from '@/shared/lib/safe-path';
 
 /**
  * Subscription gate. Signed-out visitors and accounts whose trial has run out
@@ -12,7 +13,9 @@ export function RequireAccess() {
   const location = useLocation();
 
   if (!hasAccess) {
-    return <Navigate to={ROUTES.upgrade} replace state={{ from: location.pathname }} />;
+    // only a validated internal path travels in router state; see safe-path.ts
+    const from = internalPathOr(`${location.pathname}${location.search}`, ROUTES.board);
+    return <Navigate to={ROUTES.upgrade} replace state={{ from }} />;
   }
   return <Outlet />;
 }

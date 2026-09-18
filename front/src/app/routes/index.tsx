@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useUiStore } from '@/app/ui.store';
 import { useSessionStore } from '@/features/session/session.store';
@@ -12,6 +12,7 @@ import { PricingPage } from '@/pages/pricing/PricingPage';
 import { ProfilePage } from '@/pages/profile/ProfilePage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { ROUTES } from '@/shared/config/navigation';
+import { internalPathOr } from '@/shared/lib/safe-path';
 
 /**
  * Route elements: thin wrappers that connect a page to navigation.
@@ -40,9 +41,16 @@ export function LandingRoute() {
 
 export function PricingRoute() {
   const navigate = useNavigate();
+  const location = useLocation();
   const session = useSessionStore();
   const capped = useUiStore((s) => s.pricingCapped);
   const setCapped = useUiStore((s) => s.setPricingCapped);
+
+  // where the gate bounced the user from, validated as an internal path
+  const from = internalPathOr(
+    (location.state as { from?: unknown } | null)?.from,
+    ROUTES.board,
+  );
 
   return (
     <PricingPage
@@ -50,7 +58,7 @@ export function PricingRoute() {
       onContinue={() => {
         if (!session.authenticated) session.signIn();
         setCapped(false);
-        navigate(ROUTES.board);
+        navigate(from);
       }}
     />
   );

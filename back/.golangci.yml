@@ -1,0 +1,51 @@
+# Lint configuration. The rules below are not style preferences: each one closes
+# a failure mode this codebase is exposed to.
+version: "2"
+
+run:
+  timeout: 3m
+  build-tags:
+    - integration
+
+linters:
+  enable:
+    - errcheck      # an ignored error is the most common way a write silently fails
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - rowserrcheck  # rows.Err() after a loop, or a partial result reads as complete
+    - sqlclosecheck
+    - gosec         # G201/G202: SQL built by concatenation or formatting
+    - forbidigo
+    - misspell
+
+  settings:
+    forbidigo:
+      # The injection rule, enforced mechanically: inside the PostgreSQL adapter
+      # a query is assembled by the builder with bound parameters, never by
+      # formatting a string. Sprintf there is how an identifier or a value ends
+      # up in the query text.
+      forbid:
+        - pattern: '^fmt\.Sprintf$'
+          pkg: '^github.com/moxicom/cursed_matrix/back/internal/adapter/postgres$'
+          msg: "build SQL with the squirrel builder and bound parameters, never with Sprintf"
+      analyze-types: true
+
+    gosec:
+      excludes:
+        - G115 # integer conversion overflow; the sizes here are bounded by the schema
+
+  exclusions:
+    rules:
+      # Test files assemble SQL fixtures and may format strings freely.
+      - path: _test\.go
+        linters:
+          - forbidigo
+          - gosec
+          - errcheck
+
+formatters:
+  enable:
+    - gofumpt

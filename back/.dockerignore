@@ -1,0 +1,8 @@
+# Everything the image does not need. Keeping the context small keeps the build
+# fast and stops a stray .env from ever reaching a layer.
+.git
+.env
+*.env
+Dockerfile*
+README.md
+**/*_test.go

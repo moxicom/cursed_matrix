@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1
 #
 # Development image: the Vite dev server with HMR, used by
 # docker-compose.dev.yml. Source is bind-mounted over /app at run time, so this

@@ -54,28 +54,25 @@ services:
       dockerfile: Dockerfile
     image: cursed-matrix/back:${IMAGE_TAG:-dev}
     environment:
-      # Two URLs and a port: everything else the backend reads is its own.
-      DATABASE_URL: postgres://${POSTGRES_USER:-cursed}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cursed_matrix}?sslmode=disable
-      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
-      PORT: "8080"
-      APP_ENV: ${APP_ENV:-development}
-      # Sessions are cookie-based (API.md §1.4); the secret signs them.
-      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      # Structure and tuning live in the mounted YAML; only the secrets it names
+      # are passed in, so a credential change never means a rebuild.
+      CONFIG_PATH: /etc/cursed-matrix/config.yaml
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+    volumes:
+      # Mounted, not baked: editing the file and restarting is enough.
+      - ./back/config/config.yaml:/etc/cursed-matrix/config.yaml:ro
     networks: [edge, data]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-    healthcheck:
-      # This probe needs a wget binary *inside* the backend image. A Go service
-      # built FROM scratch or on distroless has neither wget nor a shell, and
-      # the check would then fail forever while the application is fine. Either
-      # base back/ on alpine, or drop this block and let the Go binary answer a
-      # `HEALTHCHECK` of its own (`myapp healthcheck` subcommand).
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
+    # No healthcheck block: the image carries its own HEALTHCHECK, which probes
+    # the service with the binary itself rather than with a packaged wget.
+    #
+    # Longer than http.shutdown_timeout in back/config/config.yaml: Docker must
+    # not SIGKILL the process while it is still draining within its own budget.
+    stop_grace_period: 25s
 
   # ---------------------------------------------------------------- postgres
   postgres:

@@ -1,0 +1,42 @@
+# Structure and tuning live here; secrets never do. A field named *_key holds
+# the NAME of the environment variable carrying the secret, so an operator can
+# repoint a credential without touching the image.
+
+env: development
+
+http:
+  port: 8080
+  read_header_timeout: 5s
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+  request_timeout: 60s
+  shutdown_timeout: 15s
+
+database:
+  host: postgres
+  port: 5432
+  name: cursed_matrix
+  user: cursed
+  password_key: POSTGRES_PASSWORD
+  ssl_mode: disable
+  # 0 sizes the pool from the CPU count, which on a 12-core host means 48
+  # connections per replica against a server whose default ceiling is 100.
+  max_conns: 16
+  min_conns: 2
+  max_conn_lifetime: 1h
+  max_conn_idle_time: 15m
+  health_check_period: 30s
+  migrate_on_boot: false
+
+redis:
+  host: redis
+  port: 6379
+  db: 0
+  password_key: REDIS_PASSWORD
+  default_ttl: 10m
+
+auth:
+  secret_key: JWT_SECRET
+  access_ttl: 15m
+  refresh_ttl: 720h

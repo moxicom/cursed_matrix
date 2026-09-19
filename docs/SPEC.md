@@ -27,7 +27,7 @@ cursed_matrix/
 │   ├── Dockerfile      # multi-stage build → unprivileged nginx
 │   ├── Dockerfile.dev  # Vite dev server with HMR
 │   └── nginx/          # SPA fallback, /api proxy, cache policy, CSP
-├── back/               # Golang application (backend, HTTP API) — not yet written
+├── back/               # Golang application (backend, HTTP API) — see docs/STATUS.md
 ├── infra/              # postgres init, victoria-metrics, grafana provisioning
 ├── docs/
 │   ├── SPEC.md         # this document
@@ -576,7 +576,7 @@ xpForLevel(n)  = round(45 * (n - 1)^2)   // XP needed to reach level n
 levelForXp(xp) = max(1, floor(sqrt(xp / 45)) + 1)
 ```
 
-Thresholds: L1 = 0, L2 = 45, L3 = 180, L5 = 720, L10 = 3645, L20 = 18 405.
+Thresholds: L1 = 0, L2 = 45, L3 = 180, L5 = 720, L10 = 3645, L20 = 16 245.
 The level is unbounded (or a `MAX_LEVEL` can be set in the config).
 
 **Level Up (§35).** After every change of `lifetime_xp`: recompute the level; if

@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
@@ -55,9 +56,12 @@ func (s *Service) Complete(ctx context.Context, userID, taskID uuid.UUID) (*Prog
 		}
 
 		now := s.clock.Now().UTC()
-		var delta user.StatsDelta
+		var (
+			delta  user.StatsDelta
+			events []activity.Event
+		)
 
-		if err := s.award(ctx, item, quadrant, shared.CompletionDirect, now, &delta, result); err != nil {
+		if err := s.award(ctx, item, quadrant, shared.CompletionDirect, now, &delta, result, &events); err != nil {
 			return err
 		}
 
@@ -72,12 +76,17 @@ func (s *Service) Complete(ctx context.Context, userID, taskID uuid.UUID) (*Prog
 				if child.IsCompleted() {
 					continue
 				}
-				if err := s.award(ctx, child, quadrant, shared.CompletionParentCascade, now, &delta, result); err != nil {
+				if err := s.award(ctx, child, quadrant, shared.CompletionParentCascade, now, &delta, result, &events); err != nil {
 					return err
 				}
 			}
 		}
 
+		// One statement for the cascade: a parent and its subtasks are one
+		// event in the user's day, however many rows that is.
+		if err := s.events.RecordMany(ctx, events); err != nil {
+			return err
+		}
 		return s.applyProgress(ctx, userID, delta, result)
 	})
 	if err != nil {
@@ -188,6 +197,7 @@ func (s *Service) award(
 	now time.Time,
 	delta *user.StatsDelta,
 	result *Progress,
+	events *[]activity.Event,
 ) error {
 	xp, err := s.xp.Reward(quadrant, item.IsSubtask())
 	if err != nil {
@@ -222,11 +232,19 @@ func (s *Service) award(
 	}
 
 	delta.XP += int64(xp)
+	eventType := shared.EventTaskCompleted
 	if item.IsSubtask() {
 		delta.SubtasksCompleted++
+		eventType = shared.EventSubtaskCompleted
 	} else {
 		delta.TasksCompleted++
 	}
+
+	event, err := activity.New(item.UserID, eventType, &item.ID, now)
+	if err != nil {
+		return err
+	}
+	*events = append(*events, *event.With("xp", xp).With("via", string(via)))
 
 	result.Tasks = append(result.Tasks, *item)
 	result.XPAwarded += xp
@@ -258,11 +276,14 @@ func (s *Service) applyProgress(
 	}
 	// Reported only upwards: losing a level to a reopening is not an event the
 	// product celebrates.
-	if level > stats.Level {
-		result.LevelUp = &LevelChange{From: stats.Level, To: level}
+	if level <= stats.Level {
+		return nil
 	}
+	result.LevelUp = &LevelChange{From: stats.Level, To: level}
 
-	// The account's cached preferences are untouched, but its stats are not
-	// cached at all, so nothing needs retiring here.
-	return nil
+	event, err := activity.New(userID, shared.EventLevelUp, nil, s.clock.Now().UTC())
+	if err != nil {
+		return err
+	}
+	return s.events.Record(ctx, event.With("fromLevel", stats.Level).With("toLevel", level))
 }

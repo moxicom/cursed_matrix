@@ -23,6 +23,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/graph"
+	"github.com/moxicom/cursed_matrix/back/internal/app/profile"
 	"github.com/moxicom/cursed_matrix/back/internal/config"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
@@ -96,16 +97,18 @@ func run() error {
 			&shared.SystemClock{},
 			cfg.Auth.RefreshTTL,
 		)
-		boards := board.NewService(
-			postgres.NewTaskRepository(pool),
-			postgres.NewUserRepository(pool),
-			redisCache,
-			postgres.NewTagRepository(pool),
-			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
-			postgres.NewXPLedger(pool),
-			progression.DefaultConfig(),
-			&shared.SystemClock{},
-		)
+		boards := board.NewService(board.Deps{
+			Tasks:  postgres.NewTaskRepository(pool),
+			Users:  postgres.NewUserRepository(pool),
+			Tags:   postgres.NewTagRepository(pool),
+			Links:  postgres.NewLinkRepository(pool),
+			Tx:     postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
+			Ledger: postgres.NewXPLedger(pool),
+			Events: postgres.NewActivityRepository(pool),
+			XP:     progression.DefaultConfig(),
+			Clock:  &shared.SystemClock{},
+			Cache:  redisCache,
+		})
 		limiter := redisadapter.NewRateLimiter(redisCache.Client(), utils.ForComponent(log, "ratelimit"))
 		limits := httphandler.RateLimits{
 			AddressAttempts: cfg.Auth.RateLimit.AddressAttempts,
@@ -119,13 +122,21 @@ func run() error {
 			postgres.NewLinkRepository(pool),
 			postgres.NewTaskRepository(pool),
 			postgres.NewUserRepository(pool),
+			postgres.NewActivityRepository(pool),
+			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
+			&shared.SystemClock{},
+		)
+		profiles := profile.NewService(
+			postgres.NewUserRepository(pool),
+			postgres.NewActivityRepository(pool),
+			redisCache,
 			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
 			&shared.SystemClock{},
 		)
 		api = httphandler.Routes(
-			httphandler.NewAPI(service, boards, graphs, httphandler.NewCookieWriter(!cfg.Development()),
+			httphandler.NewAPI(service, boards, graphs, profiles, httphandler.NewCookieWriter(!cfg.Development()),
 				cfg.Auth.RefreshTTL, limiter, limits),
-			tokens, limiter, limits,
+			tokens, limiter, limits, profiles, utils.ForComponent(log, "streak"),
 		)
 	} else {
 		log.Warn("api disabled: the refresh store needs Redis")

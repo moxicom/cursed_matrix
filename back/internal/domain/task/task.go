@@ -204,3 +204,96 @@ func ValidateDescription(description string) error {
 	}
 	return nil
 }
+
+// Node is a task as the graph draws it.
+//
+// The counts come with it because the canvas sizes a node by them, and working
+// them out per node in the client is a scan of every link for every task.
+type Node struct {
+	ID           uuid.UUID
+	Title        string
+	Status       shared.TaskStatus
+	Quadrant     shared.Quadrant
+	Color        shared.TaskColor
+	IsSubtask    bool
+	ParentID     *uuid.UUID
+	DeadlineAt   *time.Time
+	Tags         []string
+	LinkCount    int
+	SubtaskCount int
+}
+
+// Match says which field made a task answer a search.
+type Match string
+
+const (
+	MatchTitle       Match = "TITLE"
+	MatchDescription Match = "DESCRIPTION"
+	MatchTag         Match = "TAG"
+)
+
+// SnippetRadius is how much of a description travels with a match, either
+// side of it.
+const SnippetRadius = 30
+
+// Hit is one row of the search palette.
+//
+// MatchedText is decided by the server because only the server knows why the
+// row matched; the client shows it under the title without having to search
+// the text again.
+type Hit struct {
+	ID           uuid.UUID
+	Title        string
+	Quadrant     shared.Quadrant
+	IsSubtask    bool
+	Status       shared.TaskStatus
+	MatchedField Match
+	MatchedText  string
+}
+
+// Snippet cuts the part of a description around the term, on whole runes.
+func Snippet(description, term string) string {
+	runes := []rune(description)
+	at := strings.Index(strings.ToLower(description), strings.ToLower(term))
+	if at < 0 {
+		if len(runes) <= 2*SnippetRadius {
+			return description
+		}
+		return string(runes[:2*SnippetRadius]) + "…"
+	}
+
+	// Index is in bytes; the cut has to be in runes or it can split one.
+	start := max(utf8.RuneCountInString(description[:at])-SnippetRadius, 0)
+	end := min(start+2*SnippetRadius, len(runes))
+
+	out := string(runes[start:end])
+	if start > 0 {
+		out = "…" + out
+	}
+	if end < len(runes) {
+		out += "…"
+	}
+	return out
+}
+
+// DescribeMatch says which field answered and what to show under the title.
+//
+// The title wins over the description and the description over a tag: that is
+// the order the user reads the row in, so it is the order the explanation
+// should follow.
+func DescribeMatch(title, description string, tagName *string, term string) (Match, string) {
+	folded := strings.ToLower(term)
+
+	if strings.Contains(strings.ToLower(title), folded) {
+		return MatchTitle, title
+	}
+	if description != "" && strings.Contains(strings.ToLower(description), folded) {
+		return MatchDescription, Snippet(description, term)
+	}
+	if tagName != nil {
+		return MatchTag, "#" + *tagName
+	}
+	// The row came back, so something matched; saying which is better than
+	// claiming a field that did not.
+	return MatchTitle, title
+}

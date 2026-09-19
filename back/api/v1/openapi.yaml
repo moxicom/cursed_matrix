@@ -30,6 +30,12 @@ tags:
     description: The user's own labels.
   - name: links
     description: The network drawn over the tasks.
+  - name: search
+    description: The command palette.
+  - name: graph
+    description: The network as the canvas draws it.
+  - name: activity
+    description: What the user did, by their own calendar day.
 
 paths:
   /auth/register:
@@ -569,6 +575,112 @@ paths:
         "403": { $ref: "#/components/responses/CSRFRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /search:
+    get:
+      tags: [search]
+      summary: Find a task
+      operationId: search
+      description: |
+        Title, description and tag names, across active and archived tasks —
+        someone looking for what they finished is exactly who needs this.
+        `matchedField` and `matchedText` are decided by the server, because
+        only the server knows why the row matched; the client shows the snippet
+        without searching the text again.
+      parameters:
+        - { name: query, in: query, required: true, schema: { type: string, minLength: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 14 } }
+      responses:
+        "200":
+          description: What matched, active work first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /graph:
+    get:
+      tags: [graph]
+      summary: The network
+      operationId: getGraph
+      description: |
+        The same filters as the board, applied on the server: after a year of
+        use this is thousands of nodes, and shipping all of them is what makes
+        the force simulation unusable. A node's quadrant is the effective one —
+        a subtask answers to its parent's — and the two counts come with it
+        because the canvas sizes a node by them.
+
+        Edges are of two kinds: the links the user made, and the parent
+        relation the server maintains, which is not a link row and has a
+        derived id.
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/StatusFilter" } }
+        - { name: quadrants, in: query, schema: { type: array, items: { $ref: "#/components/schemas/Quadrant" } } }
+        - { name: colors, in: query, schema: { type: array, items: { $ref: "#/components/schemas/TaskColor" } } }
+        - { name: tags, in: query, schema: { type: array, items: { type: string } } }
+        - { name: deadline, in: query, schema: { $ref: "#/components/schemas/DeadlineWindow" } }
+        - { name: topology, in: query, schema: { $ref: "#/components/schemas/TopologyFilter" } }
+        - { name: query, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The snapshot the canvas renders.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nodes, edges]
+                properties:
+                  nodes: { type: array, items: { $ref: "#/components/schemas/GraphNode" } }
+                  edges: { type: array, items: { $ref: "#/components/schemas/GraphEdge" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /activity/heatmap:
+    get:
+      tags: [activity]
+      summary: A year of activity
+      operationId: activityHeatmap
+      description: |
+        Exactly 365 entries ending today in the user's timezone, empty days
+        included: the client renders a fixed grid and must not have to infer a
+        gap. Only creating and completing count — levelling up and unlocking
+        follow from work already counted, and counting them again would colour
+        a day twice for one action.
+      responses:
+        "200":
+          description: The grid and its totals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [days, totals]
+                properties:
+                  days: { type: array, items: { $ref: "#/components/schemas/ActivityDay" } }
+                  totals:
+                    type: object
+                    required: [created, completed]
+                    properties:
+                      created: { type: integer }
+                      completed: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /activity/graph-opened:
+    post:
+      tags: [activity]
+      summary: Note that the graph was opened
+      operationId: graphOpened
+      description: |
+        Feeds no heatmap and no XP. The only thing that asks is the exploration
+        achievement, which counts the distinct days the user went looking.
+      responses:
+        "204": { description: Noted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+
   /me:
     get:
       tags: [account]
@@ -802,6 +914,73 @@ components:
     SortDirection:
       type: string
       enum: [ASC, DESC]
+
+    SearchHit:
+      type: object
+      required: [id, title, isSubtask, status, matchedField, matchedText]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        quadrant:
+          allOf: [{ $ref: "#/components/schemas/Quadrant" }]
+          nullable: true
+        isSubtask: { type: boolean }
+        status: { $ref: "#/components/schemas/TaskStatus" }
+        matchedField: { type: string, enum: [TITLE, DESCRIPTION, TAG] }
+        matchedText:
+          type: string
+          description: |
+            The title, a snippet of the description around the term, or the
+            tag name with a leading #.
+
+    GraphNode:
+      type: object
+      required: [id, title, status, isSubtask, tags, linkCount, subtaskCount]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { $ref: "#/components/schemas/TaskStatus" }
+        quadrant:
+          allOf: [{ $ref: "#/components/schemas/Quadrant" }]
+          nullable: true
+          description: |
+            The effective quadrant. Null only for a subtask whose parent
+            cannot be read, which the graph shows rather than hiding.
+        color: { $ref: "#/components/schemas/TaskColor" }
+        isSubtask: { type: boolean }
+        parentTaskId: { type: string, format: uuid, nullable: true }
+        deadlineAt: { type: string, format: date-time, nullable: true }
+        tags: { type: array, items: { type: string } }
+        linkCount: { type: integer }
+        subtaskCount: { type: integer }
+
+    GraphEdge:
+      type: object
+      required: [id, source, target, kind]
+      properties:
+        id:
+          type: string
+          description: |
+            A link's own id, or "p-" and the subtask's id for a parent
+            relation, which has no row of its own.
+        source: { type: string, format: uuid }
+        target: { type: string, format: uuid }
+        kind: { type: string, enum: [LINK, PARENT_CHILD] }
+        type:
+          allOf: [{ $ref: "#/components/schemas/LinkType" }]
+          nullable: true
+          description: Absent on a parent relation, which has no type.
+
+    ActivityDay:
+      type: object
+      required: [date, createdCount, completedCount, totalActivity]
+      properties:
+        date: { type: string, format: date }
+        createdCount: { type: integer }
+        completedCount: { type: integer }
+        totalActivity:
+          type: integer
+          description: The sum the square's colour is chosen from.
 
     Tag:
       type: object

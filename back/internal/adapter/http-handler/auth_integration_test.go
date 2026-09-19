@@ -24,6 +24,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/graph"
+	"github.com/moxicom/cursed_matrix/back/internal/app/profile"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 )
@@ -84,27 +85,37 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 		&shared.SystemClock{},
 		24*time.Hour,
 	)
-	boards := board.NewService(
-		postgres.NewTaskRepository(pool),
-		postgres.NewUserRepository(pool),
-		cached,
-		postgres.NewTagRepository(pool),
-		postgres.NewTxManager(pool, quiet),
-		postgres.NewXPLedger(pool),
-		progression.DefaultConfig(),
-		&shared.SystemClock{},
-	)
-	limiter := redisadapter.NewRateLimiter(client, quiet)
+	boards := board.NewService(board.Deps{
+		Tasks:  postgres.NewTaskRepository(pool),
+		Users:  postgres.NewUserRepository(pool),
+		Tags:   postgres.NewTagRepository(pool),
+		Links:  postgres.NewLinkRepository(pool),
+		Tx:     postgres.NewTxManager(pool, quiet),
+		Ledger: postgres.NewXPLedger(pool),
+		Events: postgres.NewActivityRepository(pool),
+		XP:     progression.DefaultConfig(),
+		Clock:  &shared.SystemClock{},
+		Cache:  cached,
+	})
 	graphs := graph.NewService(
 		postgres.NewLinkRepository(pool),
 		postgres.NewTaskRepository(pool),
 		postgres.NewUserRepository(pool),
+		postgres.NewActivityRepository(pool),
+		postgres.NewTxManager(pool, quiet),
+		&shared.SystemClock{},
+	)
+	limiter := redisadapter.NewRateLimiter(client, quiet)
+	profiles := profile.NewService(
+		postgres.NewUserRepository(pool),
+		postgres.NewActivityRepository(pool),
+		cached,
 		postgres.NewTxManager(pool, quiet),
 		&shared.SystemClock{},
 	)
 	return httphandler.Routes(
-		httphandler.NewAPI(service, boards, graphs, httphandler.NewCookieWriter(false), 24*time.Hour, limiter, limits),
-		tokens, limiter, limits,
+		httphandler.NewAPI(service, boards, graphs, profiles, httphandler.NewCookieWriter(false), 24*time.Hour, limiter, limits),
+		tokens, limiter, limits, profiles, quiet,
 	)
 }
 

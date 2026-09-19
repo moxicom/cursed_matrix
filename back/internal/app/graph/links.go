@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
@@ -14,21 +15,23 @@ import (
 )
 
 type Service struct {
-	links port.LinkRepository
-	tasks port.TaskRepository
-	users port.UserRepository
-	tx    port.TxManager
-	clock shared.Clock
+	links  port.LinkRepository
+	tasks  port.TaskRepository
+	users  port.UserRepository
+	events port.ActivityRepository
+	tx     port.TxManager
+	clock  shared.Clock
 }
 
 func NewService(
 	links port.LinkRepository,
 	tasks port.TaskRepository,
 	users port.UserRepository,
+	events port.ActivityRepository,
 	tx port.TxManager,
 	clock shared.Clock,
 ) *Service {
-	return &Service{links: links, tasks: tasks, users: users, tx: tx, clock: clock}
+	return &Service{links: links, tasks: tasks, users: users, events: events, tx: tx, clock: clock}
 }
 
 // Links returns every edge the user has drawn.
@@ -79,6 +82,20 @@ func (s *Service) Create(
 		if err := s.links.Create(ctx, made); err != nil {
 			return err
 		}
+
+		event, err := activity.New(userID, shared.EventTaskLinked, &sourceID, made.CreatedAt)
+		if err != nil {
+			return err
+		}
+		if err := s.events.Record(ctx, event.
+			With("targetTaskId", targetID.String()).
+			With("type", string(made.Type))); err != nil {
+			return err
+		}
+		if _, err := s.users.ApplyStats(ctx, userID, user.StatsDelta{LinksCreated: 1}); err != nil {
+			return err
+		}
+
 		created = made
 		return nil
 	})
@@ -146,4 +163,70 @@ func (s *Service) withinQuota(ctx context.Context, userID uuid.UUID) error {
 // duplicate: the graph already draws it as its own kind of edge.
 func parentOf(parent, child *task.Task) bool {
 	return child.ParentID != nil && *child.ParentID == parent.ID
+}
+
+// Edge is a line on the canvas. Two things draw as one: the links the user
+// made, and the parent relation the server maintains.
+type Edge struct {
+	ID       string
+	SourceID uuid.UUID
+	TargetID uuid.UUID
+	Kind     string
+	Type     shared.LinkType
+}
+
+// Snapshot is what the canvas renders.
+type Snapshot struct {
+	Nodes []task.Node
+	Edges []Edge
+}
+
+// EdgeKinds distinguish a user-made link from the system relation.
+const (
+	EdgeLink        = "LINK"
+	EdgeParentChild = "PARENT_CHILD"
+)
+
+// Snapshot builds the graph for one filter.
+//
+// Nodes are filtered, edges are not trimmed to them: an edge whose other end
+// is filtered out still tells the canvas the node is connected, and the client
+// decides how to draw a dangling end. Parent relations are edges here but not
+// rows anywhere — they belong to the task, not to the link table.
+func (s *Service) Snapshot(ctx context.Context, userID uuid.UUID, filter task.Filter) (*Snapshot, error) {
+	nodes, err := s.tasks.ListGraph(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	links, err := s.links.List(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	edges := make([]Edge, 0, len(links)+len(nodes))
+	for i := range links {
+		edges = append(edges, Edge{
+			ID:       links[i].ID.String(),
+			SourceID: links[i].SourceID,
+			TargetID: links[i].TargetID,
+			Kind:     EdgeLink,
+			Type:     links[i].Type,
+		})
+	}
+	for i := range nodes {
+		if nodes[i].ParentID == nil {
+			continue
+		}
+		edges = append(edges, Edge{
+			// Derived, not stored, so it needs an id the client can key on
+			// that cannot collide with a link's.
+			ID:       "p-" + nodes[i].ID.String(),
+			SourceID: nodes[i].ID,
+			TargetID: *nodes[i].ParentID,
+			Kind:     EdgeParentChild,
+		})
+	}
+
+	return &Snapshot{Nodes: nodes, Edges: edges}, nil
 }

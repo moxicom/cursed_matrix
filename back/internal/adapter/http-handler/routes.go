@@ -1,12 +1,14 @@
 package httphandler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	gen "github.com/moxicom/cursed_matrix/back/internal/adapter/http-handler/gen"
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
+	"github.com/moxicom/cursed_matrix/back/internal/app/profile"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 )
 
@@ -16,7 +18,14 @@ import (
 // registering and signing in are open, refreshing and logging out need the
 // refresh cookie but tolerate a stale access token, and everything else needs a
 // valid session. The last two check the CSRF header on every unsafe method.
-func Routes(api *API, tokens port.TokenIssuer, limiter port.RateLimiter, limits RateLimits) http.Handler {
+func Routes(
+	api *API,
+	tokens port.TokenIssuer,
+	limiter port.RateLimiter,
+	limits RateLimits,
+	profiles *profile.Service,
+	log *slog.Logger,
+) http.Handler {
 	router := chi.NewRouter()
 
 	// No CSRF check on the way in: the client has no token to echo before its
@@ -39,6 +48,9 @@ func Routes(api *API, tokens port.TokenIssuer, limiter port.RateLimiter, limits 
 	router.Group(func(session chi.Router) {
 		session.Use(RequireCSRF)
 		session.Use(Authenticate(tokens))
+		// After authentication, so it knows whose day it is, and before the
+		// handlers, so any visit counts and not only a board read.
+		session.Use(TrackStreak(profiles, log))
 		session.Post("/auth/logout-all", api.LogoutAll)
 		session.Get("/me", api.GetMe)
 		session.Patch("/me", api.UpdateSettings)
@@ -59,6 +71,11 @@ func Routes(api *API, tokens port.TokenIssuer, limiter port.RateLimiter, limits 
 		session.Get("/tags", api.ListTags)
 		session.Post("/tasks/{taskId}/tags", bind(api).AttachTag)
 		session.Delete("/tasks/{taskId}/tags/{tagId}", bind(api).DetachTag)
+
+		session.Get("/graph", bind(api).GetGraph)
+		session.Get("/search", bind(api).Search)
+		session.Get("/activity/heatmap", api.ActivityHeatmap)
+		session.Post("/activity/graph-opened", api.GraphOpened)
 
 		session.Post("/links", api.CreateLink)
 		session.Patch("/links/{linkId}", bind(api).UpdateLink)

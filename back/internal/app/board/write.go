@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
@@ -62,8 +63,17 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, draft Draft) (*t
 		if err := s.tasks.Create(ctx, item); err != nil {
 			return err
 		}
+
+		event, err := activity.New(userID, shared.EventTaskCreated, &item.ID, now)
+		if err != nil {
+			return err
+		}
+		if err := s.events.Record(ctx, event); err != nil {
+			return err
+		}
+
 		created = item
-		return nil
+		return s.applyProgress(ctx, userID, user.StatsDelta{TasksCreated: 1}, &Progress{})
 	})
 	if err != nil {
 		return nil, err

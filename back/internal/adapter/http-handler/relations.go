@@ -6,9 +6,11 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	gen "github.com/moxicom/cursed_matrix/back/internal/adapter/http-handler/gen"
+	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/tag"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 )
 
 type tagsResponse struct {
@@ -146,4 +148,136 @@ func renderLink(item *link.Link) gen.TaskLink {
 		Type:         gen.LinkType(item.Type),
 		CreatedAt:    item.CreatedAt,
 	}
+}
+
+type graphResponse struct {
+	Nodes []gen.GraphNode `json:"nodes"`
+	Edges []gen.GraphEdge `json:"edges"`
+}
+
+// GetGraph answers with the snapshot the canvas renders.
+func (a *API) GetGraph(w http.ResponseWriter, r *http.Request, params gen.GetGraphParams) {
+	userID, ok := UserFrom(r.Context())
+	if !ok {
+		WriteError(w, r, shared.NewError(shared.CodeSessionExpired, nil))
+		return
+	}
+
+	filter, err := a.board.GraphFilter(r.Context(), userID, graphQuery(params))
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+
+	snapshot, err := a.graph.Snapshot(r.Context(), userID, filter)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+
+	response := graphResponse{
+		Nodes: make([]gen.GraphNode, 0, len(snapshot.Nodes)),
+		Edges: make([]gen.GraphEdge, 0, len(snapshot.Edges)),
+	}
+	for i := range snapshot.Nodes {
+		response.Nodes = append(response.Nodes, renderNode(&snapshot.Nodes[i]))
+	}
+	for i := range snapshot.Edges {
+		edge := &snapshot.Edges[i]
+		rendered := gen.GraphEdge{
+			Id:     edge.ID,
+			Source: edge.SourceID,
+			Target: edge.TargetID,
+			Kind:   gen.GraphEdgeKind(edge.Kind),
+		}
+		if edge.Type != "" {
+			linkType := gen.LinkType(edge.Type)
+			rendered.Type = &linkType
+		}
+		response.Edges = append(response.Edges, rendered)
+	}
+	WriteJSON(w, r, http.StatusOK, response)
+}
+
+func renderNode(node *task.Node) gen.GraphNode {
+	rendered := gen.GraphNode{
+		Id:           node.ID,
+		Title:        node.Title,
+		Status:       gen.TaskStatus(node.Status),
+		IsSubtask:    node.IsSubtask,
+		ParentTaskId: node.ParentID,
+		DeadlineAt:   node.DeadlineAt,
+		Tags:         node.Tags,
+		LinkCount:    node.LinkCount,
+		SubtaskCount: node.SubtaskCount,
+	}
+	if rendered.Tags == nil {
+		rendered.Tags = []string{}
+	}
+	if node.Color != "" {
+		color := gen.TaskColor(node.Color)
+		rendered.Color = &color
+	}
+	if node.Quadrant != "" {
+		quadrant := gen.Quadrant(node.Quadrant)
+		rendered.Quadrant = &quadrant
+	}
+	return rendered
+}
+
+// graphQuery maps the canvas's filters onto the board's, which are the same
+// set minus the ordering the graph has no use for.
+func graphQuery(params gen.GetGraphParams) board.Query {
+	return boardQuery(gen.ListTasksParams{
+		Status:    params.Status,
+		Quadrants: params.Quadrants,
+		Colors:    params.Colors,
+		Tags:      params.Tags,
+		Deadline:  params.Deadline,
+		Topology:  params.Topology,
+		Query:     params.Query,
+	})
+}
+
+type searchResponse struct {
+	Items []gen.SearchHit `json:"items"`
+}
+
+// Search answers the command palette.
+func (a *API) Search(w http.ResponseWriter, r *http.Request, params gen.SearchParams) {
+	userID, ok := UserFrom(r.Context())
+	if !ok {
+		WriteError(w, r, shared.NewError(shared.CodeSessionExpired, nil))
+		return
+	}
+
+	limit := 0
+	if params.Limit != nil {
+		limit = *params.Limit
+	}
+
+	hits, err := a.board.Search(r.Context(), userID, params.Query, limit)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+
+	response := searchResponse{Items: make([]gen.SearchHit, 0, len(hits))}
+	for i := range hits {
+		hit := &hits[i]
+		rendered := gen.SearchHit{
+			Id:           hit.ID,
+			Title:        hit.Title,
+			IsSubtask:    hit.IsSubtask,
+			Status:       gen.TaskStatus(hit.Status),
+			MatchedField: gen.SearchHitMatchedField(hit.MatchedField),
+			MatchedText:  hit.MatchedText,
+		}
+		if hit.Quadrant != "" {
+			quadrant := gen.Quadrant(hit.Quadrant)
+			rendered.Quadrant = &quadrant
+		}
+		response.Items = append(response.Items, rendered)
+	}
+	WriteJSON(w, r, http.StatusOK, response)
 }

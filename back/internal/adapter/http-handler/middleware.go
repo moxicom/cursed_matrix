@@ -3,11 +3,13 @@ package httphandler
 import (
 	"context"
 	"crypto/subtle"
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
+	"github.com/moxicom/cursed_matrix/back/internal/app/profile"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 )
 
@@ -63,4 +65,22 @@ func RequireCSRF(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// TrackStreak counts the visit towards the user's streak.
+//
+// It never fails a request: the streak is a reward, and a user who cannot
+// reach their board because a counter would not move has lost something real
+// to protect something decorative.
+func TrackStreak(profiles *profile.Service, log *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if userID, ok := UserFrom(r.Context()); ok {
+				if _, err := profiles.TouchDay(r.Context(), userID); err != nil {
+					log.WarnContext(r.Context(), "streak not counted", "err", err, "userId", userID)
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

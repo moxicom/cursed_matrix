@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -185,4 +186,49 @@ func (r *UserRepository) LockAccount(ctx context.Context, id uuid.UUID) error {
 		return mapError(err, shared.CodeUserNotFound)
 	}
 	return nil
+}
+
+// TouchStreak counts today towards the user's streak.
+//
+// The whole rule is one statement so that many requests arriving together
+// cannot each read "not counted yet" and each extend it. Today is the user's
+// calendar day, taken from their own timezone: a streak that used the server's
+// day would break for anyone far enough east or west.
+func (r *UserRepository) TouchStreak(
+	ctx context.Context,
+	id uuid.UUID,
+	at time.Time,
+) (user.StreakChange, error) {
+	const touch = `WITH today AS (
+			SELECT ($2 AT TIME ZONE COALESCE(NULLIF(s.timezone, ''), 'UTC'))::date AS day
+			FROM user_settings s
+			WHERE s.user_id = $1
+		)
+		UPDATE user_stats st
+		SET current_streak = CASE
+				WHEN st.last_streak_date = today.day - 1 THEN st.current_streak + 1
+				ELSE 1
+			END,
+			longest_streak = GREATEST(st.longest_streak, CASE
+				WHEN st.last_streak_date = today.day - 1 THEN st.current_streak + 1
+				ELSE 1
+			END),
+			last_streak_date = today.day
+		FROM today
+		WHERE st.user_id = $1
+		  AND st.last_streak_date IS DISTINCT FROM today.day
+		RETURNING st.current_streak, st.longest_streak`
+
+	var change user.StreakChange
+	err := r.db.querier(ctx).QueryRow(ctx, touch, id, at).Scan(&change.Current, &change.Longest)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// The day was already counted; nothing moved and nothing is wrong.
+		return user.StreakChange{}, nil
+	}
+	if err != nil {
+		return user.StreakChange{}, mapError(err, shared.CodeUserNotFound)
+	}
+
+	change.Extended = true
+	return change, nil
 }

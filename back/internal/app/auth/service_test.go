@@ -55,6 +55,10 @@ func (*stubUsers) ApplyStats(context.Context, uuid.UUID, user.StatsDelta) (user.
 func (*stubUsers) SetLevel(context.Context, uuid.UUID, int32) error { return nil }
 func (*stubUsers) LockAccount(context.Context, uuid.UUID) error     { return nil }
 
+func (*stubUsers) TouchStreak(context.Context, uuid.UUID, time.Time) (user.StreakChange, error) {
+	return user.StreakChange{}, nil
+}
+
 type stubRefresh struct{}
 
 func (*stubRefresh) Save(context.Context, uuid.UUID, string, time.Duration) error { return nil }

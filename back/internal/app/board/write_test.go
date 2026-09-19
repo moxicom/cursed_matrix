@@ -16,9 +16,12 @@ import (
 
 func newWriteService(tasks *stubTasks) *board.Service {
 	users := &stubUsers{account: &user.User{Settings: user.Settings{Timezone: "UTC"}}}
-	return board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, &stubLedger{},
-		progression.DefaultConfig(),
-		&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)})
+	return board.NewService(board.Deps{
+		Tasks: tasks, Users: users, Tags: &stubTags{}, Links: &stubLinks{},
+		Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
+		XP:    progression.DefaultConfig(),
+		Clock: &fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)},
+	})
 }
 
 func TestCreateRefusesPastTheQuota(t *testing.T) {
@@ -189,9 +192,12 @@ func TestCreateAppendsAfterWhatIsThere(t *testing.T) {
 func TestCreateCountsUnderALock(t *testing.T) {
 	users := &stubUsers{account: &user.User{Settings: user.Settings{Timezone: "UTC"}}}
 	tasks := &stubTasks{}
-	service := board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, &stubLedger{},
-		progression.DefaultConfig(),
-		&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)})
+	service := board.NewService(board.Deps{
+		Tasks: tasks, Users: users, Tags: &stubTags{}, Links: &stubLinks{},
+		Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
+		XP:    progression.DefaultConfig(),
+		Clock: &fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)},
+	})
 
 	if _, err := service.Create(context.Background(), uuid.New(), board.Draft{
 		Title: "a task", Quadrant: shared.QuadrantImportantUrgent,
@@ -353,9 +359,12 @@ func TestDeleteCountsEveryCompletedTask(t *testing.T) {
 			}}}
 			users := &stubUsers{account: &user.User{Settings: user.Settings{Timezone: "UTC"}}}
 			ledger := &stubLedger{}
-			service := board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, ledger,
-				progression.DefaultConfig(),
-				&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)})
+			service := board.NewService(board.Deps{
+				Tasks: tasks, Users: users, Tags: &stubTags{}, Links: &stubLinks{},
+				Tx: &stubTx{}, Ledger: ledger, Events: &stubEvents{},
+				XP:    progression.DefaultConfig(),
+				Clock: &fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)},
+			})
 
 			deleted, err := service.Delete(context.Background(), userID, taskID)
 			if err != nil {

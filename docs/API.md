@@ -322,9 +322,10 @@ Subtasks are returned alongside their parents in the same array — the client
 groups them by `parentTaskId`. Links are included because the board shows a link
 count per card and the topology filter needs them.
 
-> The implementation currently returns `tasks` only; `links` arrives with the
-> link endpoints. The response is not paginated — the board and the graph both
-> need the whole working set, which the free plan caps at 35 active tasks.
+> The response is not paginated, but it is capped: the board and the graph both
+> need the whole working set, which the free plan bounds at 35 active tasks,
+> while completed tasks are never deleted. A result that hits the cap of 500
+> says so with `truncated: true`.
 
 `Task`:
 

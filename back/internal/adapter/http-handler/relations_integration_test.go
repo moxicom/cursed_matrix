@@ -362,3 +362,40 @@ func TestTheBoardCarriesItsLinks(t *testing.T) {
 		}
 	})
 }
+
+// TestDeletingATaskReleasesItsLinks is what keeps the free plan's link quota
+// recoverable: a link to a task the user removed must not hold a slot for
+// ever, and the graph must not keep an edge with nothing at one end.
+func TestDeletingATaskReleasesItsLinks(t *testing.T) {
+	c := signedInClient(t)
+	keep := newTask(t, c, "keep", "IMPORTANT_URGENT")
+	doomed := newTask(t, c, "doomed", "IMPORTANT_URGENT")
+
+	body := `{"sourceTaskId":"` + keep.ID + `","targetTaskId":"` + doomed.ID + `"}`
+	if response := c.do(t, http.MethodPost, "/links", body); response.Code != http.StatusCreated {
+		t.Fatalf("link = %d: %s", response.Code, response.Body)
+	}
+
+	if response := c.do(t, http.MethodDelete, "/tasks/"+doomed.ID, ""); response.Code != http.StatusOK {
+		t.Fatalf("delete = %d: %s", response.Code, response.Body)
+	}
+
+	var board struct {
+		Tasks []taskView `json:"tasks"`
+		Links []linkView `json:"links"`
+	}
+	listed := c.do(t, http.MethodGet, "/tasks?status=ALL", "")
+	if err := json.Unmarshal(listed.Body.Bytes(), &board); err != nil {
+		t.Fatalf("board: %v", err)
+	}
+	if len(board.Links) != 0 {
+		t.Fatalf("links = %+v, want the edge gone with its task", board.Links)
+	}
+
+	// And the slot is free again: the same pair can be linked to a new task.
+	replacement := newTask(t, c, "replacement", "IMPORTANT_URGENT")
+	again := `{"sourceTaskId":"` + keep.ID + `","targetTaskId":"` + replacement.ID + `"}`
+	if response := c.do(t, http.MethodPost, "/links", again); response.Code != http.StatusCreated {
+		t.Fatalf("relink = %d: %s", response.Code, response.Body)
+	}
+}

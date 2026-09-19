@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
@@ -37,6 +38,8 @@ type TaskRepository interface {
 	Reposition(ctx context.Context, userID uuid.UUID, placements []task.Placement) error
 	CountActive(ctx context.Context, userID uuid.UUID) (int, error)
 	Subtasks(ctx context.Context, userID, parentID uuid.UUID) ([]task.Task, error)
+	ListGraph(ctx context.Context, filter task.Filter) ([]task.Node, error)
+	Search(ctx context.Context, userID uuid.UUID, term string, limit int) ([]task.Hit, error)
 }
 
 type UserRepository interface {
@@ -48,6 +51,9 @@ type UserRepository interface {
 	// LockAccount serialises whatever the caller is about to decide from a
 	// count of the account's own rows.
 	LockAccount(ctx context.Context, id uuid.UUID) error
+	// TouchStreak marks the user's own calendar day and reports what that did
+	// to the streak. A second call on the same day changes nothing.
+	TouchStreak(ctx context.Context, id uuid.UUID, at time.Time) (user.StreakChange, error)
 	// ApplyStats adds the delta and returns the totals it produced. The level
 	// is not among its arguments because it follows from the lifetime XP the
 	// update itself decides.
@@ -70,6 +76,18 @@ type LinkRepository interface {
 	Update(ctx context.Context, item *link.Link) error
 	Remove(ctx context.Context, userID, linkID uuid.UUID) error
 	Count(ctx context.Context, userID uuid.UUID) (int, error)
+	RemoveForTasks(ctx context.Context, userID uuid.UUID, taskIDs []uuid.UUID) error
+}
+
+// ActivityRepository is the record of what the user did, by their own
+// calendar day.
+type ActivityRepository interface {
+	Record(ctx context.Context, event *activity.Event) error
+	RecordMany(ctx context.Context, events []activity.Event) error
+	// RecordDaily files an event that may happen at most once in a user's
+	// day; a repeat writes nothing and is not an error.
+	RecordDaily(ctx context.Context, event *activity.Event) error
+	Heatmap(ctx context.Context, userID uuid.UUID, from, to time.Time) ([]activity.Day, error)
 }
 
 // XPLedger is the append-only record of every XP movement.

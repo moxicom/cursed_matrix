@@ -66,6 +66,24 @@ func (e DeadlineWindow) Valid() bool {
 	}
 }
 
+// Defines values for GraphEdgeKind.
+const (
+	LINK        GraphEdgeKind = "LINK"
+	PARENTCHILD GraphEdgeKind = "PARENT_CHILD"
+)
+
+// Valid indicates whether the value is a known member of the GraphEdgeKind enum.
+func (e GraphEdgeKind) Valid() bool {
+	switch e {
+	case LINK:
+		return true
+	case PARENTCHILD:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Language.
 const (
 	EN Language = "EN"
@@ -153,6 +171,27 @@ func (e Quadrant) Valid() bool {
 	}
 }
 
+// Defines values for SearchHitMatchedField.
+const (
+	SearchHitMatchedFieldDESCRIPTION SearchHitMatchedField = "DESCRIPTION"
+	SearchHitMatchedFieldTAG         SearchHitMatchedField = "TAG"
+	SearchHitMatchedFieldTITLE       SearchHitMatchedField = "TITLE"
+)
+
+// Valid indicates whether the value is a known member of the SearchHitMatchedField enum.
+func (e SearchHitMatchedField) Valid() bool {
+	switch e {
+	case SearchHitMatchedFieldDESCRIPTION:
+		return true
+	case SearchHitMatchedFieldTAG:
+		return true
+	case SearchHitMatchedFieldTITLE:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SortDirection.
 const (
 	ASC  SortDirection = "ASC"
@@ -173,22 +212,22 @@ func (e SortDirection) Valid() bool {
 
 // Defines values for SortField.
 const (
-	CREATED  SortField = "CREATED"
-	DEADLINE SortField = "DEADLINE"
-	POSITION SortField = "POSITION"
-	TITLE    SortField = "TITLE"
+	SortFieldCREATED  SortField = "CREATED"
+	SortFieldDEADLINE SortField = "DEADLINE"
+	SortFieldPOSITION SortField = "POSITION"
+	SortFieldTITLE    SortField = "TITLE"
 )
 
 // Valid indicates whether the value is a known member of the SortField enum.
 func (e SortField) Valid() bool {
 	switch e {
-	case CREATED:
+	case SortFieldCREATED:
 		return true
-	case DEADLINE:
+	case SortFieldDEADLINE:
 		return true
-	case POSITION:
+	case SortFieldPOSITION:
 		return true
-	case TITLE:
+	case SortFieldTITLE:
 		return true
 	default:
 		return false
@@ -288,6 +327,16 @@ func (e TopologyFilter) Valid() bool {
 	}
 }
 
+// ActivityDay defines model for ActivityDay.
+type ActivityDay struct {
+	CompletedCount int                `json:"completedCount"`
+	CreatedCount   int                `json:"createdCount"`
+	Date           openapi_types.Date `json:"date"`
+
+	// TotalActivity The sum the square's colour is chosen from.
+	TotalActivity int `json:"totalActivity"`
+}
+
 // CompletionSource defines model for CompletionSource.
 type CompletionSource string
 
@@ -310,6 +359,40 @@ type Error struct {
 		// RequestId What the user reports when something goes wrong.
 		RequestId *string `json:"requestId,omitempty"`
 	} `json:"error"`
+}
+
+// GraphEdge defines model for GraphEdge.
+type GraphEdge struct {
+	// Id A link's own id, or "p-" and the subtask's id for a parent
+	// relation, which has no row of its own.
+	Id     string             `json:"id"`
+	Kind   GraphEdgeKind      `json:"kind"`
+	Source openapi_types.UUID `json:"source"`
+	Target openapi_types.UUID `json:"target"`
+
+	// Type Absent on a parent relation, which has no type.
+	Type *LinkType `json:"type,omitempty"`
+}
+
+// GraphEdgeKind defines model for GraphEdge.Kind.
+type GraphEdgeKind string
+
+// GraphNode defines model for GraphNode.
+type GraphNode struct {
+	Color        *TaskColor          `json:"color,omitempty"`
+	DeadlineAt   *time.Time          `json:"deadlineAt,omitempty"`
+	Id           openapi_types.UUID  `json:"id"`
+	IsSubtask    bool                `json:"isSubtask"`
+	LinkCount    int                 `json:"linkCount"`
+	ParentTaskId *openapi_types.UUID `json:"parentTaskId,omitempty"`
+
+	// Quadrant The effective quadrant. Null only for a subtask whose parent
+	// cannot be read, which the graph shows rather than hiding.
+	Quadrant     *Quadrant  `json:"quadrant,omitempty"`
+	Status       TaskStatus `json:"status"`
+	SubtaskCount int        `json:"subtaskCount"`
+	Tags         []string   `json:"tags"`
+	Title        string     `json:"title"`
 }
 
 // Language defines model for Language.
@@ -394,6 +477,23 @@ type RegisterRequest struct {
 	// Example: nullptr_ok
 	Username string `json:"username"`
 }
+
+// SearchHit defines model for SearchHit.
+type SearchHit struct {
+	Id           openapi_types.UUID    `json:"id"`
+	IsSubtask    bool                  `json:"isSubtask"`
+	MatchedField SearchHitMatchedField `json:"matchedField"`
+
+	// MatchedText The title, a snippet of the description around the term, or the
+	// tag name with a leading #.
+	MatchedText string     `json:"matchedText"`
+	Quadrant    *Quadrant  `json:"quadrant,omitempty"`
+	Status      TaskStatus `json:"status"`
+	Title       string     `json:"title"`
+}
+
+// SearchHitMatchedField defines model for SearchHit.MatchedField.
+type SearchHitMatchedField string
 
 // SettingsUpdate Only the fields present are changed.
 type SettingsUpdate struct {
@@ -564,9 +664,26 @@ type Unauthorized = Error
 // ValidationFailed defines model for ValidationFailed.
 type ValidationFailed = Error
 
+// GetGraphParams defines parameters for GetGraph.
+type GetGraphParams struct {
+	Status    *StatusFilter   `form:"status,omitempty" json:"status,omitempty"`
+	Quadrants *[]Quadrant     `form:"quadrants,omitempty" json:"quadrants,omitempty"`
+	Colors    *[]TaskColor    `form:"colors,omitempty" json:"colors,omitempty"`
+	Tags      *[]string       `form:"tags,omitempty" json:"tags,omitempty"`
+	Deadline  *DeadlineWindow `form:"deadline,omitempty" json:"deadline,omitempty"`
+	Topology  *TopologyFilter `form:"topology,omitempty" json:"topology,omitempty"`
+	Query     *string         `form:"query,omitempty" json:"query,omitempty"`
+}
+
 // UpdateLinkJSONBody defines parameters for UpdateLink.
 type UpdateLinkJSONBody struct {
 	Type LinkType `json:"type"`
+}
+
+// SearchParams defines parameters for Search.
+type SearchParams struct {
+	Query string `form:"query" json:"query"`
+	Limit *int   `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListTasksParams defines parameters for ListTasks.
@@ -627,6 +744,12 @@ type AttachTagJSONRequestBody AttachTagJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GraphOpened Note that the graph was opened
+	// (POST /activity/graph-opened)
+	GraphOpened(w http.ResponseWriter, r *http.Request)
+	// ActivityHeatmap A year of activity
+	// (GET /activity/heatmap)
+	ActivityHeatmap(w http.ResponseWriter, r *http.Request)
 	// Login Sign in
 	// (POST /auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
@@ -642,6 +765,9 @@ type ServerInterface interface {
 	// Register Create an account and sign in
 	// (POST /auth/register)
 	Register(w http.ResponseWriter, r *http.Request)
+	// GetGraph The network
+	// (GET /graph)
+	GetGraph(w http.ResponseWriter, r *http.Request, params GetGraphParams)
 	// CreateLink Join two tasks
 	// (POST /links)
 	CreateLink(w http.ResponseWriter, r *http.Request)
@@ -657,6 +783,9 @@ type ServerInterface interface {
 	// UpdateSettings Change account preferences
 	// (PATCH /me)
 	UpdateSettings(w http.ResponseWriter, r *http.Request)
+	// Search Find a task
+	// (GET /search)
+	Search(w http.ResponseWriter, r *http.Request, params SearchParams)
 	// ListTags The user's labels
 	// (GET /tags)
 	ListTags(w http.ResponseWriter, r *http.Request)
@@ -699,6 +828,18 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
+// GraphOpened Note that the graph was opened
+// (POST /activity/graph-opened)
+func (_ Unimplemented) GraphOpened(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ActivityHeatmap A year of activity
+// (GET /activity/heatmap)
+func (_ Unimplemented) ActivityHeatmap(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Login Sign in
 // (POST /auth/login)
 func (_ Unimplemented) Login(w http.ResponseWriter, r *http.Request) {
@@ -729,6 +870,12 @@ func (_ Unimplemented) Register(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// GetGraph The network
+// (GET /graph)
+func (_ Unimplemented) GetGraph(w http.ResponseWriter, r *http.Request, params GetGraphParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // CreateLink Join two tasks
 // (POST /links)
 func (_ Unimplemented) CreateLink(w http.ResponseWriter, r *http.Request) {
@@ -756,6 +903,12 @@ func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
 // UpdateSettings Change account preferences
 // (PATCH /me)
 func (_ Unimplemented) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Search Find a task
+// (GET /search)
+func (_ Unimplemented) Search(w http.ResponseWriter, r *http.Request, params SearchParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -840,6 +993,34 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// GraphOpened operation middleware
+func (siw *ServerInterfaceWrapper) GraphOpened(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GraphOpened(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ActivityHeatmap operation middleware
+func (siw *ServerInterfaceWrapper) ActivityHeatmap(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ActivityHeatmap(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // Login operation middleware
 func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
 
@@ -901,6 +1082,117 @@ func (siw *ServerInterfaceWrapper) Register(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Register(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGraph operation middleware
+func (siw *ServerInterfaceWrapper) GetGraph(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetGraphParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "quadrants" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "quadrants", r.URL.Query(), &params.Quadrants, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "quadrants"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "quadrants", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "colors" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "colors", r.URL.Query(), &params.Colors, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "colors"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "colors", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "tags" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tags", r.URL.Query(), &params.Tags, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tags"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tags", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "deadline" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "deadline", r.URL.Query(), &params.Deadline, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "deadline"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "deadline", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "topology" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "topology", r.URL.Query(), &params.Topology, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "topology"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "topology", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "query" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "query", r.URL.Query(), &params.Query, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "query"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "query", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGraph(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -995,6 +1287,52 @@ func (siw *ServerInterfaceWrapper) UpdateSettings(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Search operation middleware
+func (siw *ServerInterfaceWrapper) Search(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SearchParams
+
+	// ------------- Required query parameter "query" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "query", r.URL.Query(), &params.Query, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "query"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "query", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Search(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1586,6 +1924,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Patch(options.BaseURL+"/links/{linkId}", wrapper.UpdateLink)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/search", wrapper.Search)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/graph", wrapper.GetGraph)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/activity/heatmap", wrapper.ActivityHeatmap)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/activity/graph-opened", wrapper.GraphOpened)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/me", wrapper.GetMe)
 	})
 	r.Group(func(r chi.Router) {
@@ -1600,123 +1950,144 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"7H1rbxtHluhfKfRewHeBFu04mcFdGfuBkeSJZmRJI8l5IAysUvchWaPuqnZVtWhOIOB+2h+wuL9wfsnF",
+	"OaeqH2RTomxZzszmS2I1u+tx6rxf9WuSmbIyGrR3ye6vyRxkDpb+eQ7OKaP3jLlWQE9ycJlVlVdGJ7vJ",
+	"OXgnjBVZAdI6kZXvZJaBc+J/f+d9daKLZSrOZQnnysN/HskPqTiVfv6fz2Wl/j2d6Kx8Z2Fqwc0HPzj3",
+	"VmW+883zm6+ey9rP/11IneNsmbPT0UQnaeKyOZQSV+iXFSS7ifNW6Vlye3ubJhZcZbTjHeydn70+g79B",
+	"5iHHvzOjPWiP/5RVVahM4uae/83hDn/tDPy/LEyT3eTfnrfges6/uucH1hrLk/UhdDEHgTMKhqpQTpTK",
+	"OaVnCLfcgBPaeFFKn82Fn4PICNaj5DZNjo1/bWr9BKs8NsLVuADprsXUWOHnygmZZabWfiTG/MMVFEbP",
+	"cOneCGdKMBoEFA6E1G4B1k007sDJEsRCLoV0At/wc+nbncIH5Tye2W2a/LU2Xp6BzOZPdRRVIfUzJwpV",
+	"Ko9nYXnykTg2fo47o+XhP3D/0ylhySuB0xSAzycajw34DyEDxCyAE1K4wsStnUkPRzjLk+zMGFFKvRTS",
+	"eygr78TUmjIcYp5bpEhj1w8WF/pWI0UZq/4OT4NoN7JQuXDMWWgJ3+MTmua1VMVTLINmFH8+PzlOhdK8",
+	"ojDjKMHXwwg4wTjz6kb55b5c4p+VNRVYH9hhQAzI9xCgHfajtIcZWNxeZkHe/UYuPeAvU2NL6ZNdfpCu",
+	"srI08cbLIi5onR0jhru6JD7i3tfSwjMnMlOYmhhPNjcONOHGKEnX1kGM8n2tLJ7Az3ENvdWnqxteXdIv",
+	"zbDmClksLnovEI/R56a2Ge0UdF3iJPuHZwd7F0manI7PDo4v3u2Nz/fG+wfJLwOb3weZF0rDD0rnZtEd",
+	"ZXz8U5ImJ98fnO2/PUjS5OJkf4xPfjg4+EuSJscnx8MjMn6sHSoMP85MDgMi0MurAkggFVLPajmDHaVz",
+	"qEDniE4CDyUrFGgvLD6zTij/Cs9ooh3YG7BCA/7Xgc6dqKxxwDINPkiEHOLr+Ohwf3xxeHL87vX48Ohg",
+	"fwg5KmllSSuVea5webI47ezA2xoGCKEGFzhDXOczJ0pwTs5AIDsppIdRMnCwiC3g/GG+DpUfkOfjiLUD",
+	"KyxUxnonFnPQJDiY185QJiys0bPR+n5WsJGAv45dK2/xyQ0h4Z+srOYH+QzWz1UNrH8sCqWvnzlhFlqo",
+	"PEX2OUmqnUlCJ00EVl8h83/mhMoJgFJU0oL2E22hIHaVisVcZXMxlyj7hDULYaZCeRqWz3jtFK+Vzru4",
+	"fXR4/JcOfXx3eLQ/iMuuoa2Gi9S1yoem8NLOwG/3Kj34NZFFcTJNdn++m98eKX19gV/c/rKKaOMrhxRg",
+	"dAMmsQFKOCXig66LAkmLEXf1pGm5Yc/NjgL0Np7/sckHzh8ZpL1PlFxId71HL5IwYU409mtce8erEtZW",
+	"PwBZlfe+3XQAyp0znnUkx5UxBUhSMxBL7xAsDGlc++HgdPeu8n0tcyu13x4H/hq/WMcB5IRAOpW6ARGH",
+	"HonjuiiE0cUykFGgLLFAedUQVSa1Nl5cgbAg84g0SIkzPFvh5mbhhJV+DsjMpBZzlSs9YzpbwaY0cV76",
+	"2m1z7Of8Jn7DC7sD4F7OmKd4KF3nlVWKSqS1ckl/K1/AwJtD+M7vNmvvYkeYuosRK+sdooqjILG6DOfg",
+	"OEmTs7eDTAYJfN/KqV+nIqbFzai2gQs95IPAi7bjQCvw6y1vZfJByMSBOpA5OzgaX5Ds3Ts5Pj7YuzjY",
+	"f3dxkqTJt0cne385T9Jk/+D04Hj//N3J8TD4zEzpM5aa6xCspHMLY/vAaB4OAUSV8Hejh5SSwGtRr1gK",
+	"p2Z6R+lUOCOk8FbeQFGgACbh7LxcopZoLWR+1FM7Dmpc4PM3xmVmMbQCHEDLkqHUfIa0Vnn7zlzfK9ab",
+	"AdJ2p0PH8cbcQAdwK7LFi9I4T8amBjWbX5navsJ/Ei8oQWpHjAJ0jgIY/1mgFYqz9o5ATj3YB6DkFUyN",
+	"fTjS/7XDVbfjpStgWxlmCGKnhdRd5H19doCq8ekZIuz5wdHrd9+dnCM2DyHqqTUzC85tUOwQ0JksCpHN",
+	"pZ6h+YysHVmNE9Iig/a11ZAjwrVqpcikRt0oMzpTBZAedGWkzcVC+bmpvZiCz0gzVF7ImVRBR+qfUQE3",
+	"ULyt1pd2okHw/sXcLEilJqPYz9HDZIrciQVYEJk1zkEuaCPZgK6xOiMaTEc4a++IlfZfvxwwo9LEm+3f",
+	"XjnYdqp2mKHTJVj3BM19UmxI9tS6MNk15ONsruAGyugBXCGv9leBargbiXGxQKaBvoalqLVXBdPXjSxq",
+	"6Y1lN4pD0G4vCT9U44W0OQyo48cwk6Q0kAXx46lYSEdYk1u50DjNQwHNAOxOugEcQ9Dv0m+kr8M3pydn",
+	"F+Pji3dvz/50cIw2bfvo+KTzGP8YeLv/uPPFEIGewUw5D3ajMIFSqmKARiq2C1uHl9J0dJU1eZ35YITi",
+	"x8KbXC5fCakbH5JyE71ABiDFtPa1JS4AOpdWEJwt6fNioYqi49EM3iZxtUyF1HkzRGT4woIDLxamLnKh",
+	"AdnJ2F3j2lAdJA+iETPw+IFnuxlPmzVGXjc4dOOA9pDHxYKLKmJhzDW67NQN2GirTzTyKc3uug72MNi2",
+	"UIyLjuZ0p0IS37tN7xXwpdJHoGd+nux+9fJB8n6sxeH4eCxUDtqrqQI7Egck++MB7eRyKWxdgPjH//1/",
+	"wnkL8lrkculSMQfpS1lN9FWdXYN3qSBDhsAbLR1HnylHntAaway0UOga1qLW1xrNZFzaRE9lUThxJbNr",
+	"PLa3F3s9lXwqFWkeiBfBfbDq63iQ0rFuYGQWCAiy6CEf6kCIJMQ1RmJPOnTTONBOEWMhnKi1el/Drpgk",
+	"JxVYZGTB3p8kpvPAgmj83NGVurKJngpUyg/xXL9+2Tvmrz9GP+ogwhBzOgdps/l3ym/ydHyqzUmUDflr",
+	"BUXPU3FxeHF0QErw+d7Z4Sl6q9AXN/7TIAcLo1zABz98kGTspEIKp1VVgY+aW+dNIS3GR+ixB1uSm4YY",
+	"hJczoSkOofxcSFGARFtQ/NsGr8sn2rmPYl1+jCXYNQAbq7B3QH1IDyOMx2CGe1tFP/SqXlUsCcRTHNCJ",
+	"Cvm19kQHUQFc09I2yJ9xjseQ8nchCEbBw8gUAvceibdEixqcExQAAEcMH6UHMAFaQIZkNDwlD0cvw6E+",
+	"omAeKa8DyCtJeFXS+ka61leFyoSV+jrElm5MUWsv7XIkLmqrg9JrplPUkEtzA651n4ZgDjTfR33Zm5r1",
+	"ZT8HZcWPpz3s7pBsV3KscdpvwRZKD5pq67hirN9XaCkq0zMvxud7gfQHqR2/W2MYpyfnh4FL7B+M948O",
+	"j5F97J0dBCubGcrgcITqr1XhwfZWsXdx+D0NcvLm9OiAhxkfHQ0PwpSzwZ/xZbyCcYzvpLtQJQwz4B66",
+	"/doVLy9fvHgxqDgEztJ59asXL3qi6Kv7RBEPMsRALuTso2VNFOTdTXwztIW7/G5DHDJIzbv9XxdByK06",
+	"/y3M6kJaju52fZKvRNelKjygsuPnUAqJ9D5qvJqkK2ujd/DIBXyQmS+WbL70RlBO4Bu77RTBD64hxAom",
+	"pFxJjSrXHKzyjlkKjfLMse09xRBf1gTaIqtGFu3AT7Q3M0CWmfaXwiIDF9EQDOno9OHUmr+DFhTIkX6i",
+	"S0MmIDmRCunBBu4vPFv5P56KzOipmtXBDuCwloWFVR7cRM+V88Yuh4z6h1NbE4j8FHJrBvleye1F/1pA",
+	"c1AFCIHTO5a3kfofmYP0sfu1LBwEp5gcUPXTEKaE1i8jBc4+GhQtD2ZGWzKGTw5dVMapuKotnDaPrQHG",
+	"8ca+RZcvql1+fGRiVWqsfVlX+UNRHRWbLX2mPb/Q2kluwIM7ZUOYvFWju0jcwZw08KV1qupo2y2ddwER",
+	"AL5J6OxFfhc1F8pRSJO9n8aoDn1/eHJ0gE6h8ZtvD84wHnNyjj9fHIyP0H2LcYhBnebif4ZC8/7BDvRH",
+	"VYI6C9h0wBg/GjiDh8uELdnlbzz81gnXD8fgwvhdctoM2iGH52N4xAd9xJuWcYpm9bp4Zbcb6V9kngaH",
+	"6yt2V5LrU7U2NGtQbvQIClGfWlf856iEhiRd9qHwu6+E5LyMAiSanMqLWnds+n8JI2bw9M4bEXqH7TjI",
+	"YU1lCjNbDhiflIWG+Tpkdr49Dv8cGuWtg4EMM3kjvbRvbbHhBNtI5kpCmdTB9ZsZ3boLovOQTIQm2azJ",
+	"xJ2BBis9tC6U+/Xlh/OvTY4gxrs2doSLFTLP2aPzUf6cLVnlR7nuQzT1rvcp4hrePfhQMRdZ27fwln3T",
+	"0pOlZ2stTO2jv96xa0Vc1V5UVmXBXZQVxjFJrlPSoEtq4DUv/b18EfHynF5c8Rrd6YXfwmFZt47sBv6d",
+	"GYZ2EaDeB2hf3+I9DXHodiOD5j2HMTgaNJtZmBEdTKMdW0A+Q3QMvmUZ0ltFYWYppR8JoyeasytCGKMX",
+	"5nB1WULeUmIYD2Q2Z1NqwASWnajj2xCJ3NJ2yWprQftziups+U2xMURdKq3Kuuxy0+53agq4hR+r1Y//",
+	"+M3wREpfuz0+tG3XZlAoPmw/wXvi9qJJv+V3n/DRA/a0QhIdIMaTWD3FVSisTLq28CEIrAA/Hcaxwaxa",
+	"B1ltlV+eI2OICJqBc1wLNERVGGKDXPz5h4vgoJqBCEl7SDIj8T1YjE3m4opzkiSGkDkrSU+oDIFEGK61",
+	"oSpycYNrknlOjfMzC+d/PRLaWHEGuXJMTQpXwdUz0f23mzQVSe2ZyEr9BcjAxeqhC3MNejgAhckMDVPA",
+	"3ezgNohnhNKjWKwjzsLZtjlXtXZyChONuc4mT8UVZLJ2IKS4smZBss57SVvjQSg7mrZoLInnBoYo9cmF",
+	"R8F5fF52dsx1Re2Of9zBcqMd3tfApkPB1aZjxI2bSr6vQShKlpKC9YYdp3IgzmnzVLjMVJALb0S3Louj",
+	"qCv1WwidG5Mh3GJEXjlWhHGLiC5NaufdJxmWvr4rRFilp2aTNo6k5rwsK5z58Pxk5//88cVXITSoBXzA",
+	"+hLlKVhtplMHHgPEIbEBY+RCWpjon3766aedN2929vcFS7p+NDwqMc+ciGItDS5Q/Imh+AyR9aL5M2RK",
+	"Oc6rIXlDWfzgwbq0caAGdxyVBux29L+J5t+CC1ppcXCM6HP2lgEZVGbkLA7yd6X0Vn0Q49PDJE1uwDqG",
+	"0YvRy9ELRA1TgZaVSnaTr0cvRl9TzNnPifafRxH4nJJtd/BVZn2VGUrJew2QUzZ3SC6grWmDISryVxuO",
+	"KXLsSnpBqWMqZOl9qArDLuSJ7nCsiD0UcOdXcyrWyjyfUqNGLsikQQSK6b8cvldGo7HLyeAnvIWV6sCX",
+	"L74ZUL6NR+XrNk2+efHVJhWqGeZ5r6SKPvr6/o96ZYnEgeuylHYZpmcwtdnOmABl4g7Yt/dzIpsyHByg",
+	"PbNwCLiIkPi/QiUhJvD1H/8gQHuL3Ag0BcwpCWgjenMCGAJ/opXOijqHfHfQQBFT9QFyMbMqJ1woa+eJ",
+	"zc3lDUUQlJ4iU5zomaxGgmLOpOnhIvCDtgSPEYASUkh0cioroxincFGd3tQUhVmwDrYw9lrIAvn3kj+H",
+	"PA3DognCIdSSkw5DJhLXTU20xP0Jv1AZNAlJkpT0IdSKlVDfBZCvodeLB1W39VVEBPTWLo5u3dqQd9d4",
+	"Wbg7KtruLGbbIgqXNVpHO+S9BTy0w2ZxA68PVnU2WEXBMfr2Y6m1R3hjsQRpSQpGytpMbLWfPy8wwbvL",
+	"FfvIQfnfSVM49a3Jl49W69jLLb/twzWEDT4JE++zGjedTUiQSlncsiSk0s9G70F5m6T9snO/0yooQzOH",
+	"l5+vFKjf3ran/nkrSH/AsrUmhTFlpY2LqGXWMihMO7wiL0ux7CSNUbl0OtEhPxp0XhnFGdKhxqV2rF6h",
+	"z04HwRdtaI7renkNOlQbf/PyP+5H9G5JclfFT3Z//qWL9edqpoXSXVSv/XwFzU3tN0v/PaNdXYYUlljh",
+	"71EjZZ7bOiIDDozW+OgRT7GNdN7D4WISege+qwq1bDAPhSf+EvTNR8K8Pkh/XdW0f/7ldh3MGF01mquy",
+	"c7hRGdwL9h1ZFJtBj7r2NTgRfRNd2AdTpinrPyHo8LROXANUJChJejaOOWVF6OnAgwA5YtyqKn+FiXhB",
+	"KZMlmi3INSfaeVNApHVE6KmaegAtSqVrD25IhvLZj4tiq+PnHeefg4U8rZrXIASdHaW53YEM4Wg3Y8JF",
+	"h/YC+IOC3abIvmrz6LQRVyZfUrMHOmhSOBfSTXSrOBFZU1xDCgtVIZe7HeNG2DuRb6JZ1Q/skdJMiFCd",
+	"+ObFV0OIcNYYfFvo6LBoJEpIe/nSKPFAhnBmvPScWswgq6Syd2IA1wBs1jdilcBnUjlWixC20jq++lfV",
+	"Ol6+vB8/1jpdPLbsZlcf1Wx0yMzdJdHJntxoGjYydUrxLidYdHLhVhpSc3OWYZEP7AqqoxMyqs8TXTtg",
+	"IUcsyNROorQwU6FNjsKEVjlXVUXmXlEEWVU28qWU1xD6y0yNzUA4VdZcPy5qXTt0LyHvwvGeuW4anvC9",
+	"smOjqQQC7bqYcBe5EFqh3jWZdfhaEwLwCxMdD5mJeeXKT3R07OFLmdQ30gmn/g5OSFoL+jqDx26isf8A",
+	"cyfc3sIILFd3u6EgUV93XBilzCFtZl9tLNBluqVU2kuluyKZ1R0ckpoO4DBz6VAe52DVDbLwfNAxAp58",
+	"I0matH4o4l3kk3tfg122LrkmBWY7eu0l7d7epsODxpPrj7uVxdvL9lgJ7A9PRlH2j5ipF3jfbqpQnj0w",
+	"0T2JWJsGjFH2reG/0j9l80pDhHvrgVdC4nccLf+5uVfXL4/qLsGg2/b+krZDyIC3hNjUw4aiZhP3pZjw",
+	"uGlY6rb+Dqdl5ebGd5lO8LR9gpfy4wRYT4XFxWnwaEV0hA1LGJY2xOY2K62XuP9LkcNU1gU5c8RlKLu/",
+	"HInwL+Jn3RJ84eQSed6cTBd5hUo080LQOYsQlc3TWI6MehVzSVvKQlEtsM7F+B//9d/fRoGBMm+iiYNK",
+	"J779x3/99/iV4Dp/ermt9GfDiS2lPJZGoChips0xkdDzpRE5raGPU0BOsqb17kaNG8tbXUi/btul4PxS",
+	"OMiMzgViTvBYIhSUZ1flEHdn5YAy0z6TD6ppD/HEqmCTcbeBYBDIn+K/34Iyer3sPs4axI++uf+jpi0g",
+	"ffAfT9E4T7mGaCJq/s0oDXm0EpejDgv5vKsZi2EKYu0NiulohSn92ShN2las+Y58iXlRhy89/xX/d5jf",
+	"MmMqgMvh+lS0T88bKrrPLuXXnzZ69GBE6sHrW6oNZvVxAFrDqiFGCltJz2BMVllAV/Tfk6aFqkAVMyz7",
+	"B8B1ip/IxlaSRz8lt5U+HhbdT+eC/9wc8F+ImYHQsKCsCg4mFoXKwTWVwiTyO0yOg4OBA44eS1Pa49Kp",
+	"0AqBJsUVbWJPJWy00JtWeyHkemVMaAC6K5QXOdp7rNOw+yKN3euaQcRMepjoxti0ZqrQmr6k8OqlIN80",
+	"m404rLhs05cug30bjNHQ1jCspFR4CDw3kntdSPy/yJVD1yElAWywQt9A8mXjVY8SP8TxOCtqRzUemV4I",
+	"kZ/8cnsPs4sl2p9Jb1upAP9NRw+RdisLU7CgM4jF4U8uXx+PBYQtdjc1iCLIBhz1dtjsrOOWCZ2H7EEK",
+	"zRBcKiQ1P+JwNjctxQGJtLl9E7nGYm/nkEJDRBsTtrC2QSs35zBAW01qqHWLI1Y5mujLbhOCS5rpstOI",
+	"4JK8YDlkKud8wJaHNLlyE2100f1FYJ8RNOb4IXq2wpCvugyQGwHSZ9w5YqJjISPDL/Ya8PCh12eqT3nc",
+	"R2M7T1j8c7O6c0+RwvCw1Ka65zAp5YeQm/vN3Ym6j+xKadweW/k/2hYk9/k/eLht/B4/sBeYjjuNCEx5",
+	"PVNlnf+yfo/XikzybidG7DnIGMSkyw83EC62R2A6mJtF6FpG5JhJa5eUN85kzVlZoakwsQ30RrO4n+gO",
+	"qfTc0rGrL+o6sqLm88gT2KUfqDCmZJqJRgKiEYXyqTA4HK9G4QksRbC7sKXahgQ7LNG6kEFePRoSrpWw",
+	"3q0Qz7Yo8Jpth3ycRlrIK+gUq8ylezQtIWTW0Qxd9s8rDAjkrjdjEK8Q3wmtWuhomV5cGv1OTsQsvZSQ",
+	"KoYxHOLDRJOQoNZgopIzpaWP6Xzcpy9qiOykQn5Pfy7mpoA2dcCB73ZnnVrgvvsik5UT0ouv/xDpl9Y0",
+	"Ek3GettDcKI5+ZWt8DylqNFsHnpYWnB1QcGdTFYV9/L7w4sXtEAnl6HTNIZnMNUjq/1mJGWXwO/Rjt+j",
+	"HU8e7djwoTPWb49mTWOdzaBr+vU8ZNC2y89j6xJNCGCQx6Il3LJYU+Tc4WQZ+ta2hgCxpDb+KlFW5kH5",
+	"CxZ1GwHnpAo+uMAcJzoqrFC+4tajkAsHleyk66HbMIaHM3SyT3SunJxZiLUK2xIQO2cG8nAfpZOnt7XO",
+	"YmLuilFg69A3k7PxiHPOle8q1pmsMCSNLDRwYAxalMZCuK9FHEuL+nZHtlA9CsRB/XDrqQ1dNxkFusve",
+	"NvRFEo0VGBQdXzzaFUsVW4Htopd0Y1YWviMKyoAIrptOY+I2c4Gyr0RIoxZKj8RpaEwx0cp1ju8ZxclY",
+	"jXu10nCXMgHCpT5Nne9QWOiCddfP4V5om1J8gbDQJkTCQ/inCAk9hqchZAWtGigRWRv18vmvXrr1AMja",
+	"3RhmpjJZBOWMrRHkDtxK3Jl7ymibTlAcOiW/h+1cK8V1QRZCfmKgF+5Q0JahTPSNgkXIHUKL6cfTSDOV",
+	"VBz2jR2C0bKSVEIC2nFNCWhPraha3bPRkWemkTLKhjDuK1HrxvFhNDhxhZUm7O/sdTIdihY1xPV4pSA0",
+	"bn6Y92XHll08NthDnUG3NskXlHuAHQvz3+MLXQbvPLZBnkvXxZyIYyPxmh6l6G0vjQcRrxUDMuNL9mrE",
+	"tIAlJ41VoMnMahPDgvymjstUNCqvSSSXE9R6dczLazwAVzCXBV2Z1+cQjKabOcQ2QT8fO7k8TtDv7iak",
+	"rAHmS1GCxldcaKUyEpdtI5RLwY1KucfeRHcKD9oOKAVMvTC1T5F7EAcbiWhbEZxjOygRWkZPNOSKewdQ",
+	"8jSeUWluOvfBKRcv+RENN2hLgFXT9mWiKSw9p1rS2I5+gImwX/4zS2juZ/MFwpZ3UpFEUArNwkXn7nce",
+	"04VOaMgdXCScF5T1nCn4CjdyfLTQ5UGu/EN0iedxRSTFnoqNDGrfb6QNSbYEm5xqOXWe9u7vSkP9QvBR",
+	"xZStWtP9nSGaIC67vSN3Rf/+usuWQcsSOu+O/eWIFBU30ZVVWbdJyPrVSJyB3L1pzA1mKE80H3Fk9/h2",
+	"urlR50CXzomObTrFIkp1kFZjWRV7stIm6zBt2pmgCsU7pZpL9tshTL2V2m0uko0612OoRXd25InXmGxy",
+	"6fomFtTpndr0v/qd0yTjpvSn4TIbr+gSgzd0TXRT6n0FIuA8JT3MaqB7WJqLwNa0kognD+I2qIp+eU7T",
+	"ufUxlGyiDzxrWkLIRq3Y5doCeteJ3MoZNUbHlE/UB5pqdOo00fIUXZdXsTd4rqYUOib9xZJ5Q/WkwY9D",
+	"33C2KNF4GLLgnsLswudyVlzhSPwJedBl926jS2HsRF92rke6JESIXVm8EbKqQMciTNZKpeNbF3CCqnFd",
+	"4KwWePmu7/IgL5UUM0mNOqgEtq5G4k1UriLWmTpyYUrMoauIgh6NDHKI5eAFUp9RgereT/VFMr/cHXGr",
+	"LqVGXTYwOU4GIuuNKmMK6fzvjG+TisXYveahiz8jMYV6pUa6o7j+8ZSbE0RNrFOUFkTqK2GBrDvlQzh7",
+	"oh9LXUPUfBADDZT02+ChK3eFIhBzazjmF/36eExo+DZMtu9WxVKvnkaFZ4KLAttqUrUuwHXMysC0tUH+",
+	"NhIYzMYL66knSNpYj80afjxtzlK42t6om9DYqoMdgXvRTZYsCwnObZvtXDlf2yu64YH6hPqogw0wtFP+",
+	"+hN5Wt+p9P5j7qVbcxP9xpldA/Z/Gn73FFn1Db8Lt/BGU8iZbol40JdNBOJqqj1eZdKR00p78yDWw1zw",
+	"y3OevW6HisYwiB1mWkNIaqbeWKdDjGBBicQT3XM363iDHRlN7Nc2Vs2UlgU/Iwj3cx6cYeUtusvZvy7r",
+	"4H4aifPosm65DHu6pctkDq3HigE7zEnO6LcvaYtdNDZrIxlb1z1KT6qmjRCU5ack6D4x1X6S6D6j7nDR",
+	"q+iNWCmsu4OSoqP5y9PSeOVik1YWt3ehB7F8XyV2cwk0NQ1rc5q47KdLDbUOmZ0uNFIspMYwKcnf9xiX",
+	"E4W6BoobGTZhMB64MTra3rL1WfKvuzcR/YZipAHC/5qVc49An+M8b6XddnQZcxi/sHwjpGaJxVmNU7o5",
+	"j61uKxRSJgsk7h7QNCtVlAsSelDFGxNFBZY+TEW2crFisWQ9uL3Qc5J8K7Nr0PkkIYN/oifJVfOEL45t",
+	"5+OGkNTmcUYaW7fNcsk3rcVa2IleydBkPwf1ayYRktdMJYNBljFNiWmjj6VOb7jb6iH3TdAQX762bLax",
+	"rIwAjuGZjuv5f4JoPqVrkXj7Rg8pubM7OAD+Nbs/zYJG5/ikRsnpY5vUqbEz4z3obqJtP+nHXJEXjv1t",
+	"Tc9/ztk1w5kKXfy/v6zVE8P+J6prvcDYeHNm0+nGQ3uiYHe6YeDZp3L9tcZT/c7d2DGo0/o6tKEily1v",
+	"t7ZFspuExs50A1UA0HrrtZlyPsa30dlLdW46Dw2srPH026jdHuJAcpuujtSvlCPmHVwrygoXytO6w4Sy",
+	"qOGRKClv1D8st+HdkHmPSihhhhutZDEPfxa6XAi2UUzs8hyyEnuF0JuGyExZcsfnAryHzlehcOTumaXr",
+	"tv9gC1T5zijcdmN9kKZglMCcK+xOvgygRjBkndbXPZCHfqe3v9z+/wEA",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -16,3 +16,13 @@ func (d *StatsDelta) Empty() bool {
 	return d.XP == 0 && d.TasksCreated == 0 && d.TasksCompleted == 0 &&
 		d.SubtasksCompleted == 0 && d.LinksCreated == 0
 }
+
+// StreakChange is what marking a day did.
+//
+// Extended is false when the day was already counted, which is the common
+// case: a user opens the app many times a day and the streak moves once.
+type StreakChange struct {
+	Extended bool
+	Current  int32
+	Longest  int32
+}

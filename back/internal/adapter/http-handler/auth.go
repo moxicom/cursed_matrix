@@ -16,6 +16,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/graph"
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
+	"github.com/moxicom/cursed_matrix/back/internal/app/profile"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
@@ -26,6 +27,7 @@ type API struct {
 	auth       *auth.Service
 	board      *board.Service
 	graph      *graph.Service
+	profile    *profile.Service
 	cookies    *CookieWriter
 	refreshTTL time.Duration
 	limiter    port.RateLimiter
@@ -37,12 +39,13 @@ func NewAPI(
 	service *auth.Service,
 	boards *board.Service,
 	graphs *graph.Service,
+	profiles *profile.Service,
 	cookies *CookieWriter,
 	refreshTTL time.Duration,
 	limiter port.RateLimiter,
 	limits RateLimits,
 ) *API {
-	return &API{service, boards, graphs, cookies, refreshTTL, limiter, limits}
+	return &API{service, boards, graphs, profiles, cookies, refreshTTL, limiter, limits}
 }
 
 // Register creates an account and signs it in.

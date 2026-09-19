@@ -187,10 +187,6 @@ func (a *ActivityEventType) Scan(src any) error {
 	return decodeEnum(a, src, (*ActivityEventType).Valid, "activity_event_type")
 }
 
-func (a *ActivityEventType) CountsTowardHeatmap() bool {
-	return *a == EventTaskCreated || *a == EventTaskCompleted || *a == EventSubtaskCompleted
-}
-
 func ActivityEventTypes() []ActivityEventType {
 	return append([]ActivityEventType(nil), activityEventTypes...)
 }

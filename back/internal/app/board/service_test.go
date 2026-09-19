@@ -10,6 +10,8 @@ import (
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/tag"
@@ -99,6 +101,24 @@ func (s *stubTasks) CountActive(context.Context, uuid.UUID) (int, error) {
 	return s.active, s.countErr
 }
 
+func (s *stubTasks) Search(context.Context, uuid.UUID, string, int) ([]task.Hit, error) {
+	return nil, nil
+}
+
+func (s *stubTasks) ListGraph(_ context.Context, filter task.Filter) ([]task.Node, error) {
+	nodes := make([]task.Node, 0, len(s.tasks))
+	for i := range s.tasks {
+		nodes = append(nodes, task.Node{
+			ID:        s.tasks[i].ID,
+			Title:     s.tasks[i].Title,
+			Status:    s.tasks[i].Status,
+			ParentID:  s.tasks[i].ParentID,
+			IsSubtask: s.tasks[i].ParentID != nil,
+		})
+	}
+	return nodes, nil
+}
+
 func (s *stubTasks) Subtasks(_ context.Context, _, parentID uuid.UUID) ([]task.Task, error) {
 	var children []task.Task
 	for i := range s.tasks {
@@ -152,6 +172,67 @@ func (t *stubTags) DeleteOrphans(context.Context, uuid.UUID) error {
 	return nil
 }
 
+type stubEvents struct {
+	recorded []activity.Event
+}
+
+func (e *stubEvents) Record(_ context.Context, event *activity.Event) error {
+	e.recorded = append(e.recorded, *event)
+	return nil
+}
+
+func (e *stubEvents) RecordMany(_ context.Context, events []activity.Event) error {
+	e.recorded = append(e.recorded, events...)
+	return nil
+}
+
+func (e *stubEvents) RecordDaily(_ context.Context, event *activity.Event) error {
+	for _, already := range e.recorded {
+		if already.Type == event.Type {
+			return nil
+		}
+	}
+	e.recorded = append(e.recorded, *event)
+	return nil
+}
+
+func (e *stubEvents) Heatmap(context.Context, uuid.UUID, time.Time, time.Time) ([]activity.Day, error) {
+	return nil, nil
+}
+
+type stubLinks struct {
+	links    []link.Link
+	unlinked []uuid.UUID
+}
+
+func (l *stubLinks) Create(_ context.Context, item *link.Link) error {
+	l.links = append(l.links, *item)
+	return nil
+}
+
+func (l *stubLinks) ByID(_ context.Context, _, linkID uuid.UUID) (*link.Link, error) {
+	for i := range l.links {
+		if l.links[i].ID == linkID {
+			found := l.links[i]
+			return &found, nil
+		}
+	}
+	return nil, shared.NewError(shared.CodeTaskNotFound, nil)
+}
+
+func (l *stubLinks) List(context.Context, uuid.UUID) ([]link.Link, error) { return l.links, nil }
+
+func (l *stubLinks) Update(context.Context, *link.Link) error { return nil }
+
+func (l *stubLinks) Remove(context.Context, uuid.UUID, uuid.UUID) error { return nil }
+
+func (l *stubLinks) Count(context.Context, uuid.UUID) (int, error) { return len(l.links), nil }
+
+func (l *stubLinks) RemoveForTasks(_ context.Context, _ uuid.UUID, taskIDs []uuid.UUID) error {
+	l.unlinked = append(l.unlinked, taskIDs...)
+	return nil
+}
+
 type stubTx struct{}
 
 func (*stubTx) Do(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
@@ -163,6 +244,7 @@ type stubUsers struct {
 	stats        user.Stats
 	applied      []user.StatsDelta
 	accountLocks int
+	streak       user.StreakChange
 }
 
 func (s *stubUsers) ByID(context.Context, uuid.UUID) (*user.User, error) {
@@ -195,6 +277,10 @@ func (s *stubUsers) SetLevel(_ context.Context, _ uuid.UUID, level int32) error 
 func (s *stubUsers) LockAccount(context.Context, uuid.UUID) error {
 	s.accountLocks++
 	return nil
+}
+
+func (s *stubUsers) TouchStreak(context.Context, uuid.UUID, time.Time) (user.StreakChange, error) {
+	return s.streak, nil
 }
 
 type stubCache struct {
@@ -336,7 +422,11 @@ func TestServiceList(t *testing.T) {
 				tasks = &stubTasks{}
 			}
 
-			service := board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
+			service := board.NewService(board.Deps{
+				Tasks: tasks, Users: users, Cache: nil, Tags: &stubTags{}, Links: &stubLinks{},
+				Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
+				XP: progression.DefaultConfig(), Clock: &fixedClock{at: now},
+			})
 			_, err := service.List(context.Background(), userID, tt.query)
 
 			if tt.wantErr != "" {
@@ -400,9 +490,17 @@ func TestServiceCachesThePreferences(t *testing.T) {
 			var service *board.Service
 			if tt.cache != nil {
 				cached = tt.cache
-				service = board.NewService(tasks, users, cached, &stubTags{}, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
+				service = board.NewService(board.Deps{
+					Tasks: tasks, Users: users, Cache: cached, Tags: &stubTags{}, Links: &stubLinks{},
+					Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
+					XP: progression.DefaultConfig(), Clock: &fixedClock{at: now},
+				})
 			} else {
-				service = board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
+				service = board.NewService(board.Deps{
+					Tasks: tasks, Users: users, Cache: nil, Tags: &stubTags{}, Links: &stubLinks{},
+					Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
+					XP: progression.DefaultConfig(), Clock: &fixedClock{at: now},
+				})
 			}
 
 			for range 2 {
@@ -456,7 +554,11 @@ func TestServiceReportsTruncation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tasks := &stubTasks{tasks: rows(tt.returned)}
 			users := &stubUsers{account: &user.User{ID: userID}}
-			service := board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
+			service := board.NewService(board.Deps{
+				Tasks: tasks, Users: users, Cache: nil, Tags: &stubTags{}, Links: &stubLinks{},
+				Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
+				XP: progression.DefaultConfig(), Clock: &fixedClock{at: now},
+			})
 
 			result, err := service.List(context.Background(), userID, board.Query{})
 			if err != nil {

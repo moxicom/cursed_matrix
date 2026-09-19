@@ -175,3 +175,32 @@ func (r *LinkRepository) Count(ctx context.Context, userID uuid.UUID) (int, erro
 	}
 	return count, nil
 }
+
+// RemoveForTasks breaks every link touching the given tasks.
+//
+// Deleting a task has to release its links or the free plan's link quota would
+// never recover: a link to a task the user removed still occupies a slot, and
+// the graph would hold an edge pointing at a node it no longer draws.
+func (r *LinkRepository) RemoveForTasks(ctx context.Context, userID uuid.UUID, taskIDs []uuid.UUID) error {
+	if len(taskIDs) == 0 {
+		return nil
+	}
+
+	query := builder.
+		Delete("task_links").
+		Where(sq.Eq{"user_id": userID}).
+		Where(sq.Or{
+			sq.Eq{"source_task_id": taskIDs},
+			sq.Eq{"target_task_id": taskIDs},
+		})
+
+	statement, args, err := query.ToSql()
+	if err != nil {
+		return shared.WrapError(err, shared.CodeInternal, nil)
+	}
+
+	if _, err := r.db.querier(ctx).Exec(ctx, statement, args...); err != nil {
+		return mapError(err, shared.CodeTaskNotFound)
+	}
+	return nil
+}

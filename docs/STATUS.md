@@ -3,7 +3,7 @@
 What is built, what is not, and what proves it. Every row points at the
 requirement in `CLAUDE.md` and at the code or test that backs the claim.
 
-Updated: 2026-09-19 (board and graph writes complete; progression reads outstanding).
+Updated: 2026-09-20 (board, graph, search and activity complete; achievements, leaderboard and billing outstanding).
 
 ## Legend
 
@@ -29,8 +29,8 @@ pair is now confined to the progression and graph-read features.
 
 | § | Requirement | Front | Back | Evidence |
 |---|---|---|---|---|
-| 2 | User entity | mock | schema | `users`, `user_settings`, `user_stats` + `UserRepository.ByID` (integration test) |
-| 3 | Task entity | mock | schema | `tasks` table, `domain/task`, `TaskRepository.ListBoard` |
+| 2 | User entity | mock | done | served by `GET /me` and `PATCH /me`; `plan` is still hardcoded and `email` not writable |
+| 3 | Task entity | mock | done | full lifecycle through the API, every attribute of §3 served |
 | 4 | Four Eisenhower quadrants | mock | done | `quadrant_enum`, `shared.Quadrant`, enum parity test |
 | 5 | Board with four lists | mock | read done | `GET /tasks` through `board.Service`; every filter exercised live |
 | 6 | Creation inside a quadrant | mock | done | `POST /tasks`; the quadrant comes from the body, the position from the server |
@@ -38,13 +38,13 @@ pair is now confined to the progression and graph-read features.
 | 8 | Moving between quadrants | mock | done (back) | `POST /tasks/{id}/move`; the front still computes the position client-side, which the contract forbids |
 | 9 | Subtask, one level only | mock | done | `POST /tasks/{id}/subtasks`, trigger `tasks_one_level`, 422 proven through the router |
 | 10 | Parent relation | mock | done | `parent_task_id` + FK `tasks_parent_same_user` |
-| 11 | Subtask ordering | mock | schema | index `tasks_subtasks_idx` |
+| 11 | Subtask ordering | mock | partial | new subtasks append via `task.Place`; reordering within a parent has no endpoint (`/move` places in a quadrant) |
 | 12 | Independent subtask completion | mock | done (domain) | `task.Complete`, unit tests |
 | 13 | Completing a parent cascades | mock | done | one transaction, one `completedAt`, `PARENT_CASCADE` on each subtask; proven end to end |
 | 14 | Promote subtask | mock | done | `POST /tasks/{id}/promote`; the XP snapshot is proven untouched |
 | 15 | Completion | mock | done (domain) | `task.Complete` freezes the snapshot |
 | 16 | Archive = completed state | mock | done | CHECK `tasks_completion_snapshot` |
-| 17 | Deadline, states | mock | schema | `lib/deadline.ts`; `deadline_at`, `deadline_has_time` |
+| 17 | Deadline, states | mock | partial | set and cleared through `PATCH`, filtered by calendar day in the user's zone; the `APPROACHING` 48-hour state is computed only on the client |
 | 18 | Colour as metadata | mock | done | CHECK `tasks_color_known`, `shared.TaskColor` |
 | 19 | Tags, many-to-many | mock | done | full CRUD through the API, case-folding names, orphan labels pruned |
 | 20 | Task links | mock | done | `POST/PATCH/DELETE /links`, all four types, returned with the board |
@@ -55,9 +55,9 @@ pair is now confined to the progression and graph-read features.
 
 | § | Requirement | Front | Back | Evidence |
 |---|---|---|---|---|
-| 23–26 | Graph view, nodes, physics, interaction | mock | — | `features/graph/useForceGraph.ts` (canvas, 520 lines) |
-| 27 | Graph filters | mock | — | `filters.store.ts`, shared with the board |
-| 28 | Global search | mock | done (board) | `?query=` over title, description and tag names; wildcards escaped, proven live |
+| 23–26 | Graph view, nodes, physics, interaction | mock | done (data) | `GET /graph`; physics and interaction stay on the client, which is where they belong |
+| 27 | Graph filters | mock | done | the same seven filters as the board, applied before the response |
+| 28 | Global search | mock | done | `GET /search` over title, description and tags, archive included; wildcards escaped, proven live |
 | 29 | Combinable filters | mock | done | `GET /tasks` with all nine parameters at once, integration-tested |
 
 ### Gamification
@@ -68,11 +68,11 @@ pair is now confined to the progression and graph-read features.
 | 32 | XP snapshot | mock | done | snapshot columns + CHECK; round-trip asserted in the integration test |
 | 33 | XP transaction | — | done | every grant and withdrawal recorded; `grant_seq` allows an honest re-completion after a reopen |
 | 34–35 | Level, level up | bug | done | recomputed from lifetime XP on every change; `levelUp` reported on the response. The frontend still shows two different levels |
-| 36–38 | Daily streak, state, timezone | mock | schema | `user_stats` streak columns; `user.Settings.Location`/`LocalDate` (used by the deadline windows); no middleware yet |
+| 36–38 | Daily streak, state, timezone | mock | done | one statement per visit, gated by the cache; the day is the user's own, taken from their timezone in SQL |
 | 39–41 | Achievements, catalogue, unlock | mock | schema | 8 codes seeded by migration; no evaluator |
-| 42–44 | Activity, heatmap, event types | mock | schema | `activity_events` + 3 indexes; `GRAPH_OPENED` never emitted |
+| 42–44 | Activity, heatmap, event types | mock | done (writes) | seven event types written inside the transactions that cause them; heatmap served, `/events` not yet |
 | 45–50 | Leaderboard, periods, metric, privacy | mock | schema | index `xp_transactions_user_time_idx`; `show_in_leaderboard` defaults to off |
-| 51 | Profile statistics | mock | partial | XP, level and the completion counters move with every change; streaks and achievements do not |
+| 51 | Profile statistics | mock | partial | XP, level, streaks, created/completed and links all move; achievements do not |
 
 ### Platform
 
@@ -88,7 +88,7 @@ pair is now confined to the progression and graph-read features.
 | 66 | Reopen and soft delete | mock | done | both live, each with its own compensating ledger entry (`TASK_REOPENED`, `TASK_DELETED`) |
 | 67 | Landing, pricing, 404, settings | done | n/a | routes exist and render |
 | 68 | Input limits | done | done | 100/2000/24 in the UI and as CHECK constraints |
-| 69 | `GRAPH_OPENED` | bug | schema | the enum value and the index exist; nothing emits the event |
+| 69 | `GRAPH_OPENED` | bug | done (back) | `POST /activity/graph-opened` records it; the front still never calls it |
 
 ---
 
@@ -118,9 +118,11 @@ achievements, the leaderboard — plus billing.
 | `POST /links` | **done** — undirected pairs normalised, self-link and parent-relation refused, 25-link quota |
 | `PATCH /links/{id}` | **done** — a retype that collides answers 409 |
 | `DELETE /links/{id}` | **done** |
-| `GET /graph`, `POST /activity/graph-opened` | — |
-| `GET /search` | — |
-| `GET /activity/heatmap`, `/events`, `/stats` | — |
+| `POST /activity/graph-opened` | **done** — recorded, deliberately outside the heatmap |
+| `GET /graph` | **done** — server-side filters, effective quadrant, link and subtask counts, two kinds of edge |
+| `GET /search` | **done** — title, description and tags across the archive; the server says why each row matched |
+| `GET /activity/heatmap` | **done** — 365 padded days ending today in the user's timezone |
+| `GET /activity/events`, `/activity/stats` | — |
 | `GET /achievements` | — |
 | `GET /leaderboard` | — |
 | `GET /plans`, `POST /billing/checkout`, `POST /billing/webhook` | — |
@@ -140,7 +142,7 @@ Operational endpoints that do exist: `GET /healthz`, `GET /readyz`,
 | Migrations (goose, embedded) | done | 16 migrations, `up → reset → up` verified on a clean database; enum parity now follows `ALTER TYPE` across files |
 | Transactions | done | `TxManager` plus 5 integration tests (commit, rollback, panic, nesting, visibility) |
 | Concurrency control | done | completing, reopening, moving and deleting read the task `FOR UPDATE`; creating holds the account row while the quota is counted. 8 parallel completions pay once, proven live and in a test that fails without the lock |
-| Cache (version-stamped) | done, unused | `redis.Cache` plus 6 tests; no endpoint caches anything yet |
+| Cache (version-stamped) | done | `redis.Cache` plus 6 tests; caches account preferences and gates the streak check |
 | Rate limiting | done | fixed window in Redis, fail-open, case-folded account key; brute force stopped live at attempt 6 |
 | SQL-injection defences | done | whitelist, bound parameters, LIKE escaping, `forbidigo`; reviewed and attacked |
 | Least privilege (`app_rw`) | partial | the role is created; `DATABASE_URL` still points at the owner |
@@ -181,12 +183,12 @@ Found by reviewing the frontend against the requirements; none are fixed.
 |---|---|
 | `plan` is hardcoded `FREE` in the JWT and in `GET /me`; `user.User` has no subscription field, though `user.Subscription` exists | the access gate and the free-plan quotas |
 | `UpdateEmail` exists in the postgres adapter, is on no port and is called by nothing, while the contract declares `email` on `PATCH /me` | settings |
-| Whether `GET /tasks` should also return links, as `docs/API.md` says, or whether links get their own endpoint | the graph |
 | Whether `api` and `migrate` merge into one binary | image size (−13 MB) |
 | Payment provider and market (`SPEC` §27.2) | billing |
 
 Settled since the last revision: the access token lives in an `HttpOnly`
-cookie (`docs/API.md` §1.4, rewritten), and the contract is API-first —
-`back/api/v1/openapi.yaml` generates the server interface.
+cookie (`docs/API.md` §1.4, rewritten); the contract is API-first —
+`back/api/v1/openapi.yaml` generates the server interface; and `GET /tasks`
+returns the link network with its tasks, as `docs/API.md` specifies.
 
 The remaining *Open Questions* live in `docs/SPEC.md` and are not repeated here.

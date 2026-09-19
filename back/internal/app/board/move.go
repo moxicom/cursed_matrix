@@ -203,6 +203,12 @@ func (s *Service) Delete(ctx context.Context, userID, taskID uuid.UUID) ([]uuid.
 			}
 		}
 
+		// The links go with the tasks: a link to something the user removed
+		// would hold a quota slot for ever and leave the graph an edge with
+		// nothing at one end.
+		if err := s.links.RemoveForTasks(ctx, userID, deleted); err != nil {
+			return err
+		}
 		if err := s.tasks.SoftDelete(ctx, userID, deleted, now); err != nil {
 			return err
 		}

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,8 +17,54 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
+	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for CompletionSource.
+const (
+	DIRECT        CompletionSource = "DIRECT"
+	PARENTCASCADE CompletionSource = "PARENT_CASCADE"
+)
+
+// Valid indicates whether the value is a known member of the CompletionSource enum.
+func (e CompletionSource) Valid() bool {
+	switch e {
+	case DIRECT:
+		return true
+	case PARENTCASCADE:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeadlineWindow.
+const (
+	DeadlineWindowANY     DeadlineWindow = "ANY"
+	DeadlineWindowNONE    DeadlineWindow = "NONE"
+	DeadlineWindowOVERDUE DeadlineWindow = "OVERDUE"
+	DeadlineWindowTODAY   DeadlineWindow = "TODAY"
+	DeadlineWindowWEEK    DeadlineWindow = "WEEK"
+)
+
+// Valid indicates whether the value is a known member of the DeadlineWindow enum.
+func (e DeadlineWindow) Valid() bool {
+	switch e {
+	case DeadlineWindowANY:
+		return true
+	case DeadlineWindowNONE:
+		return true
+	case DeadlineWindowOVERDUE:
+		return true
+	case DeadlineWindowTODAY:
+		return true
+	case DeadlineWindowWEEK:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for Language.
 const (
@@ -58,6 +105,171 @@ func (e Plan) Valid() bool {
 	}
 }
 
+// Defines values for Quadrant.
+const (
+	IMPORTANTNOTURGENT    Quadrant = "IMPORTANT_NOT_URGENT"
+	IMPORTANTURGENT       Quadrant = "IMPORTANT_URGENT"
+	NOTIMPORTANTNOTURGENT Quadrant = "NOT_IMPORTANT_NOT_URGENT"
+	NOTIMPORTANTURGENT    Quadrant = "NOT_IMPORTANT_URGENT"
+)
+
+// Valid indicates whether the value is a known member of the Quadrant enum.
+func (e Quadrant) Valid() bool {
+	switch e {
+	case IMPORTANTNOTURGENT:
+		return true
+	case IMPORTANTURGENT:
+		return true
+	case NOTIMPORTANTNOTURGENT:
+		return true
+	case NOTIMPORTANTURGENT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SortDirection.
+const (
+	ASC  SortDirection = "ASC"
+	DESC SortDirection = "DESC"
+)
+
+// Valid indicates whether the value is a known member of the SortDirection enum.
+func (e SortDirection) Valid() bool {
+	switch e {
+	case ASC:
+		return true
+	case DESC:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SortField.
+const (
+	CREATED  SortField = "CREATED"
+	DEADLINE SortField = "DEADLINE"
+	POSITION SortField = "POSITION"
+	TITLE    SortField = "TITLE"
+)
+
+// Valid indicates whether the value is a known member of the SortField enum.
+func (e SortField) Valid() bool {
+	switch e {
+	case CREATED:
+		return true
+	case DEADLINE:
+		return true
+	case POSITION:
+		return true
+	case TITLE:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StatusFilter.
+const (
+	StatusFilterACTIVE    StatusFilter = "ACTIVE"
+	StatusFilterALL       StatusFilter = "ALL"
+	StatusFilterCOMPLETED StatusFilter = "COMPLETED"
+)
+
+// Valid indicates whether the value is a known member of the StatusFilter enum.
+func (e StatusFilter) Valid() bool {
+	switch e {
+	case StatusFilterACTIVE:
+		return true
+	case StatusFilterALL:
+		return true
+	case StatusFilterCOMPLETED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TaskColor.
+const (
+	TaskColorAMBER  TaskColor = "AMBER"
+	TaskColorCYAN   TaskColor = "CYAN"
+	TaskColorNONE   TaskColor = "NONE"
+	TaskColorROSE   TaskColor = "ROSE"
+	TaskColorSLATE  TaskColor = "SLATE"
+	TaskColorTEAL   TaskColor = "TEAL"
+	TaskColorVIOLET TaskColor = "VIOLET"
+)
+
+// Valid indicates whether the value is a known member of the TaskColor enum.
+func (e TaskColor) Valid() bool {
+	switch e {
+	case TaskColorAMBER:
+		return true
+	case TaskColorCYAN:
+		return true
+	case TaskColorNONE:
+		return true
+	case TaskColorROSE:
+		return true
+	case TaskColorSLATE:
+		return true
+	case TaskColorTEAL:
+		return true
+	case TaskColorVIOLET:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TaskStatus.
+const (
+	TaskStatusACTIVE    TaskStatus = "ACTIVE"
+	TaskStatusCOMPLETED TaskStatus = "COMPLETED"
+)
+
+// Valid indicates whether the value is a known member of the TaskStatus enum.
+func (e TaskStatus) Valid() bool {
+	switch e {
+	case TaskStatusACTIVE:
+		return true
+	case TaskStatusCOMPLETED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TopologyFilter.
+const (
+	TopologyFilterANY      TopologyFilter = "ANY"
+	TopologyFilterLINKED   TopologyFilter = "LINKED"
+	TopologyFilterUNLINKED TopologyFilter = "UNLINKED"
+)
+
+// Valid indicates whether the value is a known member of the TopologyFilter enum.
+func (e TopologyFilter) Valid() bool {
+	switch e {
+	case TopologyFilterANY:
+		return true
+	case TopologyFilterLINKED:
+		return true
+	case TopologyFilterUNLINKED:
+		return true
+	default:
+		return false
+	}
+}
+
+// CompletionSource defines model for CompletionSource.
+type CompletionSource string
+
+// DeadlineWindow defines model for DeadlineWindow.
+type DeadlineWindow string
+
 // Error defines model for Error.
 type Error struct {
 	Error struct {
@@ -94,6 +306,9 @@ type LoginRequest struct {
 
 // Plan defines model for Plan.
 type Plan string
+
+// Quadrant defines model for Quadrant.
+type Quadrant string
 
 // RegisterRequest defines model for RegisterRequest.
 type RegisterRequest struct {
@@ -136,6 +351,53 @@ type SettingsUpdate struct {
 	// Timezone Example: Europe/Berlin
 	Timezone *string `json:"timezone,omitempty"`
 }
+
+// SortDirection defines model for SortDirection.
+type SortDirection string
+
+// SortField defines model for SortField.
+type SortField string
+
+// StatusFilter defines model for StatusFilter.
+type StatusFilter string
+
+// Task A regular task or a subtask; parentTaskId tells them apart. quadrant is
+// non-null exactly when parentTaskId is null: a subtask has none of its
+// own and inherits the parent's. The four completion fields are set
+// together, exactly when status is COMPLETED, and are frozen at that
+// moment so a later change to the XP configuration never rewrites
+// history.
+type Task struct {
+	Color        TaskColor         `json:"color"`
+	CompletedAt  *time.Time        `json:"completedAt,omitempty"`
+	CompletedVia *CompletionSource `json:"completedVia,omitempty"`
+	CreatedAt    time.Time         `json:"createdAt"`
+	DeadlineAt   *time.Time        `json:"deadlineAt,omitempty"`
+
+	// DeadlineHasTime False means a date-only deadline, rendered without a time.
+	DeadlineHasTime      bool                `json:"deadlineHasTime"`
+	Description          string              `json:"description"`
+	Id                   openapi_types.UUID  `json:"id"`
+	ParentTaskId         *openapi_types.UUID `json:"parentTaskId,omitempty"`
+	Position             int32               `json:"position"`
+	Quadrant             *Quadrant           `json:"quadrant,omitempty"`
+	QuadrantAtCompletion *Quadrant           `json:"quadrantAtCompletion,omitempty"`
+	Status               TaskStatus          `json:"status"`
+	Tags                 []string            `json:"tags"`
+	Title                string              `json:"title"`
+	UpdatedAt            time.Time           `json:"updatedAt"`
+	UserId               openapi_types.UUID  `json:"userId"`
+	XpAwarded            *int32              `json:"xpAwarded,omitempty"`
+}
+
+// TaskColor defines model for TaskColor.
+type TaskColor string
+
+// TaskStatus defines model for TaskStatus.
+type TaskStatus string
+
+// TopologyFilter defines model for TopologyFilter.
+type TopologyFilter string
 
 // User defines model for User.
 type User struct {
@@ -187,6 +449,19 @@ type Unauthorized = Error
 // ValidationFailed defines model for ValidationFailed.
 type ValidationFailed = Error
 
+// ListTasksParams defines parameters for ListTasks.
+type ListTasksParams struct {
+	Status    *StatusFilter   `form:"status,omitempty" json:"status,omitempty"`
+	Quadrants *[]Quadrant     `form:"quadrants,omitempty" json:"quadrants,omitempty"`
+	Colors    *[]TaskColor    `form:"colors,omitempty" json:"colors,omitempty"`
+	Tags      *[]string       `form:"tags,omitempty" json:"tags,omitempty"`
+	Deadline  *DeadlineWindow `form:"deadline,omitempty" json:"deadline,omitempty"`
+	Topology  *TopologyFilter `form:"topology,omitempty" json:"topology,omitempty"`
+	Query     *string         `form:"query,omitempty" json:"query,omitempty"`
+	Sort      *SortField      `form:"sort,omitempty" json:"sort,omitempty"`
+	Direction *SortDirection  `form:"direction,omitempty" json:"direction,omitempty"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
@@ -219,6 +494,9 @@ type ServerInterface interface {
 	// UpdateSettings Change account preferences
 	// (PATCH /me)
 	UpdateSettings(w http.ResponseWriter, r *http.Request)
+	// ListTasks The board
+	// (GET /tasks)
+	ListTasks(w http.ResponseWriter, r *http.Request, params ListTasksParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -264,6 +542,12 @@ func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
 // UpdateSettings Change account preferences
 // (PATCH /me)
 func (_ Unimplemented) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListTasks The board
+// (GET /tasks)
+func (_ Unimplemented) ListTasks(w http.ResponseWriter, r *http.Request, params ListTasksParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -365,6 +649,143 @@ func (siw *ServerInterfaceWrapper) UpdateSettings(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTasks operation middleware
+func (siw *ServerInterfaceWrapper) ListTasks(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTasksParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "quadrants" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "quadrants", r.URL.Query(), &params.Quadrants, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "quadrants"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "quadrants", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "colors" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "colors", r.URL.Query(), &params.Colors, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "colors"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "colors", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "tags" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tags", r.URL.Query(), &params.Tags, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tags"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tags", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "deadline" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "deadline", r.URL.Query(), &params.Deadline, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "deadline"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "deadline", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "topology" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "topology", r.URL.Query(), &params.Topology, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "topology"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "topology", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "query" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "query", r.URL.Query(), &params.Query, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "query"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "query", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "direction" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "direction", r.URL.Query(), &params.Direction, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "direction"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "direction", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTasks(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -503,6 +924,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/auth/logout-all", wrapper.LogoutAll)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/tasks", wrapper.ListTasks)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/me", wrapper.GetMe)
 	})
 	r.Group(func(r chi.Router) {
@@ -517,56 +941,74 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"SCQZ44Br0K1uUyt7d3v37wEA",
+	"3FvvbttIkn+VAu+AuQVo2UlmF3ce7AeNrex4R5G8kpxMEBmZFlmSek12M91FK5rAwD3EPeE9yaG6mxQl",
+	"UbaSycwc9ksiUezq7vrzq7/+FCU6L7RCRTY6/xQtUaRo3McxWiu1utD6TqJ7kqJNjCxIahWdR2MkC9pA",
+	"kqEwFpL8vUgStBb+4weiYqiydQxjkeNYEv61Lz7GcC1o+ddTUcg/xVOV5O8Nzg3aZeuCMRmZUGPN6f2z",
+	"U1HS8k8gVMq7JdbMO1MVxZFNlpgLPiGtC4zOI0tGqkX08PAQRwZtoZX1N7gYj16O8J+YEKb8PdGKUBF/",
+	"FEWRyUTw5U7/afmGnxqE/93gPDqP/u10w65T/6s97Rmjjd9sm0OTJQLvCJ6rIC3k0lqpFsy3VKMFpQly",
+	"QckSaImQOF53ooc4GgnCvszl73NQrSEXag2CCPOCLMyNzoGW0oJIU8NS1Qbm2oRnSaJLRe6gN4qloo38",
+	"5fc46UDDvchkCtZrpzvCa37itnkpZPZ7HMPtCH8fDwcxSOVPFHbsRPx6oOB0TudFhrxwrEuTID9DVebR",
+	"+bvo8mrUu5hEcXTdHfUGk/cX3fFF97IX3ca7qhxHlyjSTCp8I1WqV00q3cHbKI6Gr3ujy5teFEeT4WWX",
+	"n7zp9X6M4mgwHLRT9Nc7/xQVRhdoKJg5tj9OdIotKEBilqGzyUyoRSkWeCJVigWqlLkBbARJJlERGH5m",
+	"LEj6jtV9qiyaezSgkP+1qFILhdEWvVnjR8GcY3Z3+1eX3cnVcPD+Zfeq37uMWm5TCCNyd1KRppKPJ7Lr",
+	"xg3IlNgixxJtUOzqnN9YyNFasUBga8gEYWezoZ4xfEQOWT6UaOkq3efKm6UgR7G0aMBgoQ1ZWC1RgdU5",
+	"0pIxYMEAsDJaLTr79wn0pWF1fueZf7t3iJ23vORuW87aD7Jpqk1vEMXR6KZVNfp6IdXIX3BfFQph7Uob",
+	"d/G5Nrmg6HzzsIUcyRx/0apNf1gxtAJWgTVYuVAnUsVgNQggI+4xy5hXjo+WxNpCoo3BhDpbGtIr+YCn",
+	"r7RN9KrtBExAidwzoF6myiwryLzXd09KoCYQb27axunrTKgml1+OemyT16NhFEfjXv/l+x+G40nvspXt",
+	"/yhFaoSiJoGrV9fD0aQ7mLy/Gf2tN2C02DwaDBuP+UvL29uPGyvaTjDChbSE5qDsMRcy25fjsPAW14GB",
+	"9uotlbOAwui0TCiYNy8G0qlYfwdC1c5F2qlasc0ImJdUGoREZKhSYUAqwoVx6A0rmWUNdxncEMzWMQNQ",
+	"TaKSDxi0SLDSZZaCQkw70LV3fDY2eK0QSMMCiReQRyTWZtAqW4dzo2V8R0WYVodFG8NqKZMlZFrfQYqZ",
+	"vEdToeBUCYPs1j2G1dbh2RY7jeN3KzzaE0DWsNTHfFNt0Q/xk/aYS9VHtaBldP7s+WeZZ1fBVXfQBclg",
+	"LucSTQd6zlQrAZ2kYg2mzBD+97//BywZFHeQirWNOeyhXBRTNSuTOyQbQyoITxx70+DNrFsm2azzomQ2",
+	"SwWSOtBVUKo7pVcK+GhTNRdZZmEmkjsW283kAoygJTJyCwVzIR1QsF4EYN71Ip+FEfuRXGLQMUFkW8rH",
+	"kMVKAitJyw5cCMsO0KKykuR90IlSyQ8lnsM0GhZoBGkzjfgXmEa68cCgI21FXtPfvcQWYuXiYyXXF8+3",
+	"xPziS+CsoQhtyDZGIqkW9qZgMbZAAMuVzz+XmDlXjhYVuWslS6EWmDJoHwUn3TSVahH7dSFgdolGJeNg",
+	"jB24caxVaC24QA+ts18GA/T8NMj6pRX+niZpl3p1pfou8J9pYVqChIlwWFQIQzVYlrNMJmCEcj9JC/c6",
+	"KxUJs+7ApDTKPSXQ8/lUGcz1PdpNnBGCdqzXs0rqkoB0mSwD56SBn649J8JFZ1pnKNQuEOwZzvdoMqla",
+	"HeW+rmhDl9Jg4u/aiFXHF1EcXfbGF63uh9e9ZPVprrkejq84+HMLu5f9qwF71ItRrztxoeDkatJvj3DH",
+	"JKi0L2VGaLZOcTG5eu2IDF9d93ueTLffbyUyEfauRUPB4KLMhAES9o71U4AtZ/zlO5YpKuKFVykQMnDR",
+	"EnMQLOwOfAhu3vk9pdUJqyDgR5FQtvZh4hYFaYHfON9sAUvByaNC0HOQZKcOKBlRpFqikeTVwlP5xvow",
+	"fK5LA0mdjlR2yvZpkaaK9ALZXuLto1jHRD5EzS3nb93CudG/oAIX7gqaqlznbPMufuPI2QTTZ8zmE/10",
+	"zYnSXC7K4NN98G9wZSShnaqltKTN2mvobgaSafOUETLLLtyLD3EULotpl7Z8o/NDrOzHmH9N5LV0GaPI",
+	"suE8On/3+Dn20r6H2929mLZB8fjx9o5Tec5fc6WKxg/CTmSbw3spMouQo1AWRIvbjkMyh2kNMgJ4904r",
+	"rmwR/9T0W8/Pzs5aDii3Y5mylOmBnK+2krYFTzKi0FZWp6oXS0Uvnm+2cxEoOn360IjPj1ODOqJvFX9F",
+	"r0sbdflatL3ZHmMuHiUd/ouFWyEJfSq9Hyr6B8IYsXbfJWW4I9NnrSIti/RzVZ292tVxmvCx6K6ESTFt",
+	"leQBPagluxMcuS3C5tUVt5W4oTlxwKV9q6pl0LTzJiMCw9uCrQ2MNdyWq+TE0cXbLvvC11fDfo8TvO6r",
+	"73sjzuWHY/550uv2Odfsdye9gw5tXGvHIz6xdbEudKYX6xan6spQ/avBj86d3gzCxzYqNxZbSkziXpAw",
+	"N6YlIBywh/R4RPsVJaFChpJotQmDqhjXeb+62lTXXReo0AjCTWj4tCv4fLg+FODOXGxcKpLZJoITaeoj",
+	"1S+KU48EzS/KMENV47H3XeUjvNv7WHhj2g+byPgUSpALYkypQJdUpZXWh4wwKwkKI5MQBieZtj592Hcu",
+	"raF2y2sk6Ek4ZL0cuxd3ouFHk8XHU60aTUK+VfO/sUPbLQLXtxm6DSX+Tm34sblIa+Tqs21ftFgsDC6c",
+	"HcyrEC3DdMHqqNKQ65K8l7SGTC/Y84sUtJoqX7ML2fZWNm7LPMd0Y4mBHopk6aOEluhOJEuJ95izPG5U",
+	"ppO7A2C+75aT0hhUNHbFhyPXZHiPWeu7uVQyZ0h71rpOzpGv8FOxu/gv37ZvJNWdvfBCO/ZsWi3Qft59",
+	"QmJgL6po9ch1v2LRZ9xpxyQaTKwksSvFXS7sbLp38DYO7DA/btex1rK6xaQ0ktZjBoZKQRO01vdD26yK",
+	"K0GYwt/fTELutUBIhGJXwybTgddouISWwsxXugWVBn2tW01dG825MD5rbVUudUcLCqUzr2ttaWFw/I8+",
+	"KG1ghKm03pokn8J3EKM48tAU1V3ZjUxEIX9EF7txB3Wi71C1F7zuuTlSgQLf5oSv4TAjtF+rhiWMgmw3",
+	"lfxSWTHHqeJmh05jmGEiSosgYGb0yvk6IuGu5om49oi7ojbOPdc8ZK/vslNXQ+bneePGvre6ufFPJ9xy",
+	"PfH3arl0aDofEiNfXBfiQ4kgU768AB83nFiZokNOk8ZgE11gykltszfti307PWzmzr1OmG9V4VjyZUOH",
+	"iNUlaMkMH5dkOPr+rVhhpZrr/et4p8qmZknkBe98NR6e/Odfzp65xI0jJ/zI/VFJrqaq53OLxHXMUH/n",
+	"Ui4Ig1P19u3btyevXp1cXoL3dNtF2yqI+cZC5dbikN3zT56L37CyTuqvYJBKo5hQitb5G9fGQ0Jjq9V1",
+	"pul6g+eN+G+q/G+huiIV9AasPqMbz8iQnDCyWEzf54KM/Ajd66soju7RWM+js87zzhmrhi5QiUJG59GL",
+	"zlnnhSuN0tLZvhPvacZdMf5aaN8a8cVbqRVnKb5pFtWNwe91uv5qreithtzDNp6GhG9r0uH52dlX29sF",
+	"6wfmG0KZOvba5AXtOvO1WbM6RfH2ZAmdbOyvbefw8unODIo7w7dnz377Bv8bbsvWjaTYYxLYMllWN3Z9",
+	"C27+zFwSka0bpXtlV2jiqbK+5oUqLbRUtLFzNhSHHhkKowIqVCGir8iRuEPFasxXfv5fh25SC/20OTHS",
+	"9GDR+btbdo55LsyaO65yoUCqKvk8fxexbke3vKZWc11SU8+3mXOhlS3zUHmuhniIAdfP5viBoM1Ai2X5",
+	"75kKb7GntN+27MbkuHc32ebvrr8QteathPV1f48CX0nztln6adeRvLt92Gcz18W08kMzKd7LBJ9k+4nI",
+	"ssOsZ1dyhxaq0LvJ++Cpq8YRDB13/LYW7hALWGnDjYGpqvNOaSCMbXki6PIMu+upZrrk9i3TT0XOXpld",
+	"41RZ0hlWts4KPZdzQlSQS1UShtCkTfbdLDtK/P7G6W8BIY/b09Zgk1v04ulFWwNmDw+tCuFk57pTjyhD",
+	"5esPasKkYXuB/TIYXd2o/G7T/lIaZjpdd6AbBO0S8JWwUyUyjuvWkHizdu0GAQaLTKzPG74bzKPKN1WO",
+	"ZAWPrkHgDNXCt2fP2hRhVMczT6vBAFe1RwkNiz9aJT4TEEaaBPkGr2dZIaR5VAP8JMbheKOa1fiNQo7d",
+	"UZCjoo5n/6pRx/PnT+vH3iDi1/bdPpN1kzMNM7OPeXRfoVogPTKlFqqpM63D6Oc5N5lTI6v2sudM7D7b",
+	"clYTAa4bTVVVJyqMnssMO/Czy+l/Buf2mEyoBf28Sfx/5ix4Ay5hIjCcJJfG6BBDcG2hzAT/D6m0jEqu",
+	"w9+GKH9DeoXRHxsKd6Ivh5Na0EzP1xNOZC3spoDDk1vXBKNkuY8OfkyjGtr4jTBiZybk/3VionAFhcE5",
+	"GlQJVuMi6ZfK64sigi8Gki3tuPAt9QoDGpdqVRGGAVcZO4gEoUzAgwV+gCcjNH7SDm1cDR1YkCrJyhTT",
+	"2JdyHWvdrIFYTJXLXdz8H9dtpBKEqY8fXD27riYvjCiWbh7PfV0tdYabyNQiVcGnO4pBBC6AQyIKC4Lg",
+	"xZ99PRrdeW0H6nqff+CLFb50kKL7gYFLl4tlmCs1aMuMXFtBFFzGEQR/PjvzWMrlDjf2IGmqOJNISmqN",
+	"YqV1jWcbxdGmZuECAVe/+VCiWW/KN3Un8Ei7ag6uPDzE7USr9vE23bp5e1zveLene2gz1+X8gp22BjKO",
+	"28qpcOtGT/SjDxGsOrNH839n2P7wSUM39GjCO+3TR0Trvx7+25YDC602dLya1eNWh1lXT3F9DtHN7NcD",
+	"R8G/ygNst4lqIDta+VrHFkypkqp7seM8TIkeAXx5w2HFUlIzE0pEwQkwg0bAHC785tog4EdpqQMDYYxe",
+	"NdHU1a+xIkrtI3g7fRIKALM5bkuzotX9Oex2I38OJL/cx30FdzWpXEDDO/mb3e6XVba7LBz+NtoUIady",
+	"QvBYW5osOo9CEd4NwoQd9usInM14AI+rPzTwPolpg+H0zP1FUa36zInoId6ltB2b+b69d23SgA0BUZNM",
+	"cMTtlBxjOk3sY8Y83D783wA=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

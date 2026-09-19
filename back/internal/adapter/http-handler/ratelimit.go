@@ -27,6 +27,8 @@ type RateLimits struct {
 	AddressWindow   time.Duration
 	AccountAttempts int
 	AccountWindow   time.Duration
+	ReadAttempts    int
+	ReadWindow      time.Duration
 }
 
 // LimitByAddress refuses a caller that has made too many attempts from one
@@ -37,6 +39,37 @@ func LimitByAddress(limiter port.RateLimiter, limits RateLimits) func(http.Handl
 			key := "address:" + ClientAddress(r)
 
 			allowed, retryAfter, err := limiter.Allow(r.Context(), key, limits.AddressAttempts, limits.AddressWindow)
+			if err != nil {
+				WriteError(w, r, err)
+				return
+			}
+			if !allowed {
+				writeRateLimited(w, r, retryAfter)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// LimitReads bounds how often one signed-in account may ask for its own data.
+//
+// The board is unbounded work per call — a filter over every task the account
+// ever created — and a session can repeat it as fast as the network allows, so
+// a loop in a client, or a bored user with a console, is a load problem for
+// every other tenant. The ceiling is set well above what a person browsing can
+// produce; it exists to stop a runaway caller, not to pace the UI.
+func LimitReads(limiter port.RateLimiter, limits RateLimits) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := UserFrom(r.Context())
+			if !ok || limits.ReadAttempts <= 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			allowed, retryAfter, err := limiter.Allow(r.Context(),
+				"read:"+userID.String(), limits.ReadAttempts, limits.ReadWindow)
 			if err != nil {
 				WriteError(w, r, err)
 				return

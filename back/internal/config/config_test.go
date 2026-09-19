@@ -48,6 +48,8 @@ auth:
     address_window: 5m
     account_attempts: 5
     account_window: 15m
+    read_attempts: 300
+    read_window: 1m
 `
 
 func writeConfig(t *testing.T, body string) string {
@@ -139,6 +141,11 @@ func TestLoadRejectsBrokenConfigurations(t *testing.T) {
 			name:     "no attempt ceiling",
 			body:     strings.Replace(sampleConfig, "account_attempts: 5", "account_attempts: 0", 1),
 			wantWord: "auth.rate_limit.account_attempts",
+		},
+		{
+			name:     "read ceiling zero",
+			body:     strings.Replace(sampleConfig, "read_attempts: 300", "read_attempts: 0", 1),
+			wantWord: "auth.rate_limit.read_attempts",
 		},
 		{
 			name:     "unknown ssl mode",

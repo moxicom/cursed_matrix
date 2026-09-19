@@ -22,6 +22,7 @@ import (
 	redisadapter "github.com/moxicom/cursed_matrix/back/internal/adapter/redis"
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/token"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
+	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 )
 
@@ -33,6 +34,7 @@ func server(t *testing.T) http.Handler {
 	return serverWithLimits(t, httphandler.RateLimits{
 		AddressAttempts: 1000, AddressWindow: time.Minute,
 		AccountAttempts: 1000, AccountWindow: time.Minute,
+		ReadAttempts: 1000, ReadWindow: time.Minute,
 	})
 }
 
@@ -61,18 +63,34 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 	client := redis.NewClient(options)
 	t.Cleanup(func() { _ = client.Close() })
 
+	cached, err := redisadapter.NewCache(context.Background(), redisadapter.Options{
+		URL:        redisURL,
+		DefaultTTL: time.Minute,
+	}, quiet)
+	if err != nil {
+		t.Fatalf("cache: %v", err)
+	}
+	t.Cleanup(func() { _ = cached.Close() })
+
 	tokens := token.NewJWTIssuer("test-secret", 15*time.Minute, &shared.SystemClock{})
 	service := auth.NewService(
 		postgres.NewUserRepository(pool),
 		redisadapter.NewRefreshStore(client),
 		postgres.NewTxManager(pool, quiet),
 		tokens,
+		cached,
 		&shared.SystemClock{},
 		24*time.Hour,
 	)
+	boards := board.NewService(
+		postgres.NewTaskRepository(pool),
+		postgres.NewUserRepository(pool),
+		cached,
+		&shared.SystemClock{},
+	)
 	limiter := redisadapter.NewRateLimiter(client, quiet)
 	return httphandler.Routes(
-		httphandler.NewAPI(service, httphandler.NewCookieWriter(false), 24*time.Hour, limiter, limits),
+		httphandler.NewAPI(service, boards, httphandler.NewCookieWriter(false), 24*time.Hour, limiter, limits),
 		tokens, limiter, limits,
 	)
 }

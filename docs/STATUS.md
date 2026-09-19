@@ -3,7 +3,7 @@
 What is built, what is not, and what proves it. Every row points at the
 requirement in `CLAUDE.md` and at the code or test that backs the claim.
 
-Updated: 2026-09-19.
+Updated: 2026-09-19 (phase 2 complete, phase 3 started).
 
 ## Legend
 
@@ -15,10 +15,11 @@ Updated: 2026-09-19.
 | **—** | Not started |
 | **bug** | Implemented but demonstrably wrong; see *Known defects* |
 
-The frontend is a complete prototype on mocks; the backend is at phases 0–1
-(skeleton, schema, one vertical slice). So most product rows read
-*front: mock / back: schema* — that pair means "the screen works, the table
-exists, nothing connects them yet".
+The frontend is a complete prototype on mocks. The backend has finished
+phases 0–2 (skeleton, schema, authentication, rate limiting) and has started
+phase 3 with the board read path. A row reading *front: mock / back: schema*
+means "the screen works, the table exists, nothing connects them yet"; the
+board is now the first row where the screen could stop being a mock.
 
 ---
 
@@ -31,7 +32,7 @@ exists, nothing connects them yet".
 | 2 | User entity | mock | schema | `users`, `user_settings`, `user_stats` + `UserRepository.ByID` (integration test) |
 | 3 | Task entity | mock | schema | `tasks` table, `domain/task`, `TaskRepository.ListBoard` |
 | 4 | Four Eisenhower quadrants | mock | done | `quadrant_enum`, `shared.Quadrant`, enum parity test |
-| 5 | Board with four lists | mock | — | `pages/board/BoardPage.tsx` |
+| 5 | Board with four lists | mock | read done | `GET /tasks` through `board.Service`; every filter exercised live |
 | 6 | Creation inside a quadrant | mock | — | `board.store.ts:createTask` |
 | 7 | Position, user ordering | mock | schema | gap-based `position`, index `tasks_board_idx`; server-side move not written |
 | 8 | Moving between quadrants | mock | — | `board.store.ts:moveTask` computes the position client-side, which the contract forbids |
@@ -56,8 +57,8 @@ exists, nothing connects them yet".
 |---|---|---|---|---|
 | 23–26 | Graph view, nodes, physics, interaction | mock | — | `features/graph/useForceGraph.ts` (canvas, 520 lines) |
 | 27 | Graph filters | mock | — | `filters.store.ts`, shared with the board |
-| 28 | Global search | mock | schema | `matchesFilters`; trigram indexes `tasks_*_trgm_idx` ready |
-| 29 | Combinable filters | mock | done (query) | `TaskRepository.ListBoard` with every filter, integration-tested |
+| 28 | Global search | mock | done (board) | `?query=` over title, description and tag names; wildcards escaped, proven live |
+| 29 | Combinable filters | mock | done | `GET /tasks` with all nine parameters at once, integration-tested |
 
 ### Gamification
 
@@ -67,7 +68,7 @@ exists, nothing connects them yet".
 | 32 | XP snapshot | mock | done | snapshot columns + CHECK; round-trip asserted in the integration test |
 | 33 | XP transaction | — | schema | `xp_transactions` + unique `(task_id, source)` proven to block a double grant |
 | 34–35 | Level, level up | bug | done (domain) | formula in `progression`; the frontend shows two different levels |
-| 36–38 | Daily streak, state, timezone | mock | schema | `user_stats` streak columns; `user.Settings.LocalDate`; no middleware yet |
+| 36–38 | Daily streak, state, timezone | mock | schema | `user_stats` streak columns; `user.Settings.Location`/`LocalDate` (used by the deadline windows); no middleware yet |
 | 39–41 | Achievements, catalogue, unlock | mock | schema | 8 codes seeded by migration; no evaluator |
 | 42–44 | Activity, heatmap, event types | mock | schema | `activity_events` + 3 indexes; `GRAPH_OPENED` never emitted |
 | 45–50 | Leaderboard, periods, metric, privacy | mock | schema | index `xp_transactions_user_time_idx`; `show_in_leaderboard` defaults to off |
@@ -93,13 +94,14 @@ exists, nothing connects them yet".
 
 ## 2. HTTP contract (`docs/API.md`)
 
-No endpoint is implemented. This table is the phase-2/3 worklist.
+Authentication and the board read are live; the rest is the phase-3 worklist.
 
 | Endpoint | Status |
 |---|---|
-| `POST /auth/register`, `/auth/login`, `/auth/logout` | — |
-| `GET /me`, `PATCH /me/settings`, `POST /me/export`, `DELETE /me` | — |
-| `GET /tasks` | query layer done (`ListBoard`), no handler |
+| `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/logout-all` | **done** — HttpOnly cookies, CSRF header, per-address and per-account rate limits |
+| `GET /me`, `PATCH /me` | **done** — `plan` still hardcoded `FREE`, `email` not writable |
+| `POST /me/export`, `DELETE /me` | — |
+| `GET /tasks` | **done** — nine filters, tags included, subtasks included; not paginated |
 | `POST /tasks`, `PATCH /tasks/{id}` | — |
 | `POST /tasks/{id}/complete`, `/reopen`, `/move`, `/promote`, `/subtasks` | — |
 | `DELETE /tasks/{id}` | — |
@@ -127,10 +129,11 @@ Operational endpoints that do exist: `GET /healthz`, `GET /readyz`,
 | Migrations (goose, embedded) | done | 13 migrations, `up → reset → up` verified twice on a clean database |
 | Transactions | done | `TxManager` plus 5 integration tests (commit, rollback, panic, nesting, visibility) |
 | Cache (version-stamped) | done, unused | `redis.Cache` plus 6 tests; no endpoint caches anything yet |
+| Rate limiting | done | fixed window in Redis, fail-open, case-folded account key; brute force stopped live at attempt 6 |
 | SQL-injection defences | done | whitelist, bound parameters, LIKE escaping, `forbidigo`; reviewed and attacked |
 | Least privilege (`app_rw`) | partial | the role is created; `DATABASE_URL` still points at the owner |
 | Metrics | done | RED metrics, pool stats, cache events; scraped by VictoriaMetrics |
-| Lint and tests | done | `golangci-lint` 0 issues; 6 unit and 7 integration packages green |
+| Lint and tests | done | `golangci-lint` 0 issues; 10 test packages green under `-tags integration` |
 | CI | — | no pipeline |
 
 ---
@@ -155,9 +158,14 @@ Found by reviewing the frontend against the requirements; none are fixed.
 
 | Decision | Blocks |
 |---|---|
-| Access token in an `HttpOnly` cookie or in the `Authorization` header | the whole of phase 2 |
-| `docs/API.md` §1.4 still describes server-side sessions, not tokens | the auth contract |
+| `plan` is hardcoded `FREE` in the JWT and in `GET /me`; `user.User` has no subscription field, though `user.Subscription` exists | the access gate and the free-plan quotas |
+| `UpdateEmail` exists in the postgres adapter, is on no port and is called by nothing, while the contract declares `email` on `PATCH /me` | settings |
+| Whether `GET /tasks` should also return links, as `docs/API.md` says, or whether links get their own endpoint | the graph |
 | Whether `api` and `migrate` merge into one binary | image size (−13 MB) |
 | Payment provider and market (`SPEC` §27.2) | billing |
+
+Settled since the last revision: the access token lives in an `HttpOnly`
+cookie (`docs/API.md` §1.4, rewritten), and the contract is API-first —
+`back/api/v1/openapi.yaml` generates the server interface.
 
 The remaining *Open Questions* live in `docs/SPEC.md` and are not repeated here.

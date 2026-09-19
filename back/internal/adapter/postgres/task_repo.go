@@ -53,6 +53,12 @@ func (r *TaskRepository) ListBoard(ctx context.Context, filter task.Filter) ([]t
 	}
 	query = query.OrderBy(order, "t.position ASC", "t.id ASC")
 
+	// One row past the limit: the extra row is how the caller learns the
+	// result was cut without counting the whole table first.
+	if filter.Limit > 0 {
+		query = query.Limit(uint64(filter.Limit) + 1)
+	}
+
 	statement, args, err := query.ToSql()
 	if err != nil {
 		return nil, shared.WrapError(err, shared.CodeInternal, nil)

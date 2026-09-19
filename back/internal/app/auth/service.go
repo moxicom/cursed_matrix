@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
@@ -49,6 +50,7 @@ type Service struct {
 	refresh    port.RefreshStore
 	tx         port.TxManager
 	tokens     port.TokenIssuer
+	cache      port.Cache
 	clock      shared.Clock
 	refreshTTL time.Duration
 }
@@ -59,10 +61,19 @@ func NewService(
 	refresh port.RefreshStore,
 	tx port.TxManager,
 	tokens port.TokenIssuer,
+	cached port.Cache,
 	clock shared.Clock,
 	refreshTTL time.Duration,
 ) *Service {
-	return &Service{users: users, refresh: refresh, tx: tx, tokens: tokens, clock: clock, refreshTTL: refreshTTL}
+	return &Service{
+		users:      users,
+		refresh:    refresh,
+		tx:         tx,
+		tokens:     tokens,
+		cache:      cached,
+		clock:      clock,
+		refreshTTL: refreshTTL,
+	}
 }
 
 // Register creates an account and signs it in.
@@ -227,6 +238,15 @@ func (s *Service) UpdateSettings(ctx context.Context, userID uuid.UUID, change S
 
 	if err := s.users.UpdateSettings(ctx, userID, account.Settings); err != nil {
 		return nil, err
+	}
+
+	// Everything derived from these preferences — the timezone the board reads
+	// deadlines in, above all — is retired here, so a change takes effect on
+	// the next request rather than when a TTL happens to run out.
+	if s.cache != nil {
+		if err := s.cache.Invalidate(ctx, cache.UserScope(userID)); err != nil {
+			return nil, err
+		}
 	}
 	return s.users.ByID(ctx, userID)
 }

@@ -21,6 +21,7 @@ import (
 	redisadapter "github.com/moxicom/cursed_matrix/back/internal/adapter/redis"
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/token"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
+	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/config"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/pkg/utils"
@@ -89,8 +90,15 @@ func run() error {
 			redisadapter.NewRefreshStore(redisCache.Client()),
 			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
 			tokens,
+			redisCache,
 			&shared.SystemClock{},
 			cfg.Auth.RefreshTTL,
+		)
+		boards := board.NewService(
+			postgres.NewTaskRepository(pool),
+			postgres.NewUserRepository(pool),
+			redisCache,
+			&shared.SystemClock{},
 		)
 		limiter := redisadapter.NewRateLimiter(redisCache.Client(), utils.ForComponent(log, "ratelimit"))
 		limits := httphandler.RateLimits{
@@ -98,9 +106,11 @@ func run() error {
 			AddressWindow:   cfg.Auth.RateLimit.AddressWindow,
 			AccountAttempts: cfg.Auth.RateLimit.AccountAttempts,
 			AccountWindow:   cfg.Auth.RateLimit.AccountWindow,
+			ReadAttempts:    cfg.Auth.RateLimit.ReadAttempts,
+			ReadWindow:      cfg.Auth.RateLimit.ReadWindow,
 		}
 		api = httphandler.Routes(
-			httphandler.NewAPI(service, httphandler.NewCookieWriter(!cfg.Development()),
+			httphandler.NewAPI(service, boards, httphandler.NewCookieWriter(!cfg.Development()),
 				cfg.Auth.RefreshTTL, limiter, limits),
 			tokens, limiter, limits,
 		)

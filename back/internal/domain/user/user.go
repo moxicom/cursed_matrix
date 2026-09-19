@@ -61,11 +61,17 @@ type Stats struct {
 }
 
 // LocalDate returns the calendar day of instant in the user's timezone.
-func (s *Settings) LocalDate(instant time.Time) time.Time {
+// Location resolves the stored timezone, falling back to UTC: an unknown name
+// must not stop the account from being read.
+func (s *Settings) Location() *time.Location {
 	loc, err := time.LoadLocation(s.Timezone)
 	if err != nil {
-		loc = time.UTC
+		return time.UTC
 	}
-	local := instant.In(loc)
-	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	return loc
+}
+
+func (s *Settings) LocalDate(instant time.Time) time.Time {
+	local := instant.In(s.Location())
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
 }

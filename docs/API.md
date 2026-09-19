@@ -299,6 +299,12 @@ Query parameters, all optional and combinable with AND:
 | `deadline` | `ANY` \| `OVERDUE` \| `TODAY` \| `WEEK` \| `NONE` |
 | `topology` | `ANY` \| `LINKED` \| `UNLINKED` |
 | `query` | free text over title, description and tag names |
+| `sort` | `POSITION` \| `DEADLINE` \| `CREATED` \| `TITLE` (default `POSITION`) |
+| `direction` | `ASC` \| `DESC` (default `ASC`) |
+
+An unknown value for any of these is refused with `422 VALIDATION_FAILED`
+naming the field, rather than being ignored: a filter that silently does
+nothing looks to the user like missing data.
 
 `deadline` windows are evaluated against the user's timezone. `query` matching
 is case-insensitive and covers archived tasks (`SPEC` §61.19).
@@ -315,6 +321,10 @@ Response `200`:
 Subtasks are returned alongside their parents in the same array — the client
 groups them by `parentTaskId`. Links are included because the board shows a link
 count per card and the topology filter needs them.
+
+> The implementation currently returns `tasks` only; `links` arrives with the
+> link endpoints. The response is not paginated — the board and the graph both
+> need the whole working set, which the free plan caps at 35 active tasks.
 
 `Task`:
 

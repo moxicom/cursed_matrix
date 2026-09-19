@@ -1,6 +1,7 @@
 package task
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -76,6 +77,16 @@ const (
 
 func (d *SortDirection) Valid() bool { return *d == SortAsc || *d == SortDesc }
 
+// MaxBoardPage bounds a single board read.
+//
+// The board and the graph both want the whole working set at once, and the
+// free plan caps that at 35 active tasks — but completed tasks are never
+// deleted, so ALL and COMPLETED grow without end. The cap is what keeps one
+// long-lived account from asking for a full scan of its own history on every
+// poll; a result that hits it is reported as truncated rather than silently
+// cut.
+const MaxBoardPage = 500
+
 type Filter struct {
 	UserID    uuid.UUID
 	Status    StatusFilter
@@ -91,6 +102,9 @@ type Filter struct {
 
 	Now      time.Time
 	Location *time.Location
+
+	// Limit is the number of rows the caller will accept. Zero means the cap.
+	Limit int
 }
 
 // DefaultFilter returns the query the board issues when the client asks for
@@ -105,6 +119,7 @@ func DefaultFilter(userID uuid.UUID) Filter {
 		Direction: SortAsc,
 		Now:       time.Now().UTC(),
 		Location:  time.UTC,
+		Limit:     MaxBoardPage,
 	}
 }
 
@@ -116,6 +131,8 @@ func (f *Filter) Validate() error {
 	switch {
 	case f.UserID == uuid.Nil:
 		return invalid("userId", "")
+	case f.Limit < 0 || f.Limit > MaxBoardPage:
+		return invalid("limit", strconv.Itoa(f.Limit))
 	case !f.Status.Valid():
 		return invalid("status", string(f.Status))
 	case !f.Deadline.Valid():

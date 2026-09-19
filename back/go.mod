@@ -9,7 +9,7 @@ require (
 	github.com/go-playground/validator/v10 v10.23.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/oapi-codegen/runtime v1.1.2
+	github.com/oapi-codegen/runtime v1.7.0
 	github.com/pressly/goose/v3 v3.24.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/redis/go-redis/v9 v9.7.0
@@ -17,6 +17,7 @@ require (
 )
 
 require (
+	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect

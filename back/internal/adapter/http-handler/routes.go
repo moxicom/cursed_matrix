@@ -7,6 +7,7 @@ import (
 
 	gen "github.com/moxicom/cursed_matrix/back/internal/adapter/http-handler/gen"
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 )
 
 // Routes assembles the API under one mount point.
@@ -38,12 +39,27 @@ func Routes(api *API, tokens port.TokenIssuer, limiter port.RateLimiter, limits 
 	router.Group(func(session chi.Router) {
 		session.Use(RequireCSRF)
 		session.Use(Authenticate(tokens))
+		session.Use(LimitReads(limiter, limits))
 		session.Post("/auth/logout-all", api.LogoutAll)
 		session.Get("/me", api.GetMe)
 		session.Patch("/me", api.UpdateSettings)
+		session.Get("/tasks", bind(api).ListTasks)
 	})
 
 	return router
+}
+
+// bind is the generated query-string decoder. Its error handler is ours, so a
+// malformed parameter answers in the same envelope as every other refusal
+// instead of the plain text the generator would write.
+func bind(api *API) *gen.ServerInterfaceWrapper {
+	return &gen.ServerInterfaceWrapper{
+		Handler: api,
+		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			WriteError(w, r, shared.WrapError(err, shared.CodeValidationFailed,
+				map[string]any{"reason": "malformed query"}))
+		},
+	}
 }
 
 // compile-time proof that every operation of the contract is routed

@@ -11,6 +11,7 @@ import (
 
 	gen "github.com/moxicom/cursed_matrix/back/internal/adapter/http-handler/gen"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
+	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
@@ -20,6 +21,7 @@ import (
 // case, and renders — no rule of the product lives here.
 type API struct {
 	auth       *auth.Service
+	board      *board.Service
 	cookies    *CookieWriter
 	refreshTTL time.Duration
 	limiter    port.RateLimiter
@@ -29,12 +31,13 @@ type API struct {
 // NewAPI wires the handlers to the use cases.
 func NewAPI(
 	service *auth.Service,
+	boards *board.Service,
 	cookies *CookieWriter,
 	refreshTTL time.Duration,
 	limiter port.RateLimiter,
 	limits RateLimits,
 ) *API {
-	return &API{service, cookies, refreshTTL, limiter, limits}
+	return &API{service, boards, cookies, refreshTTL, limiter, limits}
 }
 
 // Register creates an account and signs it in.

@@ -76,14 +76,18 @@ type AuthConfig struct {
 	RateLimit  RateLimitConfig `yaml:"rate_limit" validate:"required"`
 }
 
-// RateLimitConfig bounds the credential endpoints. Two ceilings, because one
-// address trying many accounts and many addresses trying one account are
-// different attacks and neither counter sees the other.
+// RateLimitConfig bounds what one caller may ask for. The two credential
+// ceilings are separate because one address trying many accounts and many
+// addresses trying one account are different attacks and neither counter sees
+// the other; the read ceiling is a different concern again — not guessing, but
+// one signed-in session repeating an expensive query.
 type RateLimitConfig struct {
 	AddressAttempts int           `yaml:"address_attempts" validate:"required,gt=0"`
 	AddressWindow   time.Duration `yaml:"address_window" validate:"required,gt=0"`
 	AccountAttempts int           `yaml:"account_attempts" validate:"required,gt=0"`
 	AccountWindow   time.Duration `yaml:"account_window" validate:"required,gt=0"`
+	ReadAttempts    int           `yaml:"read_attempts" validate:"required,gt=0"`
+	ReadWindow      time.Duration `yaml:"read_window" validate:"required,gt=0"`
 }
 
 // ConfigPath resolves the configuration file to read: the flag value when given,

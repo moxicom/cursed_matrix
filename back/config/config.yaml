@@ -47,3 +47,7 @@ auth:
     address_window: 5m
     account_attempts: 5
     account_window: 15m
+    # Far above what a person browsing can produce: this stops a runaway
+    # client, it does not pace the UI.
+    read_attempts: 300
+    read_window: 1m

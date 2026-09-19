@@ -1,7 +1,9 @@
 package httphandler
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -214,18 +216,57 @@ func (a *API) respondWithSession(w http.ResponseWriter, r *http.Request, session
 // per attempt by design.
 const maxBodyBytes = 16 << 10
 
+// decodeFields decodes the body and also reports which keys it carried, for
+// the fields where "absent" and "null" are different instructions.
+func decodeFields(w http.ResponseWriter, r *http.Request, target any) (map[string]bool, bool) {
+	raw, ok := readBody(w, r)
+	if !ok {
+		return nil, false
+	}
+
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		WriteError(w, r, shared.WrapError(err, shared.CodeValidationFailed,
+			map[string]any{"reason": "malformed body"}))
+		return nil, false
+	}
+
+	present := make(map[string]bool, len(keys))
+	for key := range keys {
+		present[key] = true
+	}
+	return present, unmarshalStrict(w, r, raw, target)
+}
+
 func decode(w http.ResponseWriter, r *http.Request, target any) bool {
+	raw, ok := readBody(w, r)
+	if !ok {
+		return false
+	}
+	return unmarshalStrict(w, r, raw, target)
+}
+
+func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	// An HTML form cannot set this content type, which is what stops a
 	// cross-site page from posting a body that happens to parse as JSON and
 	// signing the victim's browser into an account the attacker controls.
 	if contentType := r.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
 		WriteError(w, r, shared.NewError(shared.CodeValidationFailed,
 			map[string]any{"field": "Content-Type", "value": contentType}))
-		return false
+		return nil, false
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-	decoder := json.NewDecoder(r.Body)
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	if err != nil {
+		WriteError(w, r, shared.WrapError(err, shared.CodeValidationFailed,
+			map[string]any{"reason": "body too large"}))
+		return nil, false
+	}
+	return raw, true
+}
+
+func unmarshalStrict(w http.ResponseWriter, r *http.Request, raw []byte, target any) bool {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	// An unknown field is a client that thinks it is talking to a different
 	// API; saying so is friendlier than ignoring half the request.
 	decoder.DisallowUnknownFields()

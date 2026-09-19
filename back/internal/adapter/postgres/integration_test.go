@@ -169,6 +169,31 @@ func TestListBoard(t *testing.T) {
 			},
 		},
 		{
+			name: "a page smaller than the result comes back with the probe row",
+			mutate: func(f task.Filter) task.Filter {
+				f.Status = task.StatusFilterAll
+				f.Limit = 2
+				return f
+			},
+			// Two rows asked for, three returned: the third is how the caller
+			// learns there is more, and the service drops it.
+			wantCount: 3,
+		},
+		{
+			name: "a filter that never set a limit is still bounded",
+			mutate: func(f task.Filter) task.Filter {
+				f.Status = task.StatusFilterAll
+				f.Limit = 0
+				return f
+			},
+			wantCount: 4,
+			check: func(t *testing.T, tasks []task.Task) {
+				if len(tasks) > task.MaxBoardPage+1 {
+					t.Errorf("%d rows came back past the cap", len(tasks))
+				}
+			},
+		},
+		{
 			name: "completed tasks keep their snapshot",
 			mutate: func(f task.Filter) task.Filter {
 				f.Status = task.StatusFilterCompleted

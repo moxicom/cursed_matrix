@@ -135,4 +135,13 @@ func TestReadCeilingStopsARunawayClient(t *testing.T) {
 			}
 		})
 	}
+
+	// The ceiling exists because the board is expensive. A client stuck in a
+	// loop must keep the one endpoint that stops the loop.
+	t.Run("signing out everywhere survives an exhausted read budget", func(t *testing.T) {
+		response := caller.do(t, http.MethodPost, "/auth/logout-all", "")
+		if response.Code != http.StatusNoContent {
+			t.Fatalf("logout-all = %d, want 204: %s", response.Code, response.Body)
+		}
+	})
 }

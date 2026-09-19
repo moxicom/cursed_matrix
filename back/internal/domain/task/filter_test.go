@@ -102,7 +102,7 @@ func TestFilterValidate(t *testing.T) {
 			mutate:    func(f *task.Filter) { f.Limit = task.MaxBoardPage + 1 },
 			wantField: "limit",
 		},
-		{name: "no limit at all is allowed", mutate: func(f *task.Filter) { f.Limit = 0 }},
+		{name: "zero is allowed and means the cap, not no cap", mutate: func(f *task.Filter) { f.Limit = 0 }},
 		{name: "empty lists mean no filter", mutate: func(f *task.Filter) { f.Colors, f.Quadrants, f.Tags = nil, nil, nil }},
 		{name: "a free-text query is not validated here", mutate: func(f *task.Filter) { f.Query = "100% of _everything_" }},
 	}
@@ -199,5 +199,37 @@ func TestFilterEnumsAcceptEveryDeclaredValue(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestFilterPageSize is what stops the cap from being optional: a filter built
+// by hand, without DefaultFilter, must still be bounded.
+func TestFilterPageSize(t *testing.T) {
+	tests := []struct {
+		name  string
+		limit int
+		want  int
+	}{
+		{name: "a hand-built filter asks for nothing and gets the cap", limit: 0, want: task.MaxBoardPage},
+		{name: "a smaller page is honoured", limit: 25, want: 25},
+		{name: "exactly the cap is honoured", limit: task.MaxBoardPage, want: task.MaxBoardPage},
+		{name: "more than the cap is still the cap", limit: task.MaxBoardPage + 1000, want: task.MaxBoardPage},
+		{name: "a negative page is the cap", limit: -1, want: task.MaxBoardPage},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter := task.Filter{Limit: tt.limit}
+			if got := filter.PageSize(); got != tt.want {
+				t.Errorf("PageSize() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+
+	// The zero value of the struct itself, which is what a forgetful caller
+	// passes to the repository.
+	var zero task.Filter
+	if zero.PageSize() != task.MaxBoardPage {
+		t.Errorf("the zero Filter is unbounded: PageSize() = %d", zero.PageSize())
 	}
 }

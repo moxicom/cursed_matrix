@@ -86,6 +86,7 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 		postgres.NewTaskRepository(pool),
 		postgres.NewUserRepository(pool),
 		cached,
+		postgres.NewTxManager(pool, quiet),
 		&shared.SystemClock{},
 	)
 	limiter := redisadapter.NewRateLimiter(client, quiet)

@@ -23,6 +23,7 @@ type Service struct {
 	tasks port.TaskRepository
 	users port.UserRepository
 	cache port.Cache
+	tx    port.TxManager
 	clock shared.Clock
 }
 
@@ -32,9 +33,10 @@ func NewService(
 	tasks port.TaskRepository,
 	users port.UserRepository,
 	cached port.Cache,
+	tx port.TxManager,
 	clock shared.Clock,
 ) *Service {
-	return &Service{tasks: tasks, users: users, cache: cached, clock: clock}
+	return &Service{tasks: tasks, users: users, cache: cached, tx: tx, clock: clock}
 }
 
 // settings resolves the preferences a board read depends on.
@@ -133,8 +135,8 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID, query Query) (*Boa
 
 	// The repository asks for one row past the cap; that row is the signal,
 	// not part of the answer.
-	if filter.Limit > 0 && len(found) > filter.Limit {
-		return &Board{Tasks: found[:filter.Limit], Truncated: true}, nil
+	if size := filter.PageSize(); len(found) > size {
+		return &Board{Tasks: found[:size], Truncated: true}, nil
 	}
 	return &Board{Tasks: found}, nil
 }

@@ -156,9 +156,28 @@ func (s *Service) Login(ctx context.Context, username, password, timezone string
 		if err := s.users.UpdateSettings(ctx, account.ID, account.Settings); err != nil {
 			return nil, err
 		}
+		// A traveller signing in from a new zone changes the timezone here and
+		// nowhere else, so this path has to retire the cache too.
+		s.forget(ctx, account.ID)
 	}
 
 	return s.issue(ctx, account)
+}
+
+// forget retires everything cached for the account after its preferences
+// changed, so the next read rebuilds from the row that was just written.
+//
+// The write has already committed by the time this runs, and a cache that is
+// down is not a reason to tell the client their change failed: the entry
+// expires on its own within settingsTTL either way.
+func (s *Service) forget(ctx context.Context, userID uuid.UUID) {
+	if s.cache == nil {
+		return
+	}
+	if err := s.cache.Invalidate(ctx, cache.UserScope(userID)); err != nil {
+		utils.LoggerFromContext(ctx).WarnContext(ctx, "stale settings may be served until the entry expires",
+			"err", err, "userId", userID)
+	}
 }
 
 // AccountFromRefreshToken reads the account out of a refresh token. The value
@@ -240,14 +259,7 @@ func (s *Service) UpdateSettings(ctx context.Context, userID uuid.UUID, change S
 		return nil, err
 	}
 
-	// Everything derived from these preferences — the timezone the board reads
-	// deadlines in, above all — is retired here, so a change takes effect on
-	// the next request rather than when a TTL happens to run out.
-	if s.cache != nil {
-		if err := s.cache.Invalidate(ctx, cache.UserScope(userID)); err != nil {
-			return nil, err
-		}
-	}
+	s.forget(ctx, userID)
 	return s.users.ByID(ctx, userID)
 }
 

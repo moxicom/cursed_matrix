@@ -103,7 +103,9 @@ type Filter struct {
 	Now      time.Time
 	Location *time.Location
 
-	// Limit is the number of rows the caller will accept. Zero means the cap.
+	// Limit is the number of rows the caller will accept, capped at
+	// MaxBoardPage. Zero means the cap, so a Filter built by hand is bounded
+	// like any other.
 	Limit int
 }
 
@@ -121,6 +123,16 @@ func DefaultFilter(userID uuid.UUID) Filter {
 		Location:  time.UTC,
 		Limit:     MaxBoardPage,
 	}
+}
+
+// PageSize is the row count the query may return, with zero resolved to the
+// cap. Reading Limit directly is what would let a hand-built filter through
+// unbounded.
+func (f *Filter) PageSize() int {
+	if f.Limit <= 0 || f.Limit > MaxBoardPage {
+		return MaxBoardPage
+	}
+	return f.Limit
 }
 
 func (f *Filter) Validate() error {

@@ -16,10 +16,17 @@ import (
 )
 
 type stubTasks struct {
-	seen  task.Filter
-	calls int
-	tasks []task.Task
-	err   error
+	seen         task.Filter
+	calls        int
+	tasks        []task.Task
+	err          error
+	created      []task.Task
+	updated      []task.Task
+	deleted      []uuid.UUID
+	nextPosition int32
+	active       int
+	createErr    error
+	countErr     error
 }
 
 func (s *stubTasks) ListBoard(_ context.Context, filter task.Filter) ([]task.Task, error) {
@@ -27,6 +34,47 @@ func (s *stubTasks) ListBoard(_ context.Context, filter task.Filter) ([]task.Tas
 	s.calls++
 	return s.tasks, s.err
 }
+
+func (s *stubTasks) ByID(_ context.Context, _, taskID uuid.UUID) (*task.Task, error) {
+	for i := range s.tasks {
+		if s.tasks[i].ID == taskID {
+			found := s.tasks[i]
+			return &found, nil
+		}
+	}
+	return nil, shared.NewError(shared.CodeTaskNotFound, nil)
+}
+
+func (s *stubTasks) Create(_ context.Context, item *task.Task) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
+	item.ID = uuid.New()
+	s.created = append(s.created, *item)
+	return nil
+}
+
+func (s *stubTasks) Update(_ context.Context, item *task.Task) error {
+	s.updated = append(s.updated, *item)
+	return nil
+}
+
+func (s *stubTasks) SoftDelete(_ context.Context, _, taskID uuid.UUID, _ time.Time) error {
+	s.deleted = append(s.deleted, taskID)
+	return nil
+}
+
+func (s *stubTasks) NextPosition(context.Context, uuid.UUID, *shared.Quadrant, *uuid.UUID) (int32, error) {
+	return s.nextPosition, nil
+}
+
+func (s *stubTasks) CountActive(context.Context, uuid.UUID) (int, error) {
+	return s.active, s.countErr
+}
+
+type stubTx struct{}
+
+func (*stubTx) Do(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
 
 type stubUsers struct {
 	account *user.User
@@ -187,7 +235,7 @@ func TestServiceList(t *testing.T) {
 				tasks = &stubTasks{}
 			}
 
-			service := board.NewService(tasks, users, nil, &fixedClock{at: now})
+			service := board.NewService(tasks, users, nil, &stubTx{}, &fixedClock{at: now})
 			_, err := service.List(context.Background(), userID, tt.query)
 
 			if tt.wantErr != "" {
@@ -251,9 +299,9 @@ func TestServiceCachesThePreferences(t *testing.T) {
 			var service *board.Service
 			if tt.cache != nil {
 				cached = tt.cache
-				service = board.NewService(tasks, users, cached, &fixedClock{at: now})
+				service = board.NewService(tasks, users, cached, &stubTx{}, &fixedClock{at: now})
 			} else {
-				service = board.NewService(tasks, users, nil, &fixedClock{at: now})
+				service = board.NewService(tasks, users, nil, &stubTx{}, &fixedClock{at: now})
 			}
 
 			for range 2 {
@@ -307,7 +355,7 @@ func TestServiceReportsTruncation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tasks := &stubTasks{tasks: rows(tt.returned)}
 			users := &stubUsers{account: &user.User{ID: userID}}
-			service := board.NewService(tasks, users, nil, &fixedClock{at: now})
+			service := board.NewService(tasks, users, nil, &stubTx{}, &fixedClock{at: now})
 
 			result, err := service.List(context.Background(), userID, board.Query{})
 			if err != nil {

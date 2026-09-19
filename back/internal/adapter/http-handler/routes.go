@@ -39,11 +39,18 @@ func Routes(api *API, tokens port.TokenIssuer, limiter port.RateLimiter, limits 
 	router.Group(func(session chi.Router) {
 		session.Use(RequireCSRF)
 		session.Use(Authenticate(tokens))
-		session.Use(LimitReads(limiter, limits))
 		session.Post("/auth/logout-all", api.LogoutAll)
 		session.Get("/me", api.GetMe)
 		session.Patch("/me", api.UpdateSettings)
-		session.Get("/tasks", bind(api).ListTasks)
+
+		// Only the board carries the read ceiling. On the whole group it would
+		// mean a client stuck in a loop also loses "sign out everywhere" —
+		// throttling the one endpoint that stops the loop.
+		session.With(LimitReads(limiter, limits)).Get("/tasks", bind(api).ListTasks)
+		session.Post("/tasks", api.CreateTask)
+		session.Patch("/tasks/{taskId}", bind(api).UpdateTask)
+		session.Delete("/tasks/{taskId}", bind(api).DeleteTask)
+		session.Post("/tasks/{taskId}/subtasks", bind(api).CreateSubtask)
 	})
 
 	return router

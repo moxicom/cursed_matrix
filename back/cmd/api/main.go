@@ -98,6 +98,7 @@ func run() error {
 			postgres.NewTaskRepository(pool),
 			postgres.NewUserRepository(pool),
 			redisCache,
+			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
 			&shared.SystemClock{},
 		)
 		limiter := redisadapter.NewRateLimiter(redisCache.Client(), utils.ForComponent(log, "ratelimit"))

@@ -23,6 +23,12 @@ type TxManager interface {
 
 type TaskRepository interface {
 	ListBoard(ctx context.Context, filter task.Filter) ([]task.Task, error)
+	ByID(ctx context.Context, userID, taskID uuid.UUID) (*task.Task, error)
+	Create(ctx context.Context, item *task.Task) error
+	Update(ctx context.Context, item *task.Task) error
+	SoftDelete(ctx context.Context, userID, taskID uuid.UUID, at time.Time) error
+	NextPosition(ctx context.Context, userID uuid.UUID, quadrant *shared.Quadrant, parentID *uuid.UUID) (int32, error)
+	CountActive(ctx context.Context, userID uuid.UUID) (int, error)
 }
 
 type UserRepository interface {

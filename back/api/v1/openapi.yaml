@@ -166,6 +166,102 @@ paths:
                       more exist. Narrow the filter to see the rest.
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+    post:
+      tags: [tasks]
+      summary: Create a task
+      operationId: createTask
+      description: |
+        The task lands at the end of the quadrant it was created in. Position
+        is the server's to decide; the client cannot ask for one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskDraft" }
+      responses:
+        "201":
+          description: The task.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaReached" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /tasks/{taskId}:
+    parameters:
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      tags: [tasks]
+      summary: Edit a task
+      operationId: updateTask
+      description: |
+        Only the fields the body mentions change. `deadlineAt` sent as null
+        clears the deadline; left out, it stays. Quadrant and position are not
+        editable here — moving a task is its own operation, because it changes
+        two things at once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskPatch" }
+      responses:
+        "200":
+          description: The task as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The task is completed, and a completed task is frozen.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [tasks]
+      summary: Delete a task
+      operationId: deleteTask
+      description: |
+        A logical delete. The row stays so the XP ledger and the activity
+        history keep referring to something real; the task leaves the user's
+        views. Deleting a task deletes its subtasks with it.
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /tasks/{taskId}/subtasks:
+    parameters:
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [tasks]
+      summary: Add a subtask
+      operationId: createSubtask
+      description: |
+        A subtask has no quadrant of its own — it answers to its parent's — and
+        cannot have subtasks itself. Subtasks count against the plan's task
+        quota like any other task.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubtaskDraft" }
+      responses:
+        "201":
+          description: The subtask.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaReached" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
 
   /me:
     get:
@@ -254,6 +350,20 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     RateLimited:
       description: Too many attempts from this address or for this account.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: |
+        No such task for this account. A task belonging to someone else answers
+        the same way as one that does not exist.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    QuotaReached:
+      description: |
+        The plan's limit is reached. Nothing existing is affected; completing
+        or deleting a task frees a slot.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -386,6 +496,41 @@ components:
     SortDirection:
       type: string
       enum: [ASC, DESC]
+
+    TaskDraft:
+      type: object
+      required: [title, quadrant]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 2000 }
+        quadrant: { $ref: "#/components/schemas/Quadrant" }
+        color: { $ref: "#/components/schemas/TaskColor" }
+        deadlineAt: { type: string, format: date-time, nullable: true }
+        deadlineHasTime: { type: boolean }
+
+    SubtaskDraft:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 2000 }
+        color: { $ref: "#/components/schemas/TaskColor" }
+        deadlineAt: { type: string, format: date-time, nullable: true }
+        deadlineHasTime: { type: boolean }
+
+    TaskPatch:
+      type: object
+      description: Every field is optional; only what is present changes.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 2000 }
+        color: { $ref: "#/components/schemas/TaskColor" }
+        deadlineAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null clears the deadline; absent leaves it unchanged.
+        deadlineHasTime: { type: boolean }
 
     Task:
       type: object

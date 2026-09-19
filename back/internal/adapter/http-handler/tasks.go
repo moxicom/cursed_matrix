@@ -3,6 +3,8 @@ package httphandler
 import (
 	"net/http"
 
+	openapi_types "github.com/oapi-codegen/runtime/types"
+
 	gen "github.com/moxicom/cursed_matrix/back/internal/adapter/http-handler/gen"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
@@ -121,3 +123,122 @@ func stringValue(s *string) string {
 	}
 	return *s
 }
+
+// CreateTask adds a task to a quadrant.
+func (a *API) CreateTask(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserFrom(r.Context())
+	if !ok {
+		WriteError(w, r, shared.NewError(shared.CodeSessionExpired, nil))
+		return
+	}
+
+	var body gen.CreateTaskJSONRequestBody
+	if !decode(w, r, &body) {
+		return
+	}
+
+	draft := board.Draft{
+		Title:           body.Title,
+		Quadrant:        shared.Quadrant(body.Quadrant),
+		Description:     stringValue(body.Description),
+		DeadlineAt:      body.DeadlineAt,
+		DeadlineHasTime: boolValue(body.DeadlineHasTime),
+	}
+	if body.Color != nil {
+		draft.Color = shared.TaskColor(*body.Color)
+	}
+
+	created, err := a.board.Create(r.Context(), userID, draft)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	WriteJSON(w, r, http.StatusCreated, renderTask(created))
+}
+
+// CreateSubtask adds a subtask under a parent task.
+func (a *API) CreateSubtask(w http.ResponseWriter, r *http.Request, taskID openapi_types.UUID) {
+	userID, ok := UserFrom(r.Context())
+	if !ok {
+		WriteError(w, r, shared.NewError(shared.CodeSessionExpired, nil))
+		return
+	}
+
+	var body gen.CreateSubtaskJSONRequestBody
+	if !decode(w, r, &body) {
+		return
+	}
+
+	parentID := taskID
+	draft := board.Draft{
+		ParentID:        &parentID,
+		Title:           body.Title,
+		Description:     stringValue(body.Description),
+		DeadlineAt:      body.DeadlineAt,
+		DeadlineHasTime: boolValue(body.DeadlineHasTime),
+	}
+	if body.Color != nil {
+		draft.Color = shared.TaskColor(*body.Color)
+	}
+
+	created, err := a.board.Create(r.Context(), userID, draft)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	WriteJSON(w, r, http.StatusCreated, renderTask(created))
+}
+
+// UpdateTask changes the fields the user may edit.
+func (a *API) UpdateTask(w http.ResponseWriter, r *http.Request, taskID openapi_types.UUID) {
+	userID, ok := UserFrom(r.Context())
+	if !ok {
+		WriteError(w, r, shared.NewError(shared.CodeSessionExpired, nil))
+		return
+	}
+
+	var body gen.UpdateTaskJSONRequestBody
+	present, decoded := decodeFields(w, r, &body)
+	if !decoded {
+		return
+	}
+
+	patch := board.Patch{
+		Title:           body.Title,
+		Description:     body.Description,
+		DeadlineAt:      body.DeadlineAt,
+		DeadlineHasTime: body.DeadlineHasTime,
+		// Absent and null both decode to a nil pointer, and they mean
+		// different things: one leaves the deadline alone, the other clears
+		// it. Only the raw body can tell them apart.
+		ClearDeadline: present["deadlineAt"] && body.DeadlineAt == nil,
+	}
+	if body.Color != nil {
+		color := shared.TaskColor(*body.Color)
+		patch.Color = &color
+	}
+
+	updated, err := a.board.Update(r.Context(), userID, taskID, patch)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	WriteJSON(w, r, http.StatusOK, renderTask(updated))
+}
+
+// DeleteTask removes a task from the user's views, keeping the row.
+func (a *API) DeleteTask(w http.ResponseWriter, r *http.Request, taskID openapi_types.UUID) {
+	userID, ok := UserFrom(r.Context())
+	if !ok {
+		WriteError(w, r, shared.NewError(shared.CodeSessionExpired, nil))
+		return
+	}
+
+	if err := a.board.Delete(r.Context(), userID, taskID); err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func boolValue(v *bool) bool { return v != nil && *v }

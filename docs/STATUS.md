@@ -33,10 +33,10 @@ board is now the first row where the screen could stop being a mock.
 | 3 | Task entity | mock | schema | `tasks` table, `domain/task`, `TaskRepository.ListBoard` |
 | 4 | Four Eisenhower quadrants | mock | done | `quadrant_enum`, `shared.Quadrant`, enum parity test |
 | 5 | Board with four lists | mock | read done | `GET /tasks` through `board.Service`; every filter exercised live |
-| 6 | Creation inside a quadrant | mock | — | `board.store.ts:createTask` |
-| 7 | Position, user ordering | mock | schema | gap-based `position`, index `tasks_board_idx`; server-side move not written |
+| 6 | Creation inside a quadrant | mock | done | `POST /tasks`; the quadrant comes from the body, the position from the server |
+| 7 | Position, user ordering | mock | partial | new tasks land at the end via `NextPosition`; reordering is not written |
 | 8 | Moving between quadrants | mock | — | `board.store.ts:moveTask` computes the position client-side, which the contract forbids |
-| 9 | Subtask, one level only | mock | done | trigger `tasks_one_level`, `task.NewSubtask`, both tested |
+| 9 | Subtask, one level only | mock | done | `POST /tasks/{id}/subtasks`, trigger `tasks_one_level`, 422 proven through the router |
 | 10 | Parent relation | mock | done | `parent_task_id` + FK `tasks_parent_same_user` |
 | 11 | Subtask ordering | mock | schema | index `tasks_subtasks_idx` |
 | 12 | Independent subtask completion | mock | done (domain) | `task.Complete`, unit tests |
@@ -83,9 +83,9 @@ board is now the first row where the screen could stop being a mock.
 | 54–60 | Six modules and their scope | mock | — | all six pages exist |
 | 61 | 20 business rules | partly | mostly done | rules 1–9 are enforced by the schema; 10–20 need the service layer |
 | 62 | Data model | n/a | done | 11 tables plus the outbox, 13 migrations |
-| 64 | Plans, access gate | mock | schema | `RequireAccess.tsx`; `plan`, `plan_expires_at`; the link quota is enforced nowhere |
+| 64 | Plans, access gate | mock | partial | the 35-active-task quota is enforced and tested end to end; the link quota and the access gate are not |
 | 65 | Exact XP and level values | done | done | 50/35/20/10, ×0.35, `45·(n−1)²`, tests on both sides |
-| 66 | Reopen and soft delete | mock | done (domain) | `task.Reopen`, `deleted_at`; the compensating transaction is not written |
+| 66 | Reopen and soft delete | mock | partial | `DELETE /tasks/{id}` is live and cascades; reopen and the compensating XP transaction are not written |
 | 67 | Landing, pricing, 404, settings | done | n/a | routes exist and render |
 | 68 | Input limits | done | done | 100/2000/24 in the UI and as CHECK constraints |
 | 69 | `GRAPH_OPENED` | bug | schema | the enum value and the index exist; nothing emits the event |
@@ -101,10 +101,12 @@ Authentication and the board read are live; the rest is the phase-3 worklist.
 | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/logout-all` | **done** — HttpOnly cookies, CSRF header, per-address and per-account rate limits |
 | `GET /me`, `PATCH /me` | **done** — `plan` still hardcoded `FREE`, `email` not writable |
 | `POST /me/export`, `DELETE /me` | — |
-| `GET /tasks` | **done** — nine filters, tags included, subtasks included; not paginated |
-| `POST /tasks`, `PATCH /tasks/{id}` | — |
-| `POST /tasks/{id}/complete`, `/reopen`, `/move`, `/promote`, `/subtasks` | — |
-| `DELETE /tasks/{id}` | — |
+| `GET /tasks` | **done** — nine filters, tags included, subtasks included; capped at 500 with a `truncated` flag |
+| `POST /tasks` | **done** — server-assigned position, free-plan quota enforced (402) |
+| `PATCH /tasks/{id}` | **done** — absent vs null distinguished for `deadlineAt`; a completed task is frozen (409) |
+| `POST /tasks/{id}/subtasks` | **done** — one level only, counts against the quota |
+| `DELETE /tasks/{id}` | **done** — soft delete, cascades to subtasks |
+| `POST /tasks/{id}/complete`, `/reopen`, `/move`, `/promote` | — |
 | `GET /tags`, `POST /tasks/{id}/tags`, `DELETE /tasks/{id}/tags/{tagId}` | — |
 | `POST /links`, `PATCH /links/{id}`, `DELETE /links/{id}` | — |
 | `GET /graph`, `POST /activity/graph-opened` | — |

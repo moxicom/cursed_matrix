@@ -16,6 +16,8 @@ var statuses = map[shared.ErrorCode]int{
 	shared.CodeInvalidCredentials: http.StatusUnauthorized,
 	shared.CodeSessionExpired:     http.StatusUnauthorized,
 
+	shared.CodeCSRFTokenInvalid: http.StatusForbidden,
+
 	shared.CodeSubscriptionRequired: http.StatusPaymentRequired,
 	shared.CodeQuotaLimitReached:    http.StatusPaymentRequired,
 

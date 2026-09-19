@@ -17,6 +17,8 @@ const (
 
 	CodeInvalidCredentials ErrorCode = "INVALID_CREDENTIALS"
 	CodeSessionExpired     ErrorCode = "SESSION_EXPIRED"
+	// #nosec G101 -- an error code the client renders, not a credential.
+	CodeCSRFTokenInvalid ErrorCode = "CSRF_TOKEN_INVALID"
 
 	CodeSubscriptionRequired ErrorCode = "SUBSCRIPTION_REQUIRED"
 	CodeQuotaLimitReached    ErrorCode = "QUOTA_LIMIT_REACHED"

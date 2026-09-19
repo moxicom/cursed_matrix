@@ -4,6 +4,10 @@ Companion to `docs/SPEC.md`. The specification describes the domain; this
 document states what `back/` must expose for `front/` to work, and what it must
 verify on its own regardless of what the client sends.
 
+The machine-readable contract lives in `back/api/v1/openapi.yaml` and is what
+the server is generated from — this document explains the decisions behind it.
+Where the two disagree, the YAML wins, because it is the one that compiles.
+
 The frontend currently runs on mocks in `front/src/shared/mocks`, typed with
 `front/src/shared/types/domain.ts`. Those types are the wire contract: the
 payloads below match them field for field, so replacing mocks with HTTP calls
@@ -69,12 +73,50 @@ Error codes used by the client are listed in section 15.
 
 ### 1.4 Authentication
 
-* Session cookie, `HttpOnly`, `Secure`, `SameSite=Lax`, with a server-side
-  expiry. Tokens are never returned in a body and never stored in
-  `localStorage` — any script on the page can read that.
-* Because the session rides in a cookie, every state-changing request carries a
-  CSRF token (double-submit cookie or a per-session token in a header), and the
-  server rejects unsafe methods without it.
+A short-lived access token and a revocable refresh token, both carried in
+cookies the page cannot read.
+
+**Nothing is ever returned in a response body.** A token in a body is a token
+the frontend has to put somewhere, and every somewhere a script can reach —
+`localStorage`, `sessionStorage`, a variable — is a token any injected script
+can read. `POST /auth/login` answers with `GET /me` and two `Set-Cookie`
+headers, and that is the whole handover.
+
+| Cookie | Holds | Flags | Lifetime |
+|---|---|---|---|
+| `cm_access` | signed JWT: subject, plan, expiry | `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/api` | 15 min |
+| `cm_refresh` | opaque id of a server-side record | `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/api/v1/auth` | 30 days |
+| `cm_csrf` | random value, readable by the page | `Secure`, `SameSite=Lax`, `Path=/` | matches the access token |
+
+`SameSite` differs on purpose. The access cookie is `Lax`, so following a link
+into the application from outside still arrives authenticated. The refresh
+cookie is `Strict` and scoped to the auth path: it is only ever sent by the
+client's own refresh call, so no cross-site navigation can reach it.
+
+**CSRF.** A cookie is attached by the browser whether or not the page meant to
+send it, so every unsafe method (`POST`, `PATCH`, `DELETE`) carries the value of
+`cm_csrf` in an `X-CSRF-Token` header. The server compares the two and rejects a
+mismatch with `403`. The check is skipped for `GET` and `HEAD`, which change
+nothing.
+
+**Why a JWT at all, if there is a server record anyway.** The access token is
+verified by signature, so the common path — every authenticated request —
+touches neither PostgreSQL nor Redis. Only refreshing does. What the signature
+cannot express is revocation, which is why the refresh token is a stored record:
+logging out, signing out everywhere, a cancelled subscription and a deleted
+account all take effect within the access token's 15 minutes rather than at its
+natural expiry.
+
+**Refresh.** `POST /auth/refresh` rotates: the presented refresh token is
+consumed and a new pair is issued. A refresh token presented twice is a replay —
+the server revokes the whole family for that user and answers `401`, because the
+second presenter is either the attacker or the victim, and there is no way to
+tell which.
+
+**Rotating `JWT_SECRET`** invalidates every access token in flight; refresh
+tokens survive, so clients recover on their next refresh rather than being
+logged out.
+
 * Any authenticated request also touches the streak (§1.7).
 
 ### 1.5 Idempotency
@@ -117,29 +159,53 @@ tasks anyway. If that cap is lifted, the task list gains the same cursor scheme.
 ### `POST /auth/register`
 
 ```json
-{ "username": "nullptr_ok", "email": "operator@quest.terminal",
-  "password": "…", "timezone": "Europe/Moscow", "language": "EN" }
+{ "username": "nullptr_ok", "password": "…",
+  "timezone": "Europe/Moscow", "language": "EN" }
 ```
 
-Rules: `username` 3–32 characters, unique, case-insensitive; `email` unique and
-normalised; password policy is the server's business. `timezone` must be a valid
-IANA identifier; an unknown one falls back to `UTC` rather than failing.
+The account is identified by its **username**: 3–32 characters, unique and
+case-insensitive, so `Operator` and `operator` are the same account. Password
+policy is the server's business. `timezone` must be a valid IANA identifier; an
+unknown one falls back to `UTC` rather than failing.
+
+`email` is **optional**. Nothing in the product sends mail today, so demanding
+an address to get past the form would only collect invented ones — and an
+invented address is worse than none, because it looks deliverable. It becomes
+useful for two things: the Google Calendar integration, which matches an account
+by the address of the identity that authorises it, and a password reset, which
+has nowhere to send anything without one. Where an address is present it is
+unique and normalised; where it is absent nothing depends on it.
 
 Response `201`: the same payload as `GET /me`.
 
 ### `POST /auth/login`
 
 ```json
-{ "email": "…", "password": "…", "timezone": "Europe/Moscow" }
+{ "username": "nullptr_ok", "password": "…", "timezone": "Europe/Moscow" }
 ```
 
-Response `200`: `GET /me`. Failures answer `401` with `INVALID_CREDENTIALS` and
-must not reveal whether the email exists. Both endpoints are rate limited per IP
-and per account.
+Response `200`: the payload of `GET /me`, plus the three `Set-Cookie` headers of
+§1.4. Failures answer `401` with `INVALID_CREDENTIALS` and must not reveal
+whether the account exists — the same code, the same shape and the same timing
+for an unknown username as for a wrong password, which means hashing a dummy
+password when there is no such account rather than returning early. Both
+endpoints are rate limited per IP and per account.
+
+### `POST /auth/refresh`
+
+No body: the refresh cookie is the credential. Rotates the pair and answers
+`200` with new cookies. A token that was already consumed revokes the family and
+answers `401 SESSION_EXPIRED` (§1.4).
+
+### `POST /auth/logout-all`
+
+Revokes every refresh token of the account, so other devices lose access at
+their next refresh. `204`.
 
 ### `POST /auth/logout`
 
-Clears the session. Always `204`, even without a session.
+Consumes the presented refresh token and clears all three cookies. `204`, and
+the same answer whether or not a session was there.
 
 ### `GET /me`
 
@@ -181,8 +247,12 @@ client mirrors the same formula for display only and never sends either value.
 ### `PATCH /me/settings`
 
 ```json
-{ "language": "RU", "timezone": "Europe/Berlin", "showInLeaderboard": false }
+{ "language": "RU", "timezone": "Europe/Berlin", "showInLeaderboard": false,
+  "email": "operator@quest.terminal" }
 ```
+
+`email` may be added, changed or cleared here — it is the one credential-adjacent
+field the user owns.
 
 All fields optional; only the sent ones change. Response `200` with the updated
 `GET /me`.
@@ -631,7 +701,8 @@ Enforced on the server for every write, regardless of what the UI allows:
 | `title` | 1–100 characters after trimming |
 | `description` | 0–2000 characters |
 | tag `name` | 1–24 characters, unique per user, case-insensitive |
-| `username` | 3–32 characters, unique |
+| `username` | 3–32 characters, unique, case-insensitive; the sign-in credential |
+| `email` | optional; unique and normalised where present |
 | `color` | one of the seven `TaskColorId` values |
 | `quadrant` | one of the four `Quadrant` values; required for a regular task, forbidden for a subtask |
 | `deadlineAt` | valid ISO-8601; a date-only deadline sets `deadlineHasTime: false` |
@@ -651,7 +722,8 @@ Fields a client may **never** set, on any endpoint: `xpAwarded`,
 | Code | Status | Where |
 |---|---|---|
 | `INVALID_CREDENTIALS` | 401 | login |
-| `SESSION_EXPIRED` | 401 | any |
+| `SESSION_EXPIRED` | 401 | any, and a replayed refresh token |
+| `CSRF_TOKEN_INVALID` | 403 | any unsafe method |
 | `SUBSCRIPTION_REQUIRED` | 402 | any gated endpoint |
 | `QUOTA_LIMIT_REACHED` | 402 | create task, create link |
 | `TASK_NOT_FOUND` | 404 | task endpoints |

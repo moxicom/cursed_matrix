@@ -127,7 +127,7 @@ func optionalQuadrant(raw *string) (*shared.Quadrant, error) {
 type userRow struct {
 	ID           uuid.UUID
 	Username     string
-	Email        string
+	Email        *string
 	PasswordHash string
 	AvatarURL    *string
 	CreatedAt    time.Time

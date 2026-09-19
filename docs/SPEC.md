@@ -28,10 +28,12 @@ cursed_matrix/
 │   ├── Dockerfile.dev  # Vite dev server with HMR
 │   └── nginx/          # SPA fallback, /api proxy, cache policy, CSP
 ├── back/               # Golang application (backend, HTTP API) — see docs/STATUS.md
+│   └── api/v1/openapi.yaml  # the machine-readable contract; the server is generated from it
 ├── infra/              # postgres init, victoria-metrics, grafana provisioning
 ├── docs/
 │   ├── SPEC.md         # this document
-│   └── API.md          # HTTP contract back/ must expose for front/
+│   ├── API.md          # the decisions behind the contract, in prose
+│   └── STATUS.md       # what is implemented, and what proves it
 ├── docker-compose.yml  # frontend, datastores, monitoring; backend behind a profile
 ├── docker-compose.dev.yml
 ├── .env.example

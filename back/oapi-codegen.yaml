@@ -1,0 +1,12 @@
+# Generation is driven from api/v1/openapi.yaml: the contract is written first and
+# the server interface follows, so a handler that drifts from it fails to
+# compile instead of failing in production.
+package: gen
+output: internal/adapter/http-handler/gen/api.gen.go
+generate:
+  chi-server: true
+  models: true
+  strict-server: true
+  embedded-spec: true
+output-options:
+  skip-prune: true

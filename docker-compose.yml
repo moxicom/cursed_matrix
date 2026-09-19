@@ -217,6 +217,9 @@ services:
     environment:
       DATA_SOURCE_NAME: postgres://${POSTGRES_USER:-cursed}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cursed_matrix}?sslmode=disable
       PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
+      # Auto-discovery otherwise connects to every database in the cluster,
+      # including the templates and the one the integration tests create.
+      PG_EXPORTER_EXCLUDE_DATABASES: "template0,template1,postgres,cursed_matrix_test"
     networks: [data]
     depends_on:
       postgres: { condition: service_healthy }

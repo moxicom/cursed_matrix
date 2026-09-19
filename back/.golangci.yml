@@ -38,6 +38,9 @@ linters:
         - G115 # integer conversion overflow; the sizes here are bounded by the schema
 
   exclusions:
+    paths:
+      # Generated from api/v1/openapi.yaml; regenerate rather than edit.
+      - internal/adapter/http-handler/gen
     rules:
       # Test files assemble SQL fixtures and may format strings freely.
       - path: _test\.go

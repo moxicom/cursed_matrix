@@ -17,9 +17,11 @@ func newUser(t *testing.T) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
 	suffix := id.String()[:8]
+	// No address: the account is identified by its username, and these rows
+	// prove the column is genuinely optional.
 	_, err := pool.Exec(context.Background(),
-		`INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, 'x')`,
-		id, "tx_"+suffix, "tx_"+suffix+"@example.test")
+		`INSERT INTO users (id, username, password_hash) VALUES ($1, $2, 'x')`,
+		id, "tx_"+suffix)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

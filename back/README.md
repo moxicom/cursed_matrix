@@ -10,6 +10,7 @@ every layer exist. The HTTP endpoints do not yet — that is phase 2 onwards.
 ## Layout
 
 ```
+api/v1/            openapi.yaml: the wire contract the server is generated from
 cmd/api            composition root: reads config, builds adapters, serves
 cmd/migrate        goose runner over the embedded migrations
 config/            config.yaml: structure and tuning, secrets by variable name
@@ -23,6 +24,7 @@ internal/
     redis/         version-stamped cache
     http-server/   router, middleware, timeouts, graceful shutdown
     http-handler/  domain result → HTTP response, status mapping
+    http-handler/gen/  generated from api/v1/openapi.yaml — never edited
     metrics/       Prometheus exposition for VictoriaMetrics
   migrations/      goose SQL, embedded into the binary
   arch/            the tests that keep the layering honest

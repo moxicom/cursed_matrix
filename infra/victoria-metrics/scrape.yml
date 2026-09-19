@@ -27,6 +27,14 @@ scrape_configs:
   - job_name: postgres
     static_configs:
       - targets: ["postgres-exporter:9187"]
+    metric_relabel_configs:
+      # Databases nobody runs the product on: the two templates, the
+      # maintenance database, and the one `make back-test-integration` creates.
+      # Without this they sit next to cursed_matrix in every panel that breaks
+      # down by datname, and a test run looks like production activity.
+      - source_labels: [datname]
+        regex: "template\\d+|postgres|.*_test"
+        action: drop
 
   # Redis: memory against maxmemory, ops/sec, evictions, keyspace. Evictions
   # above zero mean sessions are being dropped (compose sets noeviction, so it

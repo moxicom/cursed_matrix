@@ -307,6 +307,9 @@ func TestUserByID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ByID: %v", err)
 	}
+	if found.Email == nil {
+		t.Error("the seeded account has an address; it did not survive the round trip")
+	}
 
 	tests := []struct {
 		name string

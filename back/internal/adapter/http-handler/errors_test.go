@@ -20,6 +20,7 @@ func TestStatusFor(t *testing.T) {
 	}{
 		{name: "bad credentials", code: shared.CodeInvalidCredentials, want: http.StatusUnauthorized},
 		{name: "expired session", code: shared.CodeSessionExpired, want: http.StatusUnauthorized},
+		{name: "csrf mismatch", code: shared.CodeCSRFTokenInvalid, want: http.StatusForbidden},
 		{name: "subscription required", code: shared.CodeSubscriptionRequired, want: http.StatusPaymentRequired},
 		{name: "quota reached", code: shared.CodeQuotaLimitReached, want: http.StatusPaymentRequired},
 		{name: "task not found", code: shared.CodeTaskNotFound, want: http.StatusNotFound},

@@ -1,0 +1,366 @@
+openapi: 3.0.3
+
+# The contract is the source of truth: back/ generates its server interface from
+# this file, so a handler that does not match it fails to compile. docs/API.md
+# explains the decisions behind it; this file is what the code is held to.
+#
+# Phase 2 covers authentication and the account. The task, graph, activity and
+# leaderboard endpoints of API.md §4-12 arrive with phase 3.
+
+info:
+  title: cursed_matrix API
+  version: 0.2.0
+  description: |
+    Every timestamp is ISO-8601 with an explicit UTC offset. Calendar days are
+    YYYY-MM-DD strings computed in the user's timezone, never the server's.
+    The server returns codes and parameters, never rendered prose: the client
+    renders them in EN or RU.
+
+servers:
+  - url: /api/v1
+
+tags:
+  - name: auth
+    description: Registration, sign-in and token rotation.
+  - name: account
+    description: The signed-in user and their settings.
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Create an account and sign in
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201":
+          description: The account, with the session cookies set.
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/SessionCookies" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Sign in
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: The account, with the session cookies set.
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/SessionCookies" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401":
+          description: |
+            Wrong password, or no such account — deliberately the same answer,
+            so the endpoint cannot be used to learn which usernames are taken.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate the token pair
+      operationId: refresh
+      description: |
+        The refresh cookie is the credential; there is no body. A token that was
+        already consumed is a replay: the server revokes every refresh token of
+        that account and answers 401.
+      security:
+        - refreshCookie: []
+      responses:
+        "204":
+          description: New cookies are set.
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/SessionCookies" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Sign out on this device
+      operationId: logout
+      description: Consumes the refresh token and clears the cookies.
+      security:
+        - refreshCookie: []
+      responses:
+        "204":
+          description: |
+            Cleared. The same answer whether or not a session was there.
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/SessionCookies" }
+
+  /auth/logout-all:
+    post:
+      tags: [auth]
+      summary: Sign out everywhere
+      operationId: logoutAll
+      description: |
+        Revokes every refresh token of the account. Other devices keep working
+        until their access token expires, which is what bounds the damage of a
+        stolen cookie to fifteen minutes.
+      responses:
+        "204":
+          description: Revoked.
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/SessionCookies" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+
+  /me:
+    get:
+      tags: [account]
+      summary: The signed-in account
+      operationId: getMe
+      description: |
+        What the client boots from: it drives the header, the subscription gate
+        and the profile. `level` is derived from `lifetimeXp` by the server; the
+        client mirrors the formula for display only.
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+    patch:
+      tags: [account]
+      summary: Change account preferences
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingsUpdate" }
+      responses:
+        "200":
+          description: The account, with the new preferences applied.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+components:
+  securitySchemes:
+    accessCookie:
+      type: apiKey
+      in: cookie
+      name: cm_access
+      description: |
+        A signed JWT the page cannot read. Verified by signature, so an
+        authenticated request touches neither PostgreSQL nor Redis.
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: cm_refresh
+      description: |
+        The opaque id of a server-side record, scoped to /api/v1/auth and
+        SameSite=Strict. Revocable, which is what the JWT cannot be.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: |
+        The value of the page-readable cm_csrf cookie. Required on every unsafe
+        method, because a browser attaches cookies whether or not the page meant
+        to send them.
+
+  headers:
+    SessionCookies:
+      description: |
+        Sets or clears cm_access (HttpOnly, SameSite=Lax, Path=/api),
+        cm_refresh (HttpOnly, SameSite=Strict, Path=/api/v1/auth) and cm_csrf.
+      schema:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: No valid session.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    CSRFRejected:
+      description: The CSRF header is missing or does not match the cookie.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationFailed:
+      description: Valid JSON, invalid content.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many attempts from this address or for this account.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code]
+          properties:
+            code:
+              type: string
+              description: |
+                Stable and language-independent. The client renders it; the
+                server never sends prose.
+              example: VALIDATION_FAILED
+            params:
+              type: object
+              additionalProperties: true
+              description: Values for the client's message template.
+            requestId:
+              type: string
+              description: What the user reports when something goes wrong.
+
+    RegisterRequest:
+      type: object
+      required: [username, password, timezone]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          description: |
+            The credential the account signs in with. Case-insensitive and
+            unique: "Operator" and "operator" are the same account.
+          example: nullptr_ok
+        email:
+          type: string
+          format: email
+          nullable: true
+          description: |
+            Optional. Nothing in the product sends mail today; an address is
+            what a future calendar integration will match the account by, and
+            what a password reset would need. Asking for one to get past the
+            form only produces invented addresses, which look deliverable and
+            are not.
+        password:
+          type: string
+          format: password
+          minLength: 12
+        timezone:
+          type: string
+          description: |
+            An IANA identifier. Every calendar-day rule — streak days, heatmap
+            buckets, date-only deadlines — is computed in it. An unknown zone
+            falls back to UTC rather than failing the request.
+          example: Europe/Moscow
+        language:
+          $ref: "#/components/schemas/Language"
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, example: nullptr_ok }
+        password: { type: string, format: password }
+        timezone:
+          type: string
+          description: Sent on every sign-in, so a travelling user stays correct.
+          example: Europe/Moscow
+
+    SettingsUpdate:
+      type: object
+      description: Only the fields present are changed.
+      properties:
+        language: { $ref: "#/components/schemas/Language" }
+        timezone: { type: string, example: Europe/Berlin }
+        email:
+          type: string
+          format: email
+          nullable: true
+          description: |
+            Adding, changing or clearing the address. Uniqueness applies only
+            where there is one.
+        showInLeaderboard:
+          type: boolean
+          description: |
+            Taking part in the public ranking is voluntary. Turning it off
+            removes the user from the ranking without touching their XP.
+
+    Language:
+      type: string
+      enum: [EN, RU]
+
+    Plan:
+      type: string
+      enum: [FREE, PRO, SELF_HOSTED]
+
+    User:
+      type: object
+      required:
+        [id, username, language, timezone, showInLeaderboard, plan, planExpired, createdAt, stats]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        email:
+          type: string
+          format: email
+          nullable: true
+          description: Absent until the user adds one.
+        avatarUrl:
+          type: string
+          nullable: true
+          description: |
+            Null means the client renders an identicon from the username. The
+            server does not generate one.
+        language: { $ref: "#/components/schemas/Language" }
+        timezone: { type: string }
+        showInLeaderboard: { type: boolean }
+        plan: { $ref: "#/components/schemas/Plan" }
+        planExpired:
+          type: boolean
+          description: A trial that has run out. Every section but pricing is closed.
+        createdAt: { type: string, format: date-time }
+        stats: { $ref: "#/components/schemas/UserStats" }
+
+    UserStats:
+      type: object
+      description: |
+        A recomputable aggregate of the XP ledger and the activity log, read on
+        every request rather than summed from the ledger each time.
+      required:
+        [lifetimeXp, level, currentStreak, longestStreak, tasksCreated, tasksCompleted,
+         subtasksCompleted, linksCreated, achievementsUnlocked]
+      properties:
+        lifetimeXp: { type: integer, format: int64 }
+        level: { type: integer, format: int32, minimum: 1 }
+        currentStreak: { type: integer, format: int32 }
+        longestStreak: { type: integer, format: int32 }
+        tasksCreated: { type: integer, format: int32 }
+        tasksCompleted: { type: integer, format: int32 }
+        subtasksCompleted: { type: integer, format: int32 }
+        linksCreated: { type: integer, format: int32 }
+        achievementsUnlocked: { type: integer, format: int32 }
+
+security:
+  - accessCookie: []
+    csrfToken: []

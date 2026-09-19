@@ -19,7 +19,7 @@ POSTGRES_DB   ?= cursed_matrix
         logs-front health psql redis-cli pg-dump metrics grafana dev-reset \
         front-shell clean nuke back-build back-test back-test-integration \
         back-lint back-tidy back-migrate-up back-migrate-down back-migrate-status \
-        back-migrate-create back-shell back-image-debug back-fmt
+        back-migrate-create back-shell back-image-debug back-fmt back-generate
 
 help: ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -130,6 +130,10 @@ back-test-integration: ## Run the backend tests that need PostgreSQL (creates a 
 	@cd back && DATABASE_URL="$(BACK_TEST_DSN)" go run ./cmd/migrate up
 	@cd back && TEST_DATABASE_URL="$(BACK_TEST_DSN)" TEST_REDIS_URL="$(BACK_TEST_REDIS)" \
 	  go test -tags integration -count=1 ./...
+
+back-generate: ## Regenerate the server interface from back/api/v1/openapi.yaml
+	@cd back && $$(go env GOPATH)/bin/oapi-codegen -config oapi-codegen.yaml api/v1/openapi.yaml
+	@echo "regenerated from back/api/v1/openapi.yaml"
 
 back-fmt: ## Apply go fix and gofumpt to the backend
 	cd back && go fix ./...

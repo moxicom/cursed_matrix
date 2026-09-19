@@ -10,9 +10,11 @@ import (
 )
 
 type User struct {
-	ID           uuid.UUID
-	Username     string
-	Email        string
+	ID       uuid.UUID
+	Username string
+	// Email is optional: the account is identified by its username. An address
+	// arrives when the user adds one, or from an identity provider.
+	Email        *string
 	PasswordHash string
 	AvatarURL    *string
 	CreatedAt    time.Time

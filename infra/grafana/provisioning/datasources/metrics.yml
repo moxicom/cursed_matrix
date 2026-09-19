@@ -1,0 +1,29 @@
+apiVersion: 1
+
+# Removing a provisioning file does not remove what it created: Grafana keeps
+# datasources in its own database, inside the grafana_data volume. The previous
+# Prometheus datasource has to be named here explicitly, or it survives the
+# switch and stays selectable in every panel picker.
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
+# VictoriaMetrics speaks the Prometheus query API, so Grafana talks to it with
+# the stock Prometheus datasource — no plugin, and every PromQL query and
+# dashboard works unchanged.
+datasources:
+  - name: VictoriaMetrics
+    type: prometheus
+    access: proxy
+    url: http://victoriametrics:8428
+    isDefault: true
+    uid: cursed-metrics
+    jsonData:
+      # Matches global.scrape_interval in infra/victoria-metrics/scrape.yml.
+      # Grafana uses it to pick sane $__rate_interval values, which is what
+      # keeps rate() from returning gaps on short ranges.
+      timeInterval: 15s
+      # VictoriaMetrics accepts POST for queries, which lifts the URL-length
+      # limit that long PromQL expressions run into over GET.
+      httpMethod: POST
+    editable: false

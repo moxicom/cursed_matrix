@@ -1,7 +1,14 @@
 # cursed_matrix — System Specification
 
-Version: 1.0 (draft)
-Requirements source: `CLAUDE.md` (§0–§63)
+Version: 1.1 (draft)
+Requirements source: `CLAUDE.md` (§0–§69)
+
+Sections 1–26 formalize the brief and invent nothing: where it is silent, the
+question is recorded in *Open Questions* rather than answered by assumption.
+**Sections 27–30 are different in kind** — they are recommendations about
+commercial readiness, capabilities absent from the brief, mobile, and release
+staging. They are marked as such throughout and are collected at the end so the
+formalization stays separable from the advice.
 
 All internal identifiers, codes and enum values are English and
 language-independent. User-facing strings are localized on the frontend.
@@ -16,14 +23,30 @@ boundary.
 
 ```
 cursed_matrix/
-├── front/          # React application (frontend)
-├── back/           # Golang application (backend, HTTP API)
+├── front/              # React application (frontend)
+│   ├── Dockerfile      # multi-stage build → unprivileged nginx
+│   ├── Dockerfile.dev  # Vite dev server with HMR
+│   └── nginx/          # SPA fallback, /api proxy, cache policy, CSP
+├── back/               # Golang application (backend, HTTP API) — not yet written
+├── infra/              # postgres init, victoria-metrics, grafana provisioning
 ├── docs/
-│   ├── SPEC.md     # this document
-│   └── API.md      # HTTP contract back/ must expose for front/
-├── CLAUDE.md       # product brief / requirements source
+│   ├── SPEC.md         # this document
+│   └── API.md          # HTTP contract back/ must expose for front/
+├── docker-compose.yml  # frontend, datastores, monitoring; backend behind a profile
+├── docker-compose.dev.yml
+├── .env.example
+├── Makefile            # task runner; `make` lists the targets
+├── CLAUDE.md           # product brief / requirements source
 └── LICENSE
 ```
+
+**Runtime topology.** Every part runs in a container. `front` is served by nginx,
+which also proxies `/api` to `back` on the same origin — that is what keeps the
+session cookie first-party (`API.md` §1.4). PostgreSQL holds the domain data of
+section 22; Redis holds sessions and rate-limit counters; VictoriaMetrics
+(single-node, scraping and storing in one process) and Grafana watch both. Compose splits them across three networks (`edge`, `data`,
+`observability`) so the frontend cannot reach the database and the exporters are
+not on the edge. See `infra/README.md`.
 
 | Part | Folder | Stack |
 |---|---|---|
@@ -1330,6 +1353,280 @@ Requirements for events:
 
 ---
 
+## 27. Commercial readiness (proposals beyond the brief)
+
+Sections 1–26 formalize `CLAUDE.md` and invent nothing. **Sections 27–30 do the
+opposite: they are recommendations, not a reading of the brief.** They exist
+because the brief describes a product to build and says almost nothing about the
+product being bought, and the gap between those two is where the money is. Every
+item states the problem, the proposal, and what accepting it costs. They are
+kept in their own block so the formalization above stays a faithful reading of
+the source.
+
+Current state at the time of writing: `back/` does not exist, `front/` is 103
+files and ~8 300 lines running entirely on `front/src/shared/mocks`, there are no
+tests and no CI. The recommendations below are ordered by what that state makes
+urgent.
+
+### 27.1 The free quota is the wrong paid lever
+
+`CLAUDE.md` §64 makes FREE a volume quota: 35 active tasks, 25 links. A volume
+quota asks for money before the user has felt any value — the wall arrives in
+the first week, while Todoist and TickTick offer an uncapped free tier one tab
+away. "Remove the counter" is not a reason to pay; "I can no longer work without
+this" is.
+
+*Proposal:* make the paid lever **capability, not volume**. Tasks, subtasks,
+quadrants, deadlines, tags, search and the Board stay unlimited on FREE. The
+**Graph** — the force-directed view, its filters, and data export — is what
+OPERATOR unlocks. Two reasons: it is the only part of this product with no
+equivalent in a mainstream task manager, and it is worthless until the user has
+accumulated enough tasks and links to explore, which is precisely the moment
+after adoption rather than before it.
+
+*Consequence if accepted:* `FREE_TASK_CAP` / the link cap become unlimited,
+`GET /graph` answers `402 SUBSCRIPTION_REQUIRED` for FREE, and the quota
+machinery of §18.1 and API §12 is kept in the code but unused — it is the
+fallback if abuse appears, and a cap that is never hit costs nothing to carry.
+
+*Consequence if rejected:* the caps stay as specified; then the trial must be
+long enough for the Graph to become valuable before the wall, or the wall lands
+on users who have no reason yet to pay.
+
+### 27.2 Payment provider and market — a blocking decision, not an open question
+
+`API.md` §18.6 lists the billing provider as an open question. It is not: it is a
+prerequisite. `CLAUDE.md` §64 requires prices in both USD and RUB, and no single
+provider serves both sides of that line. Stripe, Paddle and Lemon Squeezy do not
+onboard Russian legal entities and do not reliably accept Russian cards; YooKassa
+and its peers do not serve customers abroad. The choice determines the legal
+entity, the tax handling, and the shape of `POST /billing/checkout` — none of
+which is a code detail.
+
+*Proposal:* pick **one** market for v1 and ship the second only once the first
+produces paying users.
+
+| Option | Provider | Argument for | Cost |
+|---|---|---|---|
+| RU first | YooKassa / CloudPayments | First paying users are reachable; the founder shares the language and the channels | A small market with a low price ceiling |
+| EN first | Paddle / Lemon Squeezy (merchant of record) | Order-of-magnitude larger ceiling; VAT/sales tax handled by the provider | Requires a non-RU legal entity before a single line of billing code |
+
+The architecture already tolerates this: §12 of `API.md` keeps prices
+server-side per locale and makes the webhook the only place a plan changes, so a
+second provider is an added implementation of the same interface, not a rewrite.
+The data model should treat `provider` and `provider_subscription_id` as fields
+on the subscription from day one.
+
+### 27.3 Instrumentation, before the first user rather than after
+
+None of this is a feature, and all of it is cheaper now than later.
+
+* **Product analytics** (PostHog free tier or equivalent) wired before the first
+  external user. Without it, the funnel from landing to first task to second
+  session is invisible and every improvement is a guess.
+* **Error reporting** (Sentry or equivalent) on both `front` and `back`. One user
+  who leaves silently because of a broken render costs more than a subscription
+  returns.
+* **An email capture on the landing page**, which already exists and already has
+  the animated backdrop. A waitlist tests demand before `back/` is written and
+  supplies the first cohort at launch.
+* **CI on push** running `tsc -b` and `eslint` at minimum. Review findings are
+  currently corrected by hand (commit `c21fd4f`); a machine does it for free.
+* **Tests on the money and XP paths only** — not a coverage target. Specifically:
+  XP granting and the compensating transactions of §10 and §11, quota
+  enforcement, and webhook idempotency. An error in XP corrupts a history that
+  §32 of the brief explicitly requires to be immutable; an error in the webhook
+  either loses revenue or grants access for free. Everything else can be tested
+  when it hurts.
+
+---
+
+## 28. Missing product capabilities
+
+Four capabilities are absent from both the brief and sections 1–26, verified by
+search across this document and `API.md`. Each is table stakes in the category
+the product competes in; a task manager without them is evaluated and dropped.
+
+### 28.1 Recurring tasks
+
+No occurrence of "recurring" anywhere in the brief or in this specification. It
+is the single most used feature of every task manager on the market: "every
+Monday, the report" is how a task manager becomes a daily habit rather than a
+weekly one.
+
+*Proposal:* a `RecurrenceRule` attached to a Task (RFC 5545 `RRULE` subset:
+daily / weekly on given weekdays / monthly on a day-of-month, plus an optional
+end date). Completing an occurrence closes the current Task and materializes the
+next one as a new row. Materialize one occurrence ahead rather than a series, so
+the board never fills with future rows and `position` stays meaningful.
+
+*Domain consequences that must be settled before implementing:*
+
+* XP is granted per completed occurrence (each is a real Task with its own
+  snapshot, §32), which makes a daily recurring task a steady XP source and a
+  potential grinding path in the leaderboard — a daily 50 XP task in
+  `IMPORTANT_URGENT` is 18 250 XP a year for one click a day;
+* editing a rule must not rewrite completed occurrences (same principle as §32);
+* a recurring parent with subtasks: does each occurrence get a fresh copy of the
+  subtasks? *Proposal:* yes, copied from a template, otherwise a checklist that
+  repeats is impossible.
+
+### 28.2 Reminder delivery
+
+§53 of the brief specifies `DEADLINE_APPROACHING`, `TASK_OVERDUE` and the rest as
+internal notifications, and `API.md` §13 exposes them over `GET /notifications`.
+There is no **delivery**: no email, no push, no channel that reaches a user who
+is not currently looking at the application. A notification only the open tab can
+see does not bring anyone back, and the streak of §36 — which rewards opening the
+app — has nothing that prompts the opening.
+
+*Proposal:* one channel in v1, email, driven by the same background job that
+already has to exist for deadline notifications (`API.md` §13). Web push is the
+natural second because it needs no new backend concept once the job exists — but
+it needs the PWA shell of §29.4, so it follows the mobile decision. Per-type
+opt-out belongs in `UserSettings` from the start; a task manager that cannot be
+made quiet gets uninstalled instead of muted.
+
+### 28.3 Import from other task managers
+
+Switching cost is the most common reason a better task manager is not adopted:
+the user's tasks are somewhere else. `API.md` §3 has `POST /me/export` and
+nothing that reads.
+
+*Proposal:* `POST /me/import` accepting Todoist's JSON export and a generic CSV,
+mapping priority to quadrant (P1 → `IMPORTANT_URGENT` downwards), preserving
+project structure as tags, and reporting what was skipped rather than failing the
+batch. Import must not grant XP for already-completed imported tasks — it is not
+achievement, and the leaderboard would be trivially gameable by importing a
+fabricated history.
+
+### 28.4 Keyboard-first interaction
+
+No occurrence of "hotkey", "keyboard" or "command palette" in the brief. The
+terminal aesthetic of this product selects an audience — developers — that judges
+a tool by whether a task can be captured without reaching for the mouse. A
+`SearchPalette` component already exists (`front/src/features/search`); it is the
+natural host.
+
+*Proposal:* a global quick-add bound to one key, the palette bound to `Cmd/Ctrl-K`
+for both search and command execution, `j`/`k` movement and `x` to complete
+within a column, and `?` for the shortcut list. This is frontend-only, costs
+nothing on the server, and is disproportionately visible to the audience most
+likely to pay.
+
+---
+
+## 29. Mobile
+
+The brief never mentions mobile; `front/` is desktop-only in a way that is
+measurable rather than aesthetic. The conclusion of this section is that a
+responsive retrofit is the wrong move and a separate, much smaller mobile surface
+is the right one.
+
+### 29.1 What actually blocks it
+
+The obstacle is **density, not complexity**. The visual language — monospace,
+zero radii, dark surfaces, tracked uppercase labels — ports to a phone without
+difficulty. The type scale does not.
+
+| Measured | Value | Effect on a 390 px viewport |
+|---|---|---|
+| Body type scale (`tailwind.config.ts`) | 9.5–12 px, smallest `text-85` = 8.5 px | Illegible at phone viewing distance; the scale is tuned for ~60 cm, a phone is ~30 cm |
+| Input type size | same 11–13 px | iOS Safari auto-zooms the page on focus of any input below 16 px, displacing the layout on every tap |
+| Board width | `min-w-272` × 4 columns + gaps ≈ 1 090 px | Four screens of horizontal scrolling |
+| Graph sidebar | `w-360` | Consumes the entire viewport |
+| Responsive utilities | 20 `sm:`/`md:`/`lg:` usages across 8 of 64 `.tsx` files | There is effectively no responsive layer |
+
+The type scale is a token change (`fontSize` in `tailwind.config.ts`), not a
+redesign — but it is px-precise by deliberate choice (§0 of that file), so it
+must be overridden as a mobile scale rather than loosened globally, or the
+desktop design it was extracted from is lost.
+
+### 29.2 The one real blocker: drag & drop
+
+Board reordering uses **HTML5 drag & drop** — the `draggable` attribute with
+`onDragStart`/`onDrop` in `front/src/entities/task/TaskCard.tsx` and
+`SubtaskRow.tsx`. HTML5 DnD does not fire on touch devices at all. This is not
+degraded behaviour; the primary Kanban interaction is simply absent on a phone,
+and no amount of CSS addresses it.
+
+*Proposal:* move Board dragging to pointer events via `dnd-kit` (or an equivalent
+pointer-based library). This is roughly a day of work and is worth doing **at the
+next occasion the drag code is touched anyway**, independent of any mobile
+decision, because rewriting it later costs the same and blocks more.
+
+### 29.3 The Graph is, unexpectedly, nearly ready
+
+`front/src/features/graph/useForceGraph.ts` renders to `<canvas>` and already
+drives interaction through **pointer events** — `onDown`/`onMove` with
+`setPointerCapture(event.pointerId)`. Pointer events work on touch. Two gaps
+remain:
+
+* `touch-action: none` is set nowhere in the project, so the browser claims the
+  gesture and scrolls the page instead of panning the graph;
+* zoom is wheel-only (`useForceGraph.ts`), so there is no pinch.
+
+Both are a few hours. The product's only differentiated feature is also its most
+portable one — worth fixing early regardless of the rest of this section.
+
+### 29.4 Proposal: a separate surface, not a responsive retrofit
+
+Retrofitting breakpoints across 64 components produces a product that is worse on
+both ends: the desktop density has to be loosened to accommodate the phone, and
+four quadrant columns remain unusable at 390 px regardless.
+
+On a phone, a person does three things: capture a task quickly, see what is due,
+and mark things done. Exploring a link graph and rearranging a matrix are desk
+work. The mobile product is therefore **three screens, not a port of sixty-four
+components**:
+
+1. **Quick capture** — a field, a quadrant choice, done.
+2. **Today** — a flat list ordered by deadline; swipe completes. The quadrant is a
+   coloured marker on the row, not a column.
+3. **Task detail** — open, edit, subtasks.
+
+Plus a mobile type scale (body ≥ 14 px, inputs ≥ 16 px without exception) built
+as an override of the existing tokens. Board and Graph on mobile are either
+absent with an honest "open on desktop" note, or — for the Graph — a read-only
+view, since §29.3 shows it nearly works already.
+
+*Timing.* None of this belongs before `back/` exists and someone is paying for
+the desktop product. A mobile surface is a second product surface, and building
+it against an unvalidated product doubles the unvalidated work. The exceptions are
+§29.2 and §29.3, which are cheap now and expensive later.
+
+---
+
+## 30. Scope staging
+
+The specification above describes the finished product. It does not follow that
+all of it belongs in the first release. Achievements (§14), the Leaderboard
+(§16), Levels (§12) and the 365-day heatmap (§15) together account for a large
+share of this document and of the implementation effort, and every one of them
+is worth less the fewer users exist: a leaderboard with no participants is an
+empty table, and ranking private task completion is in any case socially odd in a
+way that needs testing before it is built.
+
+*Proposal:* keep XP and the Streak in v1 — they are what makes progress felt —
+and defer Achievements, the Leaderboard, Levels and the heatmap until there are
+paying users. Deferring is not deleting: the data model of §22 already records
+`XPTransaction` and `ActivityEvent` from day one, so the history needed to
+compute all four retroactively accumulates from the first task. Nothing is lost
+by waiting, and the schema does not change when they arrive.
+
+A build order consistent with the above:
+
+1. Authentication, PostgreSQL, task CRUD — §§5–7 only.
+2. Deploy. A product that is not deployed cannot be evaluated.
+3. Twenty real users on a free tier. Analytics answering whether the second
+   session happens.
+4. Recurring tasks (§28.1) and reminder delivery (§28.2) — the two things that
+   make a task manager a daily habit rather than a demo.
+5. Billing, with the market decision of §27.2 already made.
+6. The Graph behind OPERATOR (§27.1).
+7. Everything deferred above, in the order the users then present.
+
+---
 ## Open Questions
 
 Places where the original brief gives no single answer. No hidden requirements
@@ -1414,10 +1711,40 @@ were invented — each item states the question and the proposed default.
     and migration tool, the React bundler and router, the force-graph library,
     and how API types are generated from Go into TypeScript (OpenAPI? a manual
     contract?).
-29. **Monorepo infrastructure.** A shared Makefile / task runner, a CI pipeline
-    covering both folders, a docker-compose for local development, and the
-    deployment shape (separate services, or Go serving the React build) are not
-    defined. Client-side routing needs an `index.html` fallback either way.
+29. **Monorepo infrastructure.** *Partly settled:* a `Makefile`, a
+    `docker-compose.yml` with a dev overlay, and the container images for the
+    frontend now exist (`infra/README.md`), and the deployment shape is decided
+    — separate containers with nginx serving the bundle and proxying `/api` to
+    the Go service on the same origin, with the `index.html` fallback in
+    `front/nginx/`. **Still open:** the CI pipeline covering both folders, where
+    images are pushed and how a release is promoted, and how secrets are
+    supplied in production (compose reads `.env`, which is not a production
+    answer).
+30. **What FREE actually withholds.** §27.1 argues the paid lever should be the
+    Graph rather than a 35-task quota. This contradicts `CLAUDE.md` §64 and is a
+    product decision, not a technical one. → *proposal:* capability-gated;
+    keep the quota code as an unused abuse fallback.
+31. **Market and billing provider** (§27.2). Which market ships first, and
+    therefore which provider and which legal entity. Blocks `/billing/checkout`,
+    not merely its shape. Supersedes `API.md` §18.6 by treating it as a
+    prerequisite rather than a detail.
+32. **Recurrence** (§28.1). Whether recurring tasks are in scope at all; if so,
+    the rule subset, whether subtasks are copied per occurrence, and whether a
+    daily recurring task in `IMPORTANT_URGENT` is an acceptable leaderboard
+    grinding path or needs a diminishing-XP rule.
+33. **Reminder channel** (§28.2). Refines question 23: internal notifications are
+    specified but nothing delivers them. Is email in v1, and does web push wait
+    on the mobile decision of §29.4?
+34. **Import** (§28.3). Which sources, and — the domain question — whether
+    imported completed tasks grant XP. → *proposal:* they do not; otherwise the
+    leaderboard is gameable with a fabricated history file.
+35. **Mobile scope** (§29.4). Whether mobile is a product surface at all, and if
+    so whether it is the three-screen surface proposed there or a responsive
+    retrofit. Independently of the answer, §29.2 (pointer-based drag & drop) and
+    §29.3 (`touch-action`, pinch) are recommended regardless.
+36. **Scope staging** (§30). Whether Achievements, Leaderboard, Levels and the
+    heatmap ship in v1 or wait for paying users. The data model supports either
+    answer; the schedule does not.
 
 ---
 
@@ -1505,3 +1832,49 @@ unusable.
 *Solution:* apply filters server-side before returning the snapshot; ship a
 default filter in the Graph (for example active + linked) that the user can
 lift, and degrade the client above a node threshold.
+
+**14. Drag & drop is unavailable on touch devices.**
+Board reordering is implemented with HTML5 drag & drop (`draggable` plus
+`onDragStart`/`onDrop` in `front/src/entities/task/TaskCard.tsx` and
+`SubtaskRow.tsx`). These events never fire on touch input, so the primary Kanban
+interaction of §7 does not exist on a phone or a tablet — including a desktop
+touchscreen.
+*Solution:* pointer-event-based dragging (`dnd-kit` or equivalent). Worth doing
+at the next occasion the drag code is touched, independent of any mobile
+decision (§29.2).
+
+**15. The type scale collides with mobile browser behaviour.**
+The design tokens are px-precise with a body scale of 9.5–12 px
+(`front/tailwind.config.ts`). iOS Safari zooms the viewport whenever an input
+below 16 px receives focus, which displaces the layout on every tap into a
+field — a correctness problem, not only a legibility one.
+*Solution:* a mobile override of the `fontSize` tokens with inputs pinned at
+≥ 16 px, rather than loosening the desktop scale the design was extracted from
+(§29.1).
+
+**16. Recurrence would interact with the XP snapshot and the leaderboard.**
+If recurring tasks are added (§28.1), each occurrence is a Task with its own
+completion and therefore its own XP under §11 and §32. A single daily task in
+`IMPORTANT_URGENT` yields 18 250 XP a year for one click a day, which outranks
+genuine usage in the ALL_TIME leaderboard of §16.
+*Solution:* decide before implementing — either accept it (the streak already
+rewards showing up), or apply a diminishing multiplier to repeated occurrences of
+the same rule within a period. Do not discover this after the leaderboard is
+populated, because §32 makes the history immutable by design.
+
+**17. Notifications are specified but not deliverable.**
+§53 defines notification types and `API.md` §13 exposes them for reading, but no
+channel reaches a user who does not have the application open. The streak of §36
+rewards opening the app while nothing prompts it.
+*Solution:* one delivery channel (email) driven by the deadline job that §13
+already requires, with per-type opt-out in `UserSettings` from the first
+version (§28.2).
+
+**18. Two currencies imply two payment providers.**
+`CLAUDE.md` §64 sets prices per locale in USD and RUB. No single provider serves
+both a Russian legal entity and international card payments, so "the billing
+provider" is not one field.
+*Solution:* model `provider` and `provider_subscription_id` on the subscription
+from the first migration, keep the webhook the only mutator of `plan` (`API.md`
+§12), and ship one market first (§27.2). A second provider then implements the
+same interface instead of forcing a schema change.

@@ -1,2 +1,9 @@
 CLAUDE.md
 .DS_Store
+# local environment: real passwords, never committed
+.env
+.env.*
+!.env.example
+
+# database dumps written by `make pg-dump`
+backups/

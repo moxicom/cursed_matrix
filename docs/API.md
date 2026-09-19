@@ -687,7 +687,86 @@ Fields a client may **never** set, on any endpoint: `xpAwarded`,
 
 ---
 
-## 17. Open questions
+## 17. Proposed endpoints beyond the brief
+
+Sections 1–16 derive from `CLAUDE.md` and from what the frontend already does.
+This section derives from `SPEC` §§27–30, which are recommendations rather than
+requirements. Nothing here is settled; it is written down so the shape is known
+before the decisions in `SPEC` Open Questions 30–36 are taken, and so the first
+migrations do not have to be undone.
+
+### 17.1 Recurrence (`SPEC` §28.1)
+
+```
+PUT    /tasks/{id}/recurrence   { "freq": "WEEKLY", "byDay": ["MO"],
+                                  "interval": 1, "until": "2027-01-01" | null }
+DELETE /tasks/{id}/recurrence   → 204
+```
+
+Only the parent Task carries a rule; `422 NESTING_NOT_ALLOWED` if the target is a
+subtask. `POST /tasks/{id}/complete` on a recurring task additionally returns the
+materialized next occurrence:
+
+```json
+{ "task": { … }, "xp": { … }, "nextOccurrence": { "id": "t42", "deadline": "…" } }
+```
+
+One occurrence is materialized ahead, never a series, so `position` stays
+meaningful and the board does not fill with future rows. Editing a rule never
+rewrites occurrences already completed — the same immutability principle as the
+XP snapshot (`SPEC` §32).
+
+### 17.2 Import (`SPEC` §28.3)
+
+```
+POST /me/import   multipart: file + { "source": "TODOIST" | "CSV" }
+→ { "imported": 148, "skipped": [ { "row": 12, "code": "TITLE_TOO_LONG" } ] }
+```
+
+Partial success is the normal outcome: a rejected row is reported, never fatal to
+the batch. **Imported tasks that arrive already completed grant no XP and emit no
+activity events** — otherwise the leaderboard is gameable with a fabricated
+history file. This is the one rule here that is not negotiable for correctness
+reasons rather than product ones.
+
+### 17.3 Reminder delivery and preferences (`SPEC` §28.2)
+
+`GET /notifications` already exposes notifications for reading; delivery is what
+is missing. No new read endpoint is needed — only settings:
+
+```
+PATCH /me/settings
+{ "notifications": { "email": { "DEADLINE_APPROACHING": true,
+                                "TASK_OVERDUE": true,
+                                "ACHIEVEMENT_UNLOCKED": false } } }
+```
+
+The background job of §13 sends on the same schedule it already computes. Per-type
+opt-out exists from the first version: a task manager that cannot be silenced is
+uninstalled rather than muted.
+
+### 17.4 Capability gating instead of a volume quota (`SPEC` §27.1)
+
+If the paid lever becomes the Graph rather than the 35-task cap, the wire change
+is small and local:
+
+* `GET /graph` answers `402 SUBSCRIPTION_REQUIRED` for FREE;
+* `POST /me/export` likewise;
+* `GET /plans` reports `quota` with `activeTaskLimit: null` (unlimited), and the
+  client renders no counter for `null`;
+* `QUOTA_LIMIT_REACHED` stays in the error table and stays implemented — it is
+  the abuse fallback, not dead code.
+
+### 17.5 Subscription record
+
+Independent of which provider wins (`SPEC` §27.2, issue 18), the subscription row
+carries `provider`, `provider_subscription_id`, `currency`, `current_period_end`
+and `status` from the first migration. Two providers are then two implementations
+of one interface rather than a schema change under live data.
+
+---
+
+## 18. Open questions
 
 These follow the ones in `docs/SPEC.md` and need product answers before the
 endpoints above are final:
@@ -702,6 +781,20 @@ endpoints above are final:
 5. Trial length and what happens to tasks above the quota when a subscription
    lapses: read-only, or blocked creation only?
 6. Billing provider, and therefore the exact shape of `/billing/checkout`.
+   `SPEC` §27.2 argues this is a prerequisite rather than an open question: the
+   two currencies of `CLAUDE.md` §64 cannot be served by one provider, so the
+   answer decides the legal entity before it decides the payload.
 7. Are public profiles planned? If so, which subset of `GET /me` becomes a
    public `GET /users/{username}`?
-8. Notification channels — internal only, or push and email as well?
+8. Notification channels — internal only, or push and email as well? `SPEC`
+   §28.2 argues that without one delivery channel the notification types of §53
+   reach nobody; §17.3 above sketches the settings shape.
+9. Recurrence (§17.1) — in scope at all? If so, is a daily recurring task in
+   `IMPORTANT_URGENT` an acceptable leaderboard grinding path (`SPEC` issue 16)?
+10. Import (§17.2) — which sources beyond Todoist JSON and CSV, and does the
+    import run synchronously or as a job (the same question as 2)?
+11. Does FREE withhold volume or capability (`SPEC` §27.1)? This decides whether
+    §17.4 applies and whether `activeTaskLimit` can be `null`.
+12. Does the client send an `Idempotency-Key` on `/complete` today, or is the
+    `(task_id, source)` constraint the only backstop? §1.5 allows the header but
+    the frontend does not yet send one.

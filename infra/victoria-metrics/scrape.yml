@@ -1,0 +1,45 @@
+# Scrape configuration for the cursed_matrix stack.
+#
+# VictoriaMetrics single-node reads this with -promscrape.config. The format is
+# Prometheus' own, minus the parts a single-node VM does not implement:
+# `rule_files` has no effect here — recording and alerting rules need vmalert,
+# which is a separate container (see infra/README.md).
+#
+# Targets are Docker service names resolved by the embedded DNS. A target that
+# is not running is reported as `up == 0` rather than failing the config, which
+# is why the backend job can be listed before back/ exists.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    stack: cursed-matrix
+
+scrape_configs:
+  # VictoriaMetrics scraping itself. Its own metrics (vm_* plus the Go runtime
+  # collectors) are how you see ingestion rate, active time series and disk use.
+  - job_name: victoriametrics
+    static_configs:
+      - targets: ["victoriametrics:8428"]
+
+  # PostgreSQL: connections, transaction rates, locks, replication, and — via
+  # auto-discovery — per-database size. See SPEC §22 for what is being stored.
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  # Redis: memory against maxmemory, ops/sec, evictions, keyspace. Evictions
+  # above zero mean sessions are being dropped (compose sets noeviction, so it
+  # would show as errors instead — either way it is the signal to watch).
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  # The Go backend. Nothing answers this until back/ exists and exposes
+  # /metrics; the job is here so wiring it later is a restart, not an edit.
+  # Expect: HTTP rate/latency/errors per endpoint, plus the Go runtime
+  # collector (goroutines, GC, heap) that promhttp gives for free.
+  - job_name: backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["back:8080"]

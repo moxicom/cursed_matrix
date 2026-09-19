@@ -1,0 +1,44 @@
+# Development overlay — the Vite dev server with HMR instead of nginx.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# or `make dev`, which is the same thing. Everything except `front` is
+# inherited from docker-compose.yml unchanged.
+
+services:
+  front:
+    build:
+      dockerfile: Dockerfile.dev
+    image: cursed-matrix/front-dev:${IMAGE_TAG:-dev}
+    # !override replaces the list instead of appending to it. Without it compose
+    # merges the two files' `ports` and the dev container publishes 8080 as well
+    # — a host port bound to nothing, since only Vite on 5173 listens inside.
+    ports: !override
+      - "${VITE_PORT:-5173}:5173"
+    volumes:
+      # Source is mounted so edits reach the container. The anonymous volume on
+      # node_modules keeps the container's install — built for linux/arm64 or
+      # amd64 as the image was — from being shadowed by the host's.
+      #
+      # Compose *keeps* an anonymous volume when it recreates the container, so
+      # after adding a dependency to package.json the rebuilt image gets the old
+      # node_modules mounted back over it and the new import fails to resolve.
+      # `make dev-reset` (up --renew-anon-volumes) is the way out.
+      - ./front:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+
+  # The dev server does not proxy /api (front/vite.config.ts has no proxy
+  # block yet — the app still runs on mocks). When back/ exists, add:
+  #
+  #   server: { port: 5173, proxy: { '/api': 'http://back:8080' } }
+  #
+  # to front/vite.config.ts, or keep using the nginx image for API work.
+  back:
+    environment:
+      APP_ENV: development

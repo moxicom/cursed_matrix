@@ -1,0 +1,18 @@
+# Everything the build does not need. Keeping this tight matters twice over:
+# the context is uploaded to the daemon on every build, and a stray node_modules
+# from the host would shadow the one npm ci installs for the image's platform.
+node_modules
+dist
+dist-ssr
+*.tsbuildinfo
+
+.git
+.gitignore
+Dockerfile*
+.dockerignore
+README.md
+
+*.local
+.env
+.env.*
+.DS_Store

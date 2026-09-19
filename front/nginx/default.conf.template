@@ -1,0 +1,120 @@
+# nginx site config for the built SPA.
+#
+# Two rules from docs/SPEC.md §0 and docs/API.md §16 are implemented here:
+#   * history routing needs an index.html fallback for any unknown path, or a
+#     direct hit on /board answers 404;
+#   * the API is served from the same origin in production, which is what keeps
+#     the session cookie first-party (API.md §1.4).
+
+# Cache policy as a map rather than per-location `expires`/`add_header`.
+#
+# This is not style. nginx's add_header is *replaced*, not merged, by any
+# add_header at a deeper level: one `add_header Cache-Control` inside a location
+# silently drops every security header inherited from the server block. Keeping
+# the value in a map lets all add_header directives live at server level, where
+# nothing overrides them.
+map $uri $cursed_cache_control {
+    # The entry document must never be cached, or a deploy is invisible to a
+    # client holding a stale index.html that points at deleted bundles.
+    default        "no-cache, must-revalidate";
+    # Vite fingerprints everything under /assets, so those are immutable.
+    ~^/assets/     "public, max-age=31536000, immutable";
+    # Empty means nginx adds no header at all, which is what the API needs:
+    # server-level add_header is inherited by the proxy location too, and a
+    # second Cache-Control there would override whatever the backend set on its
+    # own response. Caching of API responses is the backend's decision.
+    ~^/api(/|$)    "";
+}
+
+server {
+    listen      8080;
+    server_name _;
+
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    # Docker's embedded DNS. Needed because the backend is resolved per request
+    # (see the /api location) rather than at startup.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    # Uploads are small JSON bodies; the import endpoint (API.md §17.2) is the
+    # only one that carries a file, and 10m covers a large Todoist export.
+    client_max_body_size 10m;
+
+    server_tokens off;
+
+    gzip              on;
+    gzip_vary         on;
+    gzip_comp_level   6;
+    gzip_min_length   1024;
+    gzip_proxied      any;
+    gzip_types        text/plain text/css application/javascript application/json
+                      image/svg+xml application/manifest+json;
+
+    # --- headers ---------------------------------------------------------
+    # Every add_header in this file is here, at server level, for the reason
+    # given above the map. Adding one inside a location means repeating all of
+    # them there too.
+    #
+    # font-src/style-src allow Google Fonts because index.html loads JetBrains
+    # Mono from the CDN. Self-hosting the font would let both drop to 'self'
+    # and remove a third-party request from every cold load.
+    add_header X-Content-Type-Options  "nosniff"     always;
+    add_header X-Frame-Options         "DENY"        always;
+    add_header Referrer-Policy         "same-origin" always;
+    add_header Permissions-Policy      "geolocation=(), microphone=(), camera=()" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+    add_header Cache-Control           $cursed_cache_control always;
+
+    # --- liveness --------------------------------------------------------
+    # Answered by nginx alone, so the container stays healthy while the API is
+    # down. Never proxied. `default_type` rather than `add_header Content-Type`,
+    # again so the security headers above are not replaced here.
+    location = /healthz {
+        access_log   off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # --- API -------------------------------------------------------------
+    # `/api` with no trailing slash matches neither `location /api/` nor any
+    # asset, so without this it would fall through to the SPA fallback and
+    # answer 200 with index.html. There is no API root — the base path is
+    # /api/v1 — so the honest answer is 404.
+    location = /api {
+        return 404;
+    }
+
+    # The host is held in a variable on purpose: with a literal name nginx
+    # resolves it at startup and refuses to boot while back/ does not exist.
+    # This way the frontend comes up regardless and /api answers 502 until the
+    # backend is running.
+    location /api/ {
+        set $backend "${BACKEND_HOST}:${BACKEND_PORT}";
+        proxy_pass http://$backend$request_uri;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection        "";
+
+        proxy_connect_timeout 5s;
+        proxy_send_timeout    30s;
+        proxy_read_timeout    30s;
+    }
+
+    # --- static assets ---------------------------------------------------
+    # A fingerprinted file that is missing is a deploy error, not a route:
+    # answer 404 instead of handing back index.html.
+    location /assets/ {
+        access_log off;
+        try_files  $uri =404;
+    }
+
+    # --- SPA fallback ----------------------------------------------------
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

@@ -22,7 +22,11 @@
     "noImplicitOverride": true,
     "verbatimModuleSyntax": true,
 
-    "baseUrl": ".",
+    // No baseUrl: since TypeScript 4.1 `paths` entries resolve relative to the
+    // tsconfig that declares them, which is this directory — the same place
+    // baseUrl pointed at. The option is deprecated in 6.0 and stops working in
+    // 7.0, and the mapping below is the only thing that ever used it.
+    // Keep in sync with the aliases in vite.config.ts.
     "paths": {
       "@/*": ["./src/*"]
     }

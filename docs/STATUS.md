@@ -34,14 +34,14 @@ board is now the first row where the screen could stop being a mock.
 | 4 | Four Eisenhower quadrants | mock | done | `quadrant_enum`, `shared.Quadrant`, enum parity test |
 | 5 | Board with four lists | mock | read done | `GET /tasks` through `board.Service`; every filter exercised live |
 | 6 | Creation inside a quadrant | mock | done | `POST /tasks`; the quadrant comes from the body, the position from the server |
-| 7 | Position, user ordering | mock | partial | new tasks land at the end via `NextPosition`; reordering is not written |
-| 8 | Moving between quadrants | mock | — | `board.store.ts:moveTask` computes the position client-side, which the contract forbids |
+| 7 | Position, user ordering | mock | done | `task.Place` by neighbour, gap-based, renumbering the scope when a gap runs out |
+| 8 | Moving between quadrants | mock | done (back) | `POST /tasks/{id}/move`; the front still computes the position client-side, which the contract forbids |
 | 9 | Subtask, one level only | mock | done | `POST /tasks/{id}/subtasks`, trigger `tasks_one_level`, 422 proven through the router |
 | 10 | Parent relation | mock | done | `parent_task_id` + FK `tasks_parent_same_user` |
 | 11 | Subtask ordering | mock | schema | index `tasks_subtasks_idx` |
 | 12 | Independent subtask completion | mock | done (domain) | `task.Complete`, unit tests |
-| 13 | Completing a parent cascades | mock | — | the domain method exists; the cascading use case does not |
-| 14 | Promote subtask | mock | done (domain) | `task.Promote` + tests |
+| 13 | Completing a parent cascades | mock | done | one transaction, one `completedAt`, `PARENT_CASCADE` on each subtask; proven end to end |
+| 14 | Promote subtask | mock | done | `POST /tasks/{id}/promote`; the XP snapshot is proven untouched |
 | 15 | Completion | mock | done (domain) | `task.Complete` freezes the snapshot |
 | 16 | Archive = completed state | mock | done | CHECK `tasks_completion_snapshot` |
 | 17 | Deadline, states | mock | schema | `lib/deadline.ts`; `deadline_at`, `deadline_has_time` |
@@ -64,15 +64,15 @@ board is now the first row where the screen could stop being a mock.
 
 | § | Requirement | Front | Back | Evidence |
 |---|---|---|---|---|
-| 30–31 | XP, XP by quadrant | mock | done (domain) | `progression.Config.Reward`, table-driven tests |
+| 30–31 | XP, XP by quadrant | mock | done | paid on completion; 50 + 18 + 18 for a cascade proven through the API |
 | 32 | XP snapshot | mock | done | snapshot columns + CHECK; round-trip asserted in the integration test |
-| 33 | XP transaction | — | schema | `xp_transactions` + unique `(task_id, source)` proven to block a double grant |
-| 34–35 | Level, level up | bug | done (domain) | formula in `progression`; the frontend shows two different levels |
+| 33 | XP transaction | — | done | every grant and withdrawal recorded; `grant_seq` allows an honest re-completion after a reopen |
+| 34–35 | Level, level up | bug | done | recomputed from lifetime XP on every change; `levelUp` reported on the response. The frontend still shows two different levels |
 | 36–38 | Daily streak, state, timezone | mock | schema | `user_stats` streak columns; `user.Settings.Location`/`LocalDate` (used by the deadline windows); no middleware yet |
 | 39–41 | Achievements, catalogue, unlock | mock | schema | 8 codes seeded by migration; no evaluator |
 | 42–44 | Activity, heatmap, event types | mock | schema | `activity_events` + 3 indexes; `GRAPH_OPENED` never emitted |
 | 45–50 | Leaderboard, periods, metric, privacy | mock | schema | index `xp_transactions_user_time_idx`; `show_in_leaderboard` defaults to off |
-| 51 | Profile statistics | mock | schema | `user_stats` |
+| 51 | Profile statistics | mock | partial | XP, level and the completion counters move with every change; streaks and achievements do not |
 
 ### Platform
 
@@ -83,9 +83,9 @@ board is now the first row where the screen could stop being a mock.
 | 54–60 | Six modules and their scope | mock | — | all six pages exist |
 | 61 | 20 business rules | partly | mostly done | rules 1–9 are enforced by the schema; 10–20 need the service layer |
 | 62 | Data model | n/a | done | 11 tables plus the outbox, 13 migrations |
-| 64 | Plans, access gate | mock | partial | the 35-active-task quota is enforced and tested end to end; the link quota and the access gate are not |
+| 64 | Plans, access gate | mock | partial | the 35-active-task quota is enforced inside the insert's transaction and tested end to end; the link quota and the access gate are not |
 | 65 | Exact XP and level values | done | done | 50/35/20/10, ×0.35, `45·(n−1)²`, tests on both sides |
-| 66 | Reopen and soft delete | mock | partial | `DELETE /tasks/{id}` is live and cascades; reopen and the compensating XP transaction are not written |
+| 66 | Reopen and soft delete | mock | done | both live, each with its own compensating ledger entry (`TASK_REOPENED`, `TASK_DELETED`) |
 | 67 | Landing, pricing, 404, settings | done | n/a | routes exist and render |
 | 68 | Input limits | done | done | 100/2000/24 in the UI and as CHECK constraints |
 | 69 | `GRAPH_OPENED` | bug | schema | the enum value and the index exist; nothing emits the event |
@@ -105,8 +105,11 @@ Authentication and the board read are live; the rest is the phase-3 worklist.
 | `POST /tasks` | **done** — server-assigned position, free-plan quota enforced (402) |
 | `PATCH /tasks/{id}` | **done** — absent vs null distinguished for `deadlineAt`; a completed task is frozen (409) |
 | `POST /tasks/{id}/subtasks` | **done** — one level only, counts against the quota |
-| `DELETE /tasks/{id}` | **done** — soft delete, cascades to subtasks |
-| `POST /tasks/{id}/complete`, `/reopen`, `/move`, `/promote` | — |
+| `DELETE /tasks/{id}` | **done** — soft delete, XP withdrawn, 409 on unfinished subtasks |
+| `POST /tasks/{id}/complete` | **done** — cascade, XP snapshot, ledger entry, totals and level in one transaction |
+| `POST /tasks/{id}/reopen` | **done** — compensating entry, the original kept; cascaded subtasks stay completed |
+| `POST /tasks/{id}/move` | **done** — placed by neighbour, quadrant renumbered when a gap runs out; refuses a completed task (409) |
+| `POST /tasks/{id}/promote` | **done** — keeps tags, colour, deadline and the XP snapshot |
 | `GET /tags`, `POST /tasks/{id}/tags`, `DELETE /tasks/{id}/tags/{tagId}` | — |
 | `POST /links`, `PATCH /links/{id}`, `DELETE /links/{id}` | — |
 | `GET /graph`, `POST /activity/graph-opened` | — |
@@ -128,8 +131,9 @@ Operational endpoints that do exist: `GET /healthz`, `GET /readyz`,
 | Compose stack (front, postgres, redis, VictoriaMetrics, Grafana, exporters) | done | `docker compose ps`, all healthy |
 | Backend image | done | scratch, 39 MB, own `HEALTHCHECK`, cross-compiles from `BUILDPLATFORM` |
 | YAML config, secrets by variable name | done | `back/config/config.yaml`, 11 config tests |
-| Migrations (goose, embedded) | done | 13 migrations, `up → reset → up` verified twice on a clean database |
+| Migrations (goose, embedded) | done | 16 migrations, `up → reset → up` verified on a clean database; enum parity now follows `ALTER TYPE` across files |
 | Transactions | done | `TxManager` plus 5 integration tests (commit, rollback, panic, nesting, visibility) |
+| Concurrency control | done | completing, reopening, moving and deleting read the task `FOR UPDATE`; creating holds the account row while the quota is counted. 8 parallel completions pay once, proven live and in a test that fails without the lock |
 | Cache (version-stamped) | done, unused | `redis.Cache` plus 6 tests; no endpoint caches anything yet |
 | Rate limiting | done | fixed window in Redis, fail-open, case-folded account key; brute force stopped live at attempt 6 |
 | SQL-injection defences | done | whitelist, bound parameters, LIKE escaping, `forbidigo`; reviewed and attacked |
@@ -155,6 +159,15 @@ Found by reviewing the frontend against the requirements; none are fixed.
 | `docs/SPEC.md` §3.3 | says `color` is a hex string; the contract and both implementations use the seven-value enum | §18 |
 
 ---
+
+## 4a. Deliberate divergences
+
+| Where | Decision |
+|---|---|
+| Reopening a parent | Subtasks completed by the cascade stay completed, per `docs/API.md` §`/reopen`. The user asked about one task; silently undoing other completions would take away XP they have no reason to expect to lose. |
+| Deleting a parent | Refused with `409` while any subtask is unfinished, rather than cascading. Open work is the user's to finish, promote or drop. |
+| `xp_transactions.grant_seq` | Added so a task completed, reopened and completed again earns its XP again. The original `(task_id, source)` uniqueness said a task may be rewarded once ever, which with reopen in the product cost the user that XP permanently. |
+| `TASK_DELETED` XP source | Added rather than reusing `TASK_REOPENED` (records a reopening that never happened) or `ADMIN_ADJUSTMENT` (claims a human intervened). |
 
 ## 5. Open decisions blocking work
 

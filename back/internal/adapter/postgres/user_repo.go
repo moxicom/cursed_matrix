@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
+	"errors"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/google/uuid"
@@ -106,3 +108,81 @@ var (
 	_ port.UserRepository = (*UserRepository)(nil)
 	_ port.TxManager      = (*TxManager)(nil)
 )
+
+// ApplyStats adds a delta to the progression aggregate and returns the totals.
+//
+// The arithmetic happens in the statement rather than in the service so two
+// completions arriving together add up: read-modify-write would let one
+// overwrite the other.
+func (r *UserRepository) ApplyStats(
+	ctx context.Context,
+	id uuid.UUID,
+	delta user.StatsDelta,
+) (user.Stats, error) {
+	query := builder.
+		Update("user_stats").
+		Set("lifetime_xp", sq.Expr("lifetime_xp + ?", delta.XP)).
+		Set("tasks_created", sq.Expr("tasks_created + ?", delta.TasksCreated)).
+		Set("tasks_completed", sq.Expr("tasks_completed + ?", delta.TasksCompleted)).
+		Set("subtasks_completed", sq.Expr("subtasks_completed + ?", delta.SubtasksCompleted)).
+		Set("links_created", sq.Expr("links_created + ?", delta.LinksCreated)).
+		Where(sq.Eq{"user_id": id}).
+		Suffix(`RETURNING lifetime_xp, level, current_streak, longest_streak,
+			last_streak_date, tasks_created, tasks_completed, subtasks_completed,
+			links_created, achievements_unlocked, updated_at`)
+
+	statement, args, err := query.ToSql()
+	if err != nil {
+		return user.Stats{}, shared.WrapError(err, shared.CodeInternal, nil)
+	}
+
+	var stats user.Stats
+	err = r.db.querier(ctx).QueryRow(ctx, statement, args...).Scan(
+		&stats.LifetimeXP, &stats.Level, &stats.CurrentStreak, &stats.LongestStreak,
+		&stats.LastStreakDate, &stats.TasksCreated, &stats.TasksCompleted,
+		&stats.SubtasksCompleted, &stats.LinksCreated, &stats.AchievementsUnlocked,
+		&stats.UpdatedAt,
+	)
+	if err != nil {
+		return user.Stats{}, mapError(err, shared.CodeUserNotFound)
+	}
+	return stats, nil
+}
+
+// SetLevel writes the level the lifetime XP now implies.
+func (r *UserRepository) SetLevel(ctx context.Context, id uuid.UUID, level int32) error {
+	query := builder.
+		Update("user_stats").
+		Set("level", level).
+		Where(sq.Eq{"user_id": id})
+
+	statement, args, err := query.ToSql()
+	if err != nil {
+		return shared.WrapError(err, shared.CodeInternal, nil)
+	}
+
+	if _, err := r.db.querier(ctx).Exec(ctx, statement, args...); err != nil {
+		return mapError(err, shared.CodeUserNotFound)
+	}
+	return nil
+}
+
+// LockAccount holds the account row until the transaction ends.
+//
+// The free plan's quota is counted and then acted on. Two creations running at
+// once would both count the same total, both find room, and both insert, since
+// two new rows share nothing to serialise on. The account row is what they
+// share.
+func (r *UserRepository) LockAccount(ctx context.Context, id uuid.UUID) error {
+	const lock = `SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`
+
+	var held int
+	err := r.db.querier(ctx).QueryRow(ctx, lock, id).Scan(&held)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return shared.NewError(shared.CodeUserNotFound, nil)
+	}
+	if err != nil {
+		return mapError(err, shared.CodeUserNotFound)
+	}
+	return nil
+}

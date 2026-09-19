@@ -46,9 +46,13 @@ func TestRateLimits(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			handler := serverWithLimits(t, tc.limits)
 			username := "t_" + uuid.NewString()[:8]
-			// Its own address, so one case cannot spend another's budget: the
-			// counters live in Redis and outlive the subtest.
-			address := "198.51.100." + strconv.Itoa(int(uuid.New()[0])%200+1)
+			// Its own address, so one case cannot spend another's budget. The
+			// counters live in Redis and outlive the subtest — and the test
+			// run — so the address has to be unlikely to repeat within the
+			// window, not merely unique within this run.
+			id := uuid.New()
+			address := "10." + strconv.Itoa(int(id[0])) + "." +
+				strconv.Itoa(int(id[1])) + "." + strconv.Itoa(int(id[2]))
 
 			for attempt := 1; attempt <= tc.attempts; attempt++ {
 				recorder := post(t, handler, address, "/auth/login",

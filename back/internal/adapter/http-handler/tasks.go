@@ -1,8 +1,10 @@
 package httphandler
 
 import (
+	"context"
 	"net/http"
 
+	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	gen "github.com/moxicom/cursed_matrix/back/internal/adapter/http-handler/gen"
@@ -234,11 +236,135 @@ func (a *API) DeleteTask(w http.ResponseWriter, r *http.Request, taskID openapi_
 		return
 	}
 
-	if err := a.board.Delete(r.Context(), userID, taskID); err != nil {
+	deleted, err := a.board.Delete(r.Context(), userID, taskID)
+	if err != nil {
 		WriteError(w, r, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	WriteJSON(w, r, http.StatusOK, deletedResponse{DeletedIDs: deleted})
+}
+
+// MoveTask places a task in a quadrant, next to the neighbour it named.
+func (a *API) MoveTask(w http.ResponseWriter, r *http.Request, taskID openapi_types.UUID) {
+	userID, ok := UserFrom(r.Context())
+	if !ok {
+		WriteError(w, r, shared.NewError(shared.CodeSessionExpired, nil))
+		return
+	}
+
+	var body gen.MoveTaskJSONRequestBody
+	if !decode(w, r, &body) {
+		return
+	}
+
+	changed, err := a.board.MoveTask(r.Context(), userID, taskID, board.Move{
+		Quadrant: shared.Quadrant(body.TargetQuadrant),
+		Before:   body.BeforeTaskId,
+		After:    body.AfterTaskId,
+	})
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	WriteJSON(w, r, http.StatusOK, renderTaskList(changed))
+}
+
+// PromoteTask turns a subtask into a task of its own.
+func (a *API) PromoteTask(w http.ResponseWriter, r *http.Request, taskID openapi_types.UUID) {
+	userID, ok := UserFrom(r.Context())
+	if !ok {
+		WriteError(w, r, shared.NewError(shared.CodeSessionExpired, nil))
+		return
+	}
+
+	// The body is optional: without one the task keeps its parent's quadrant.
+	// What arrived decides that, not Content-Length, which a chunked request
+	// does not set.
+	raw, ok := optionalBody(w, r)
+	if !ok {
+		return
+	}
+
+	var quadrant *shared.Quadrant
+	if len(raw) > 0 {
+		var body gen.PromoteTaskJSONRequestBody
+		if !unmarshalStrict(w, r, raw, &body) {
+			return
+		}
+		if body.Quadrant != nil {
+			asked := shared.Quadrant(*body.Quadrant)
+			quadrant = &asked
+		}
+	}
+
+	changed, err := a.board.Promote(r.Context(), userID, taskID, quadrant)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	WriteJSON(w, r, http.StatusOK, renderTaskList(changed))
+}
+
+type deletedResponse struct {
+	DeletedIDs []uuid.UUID `json:"deletedIds"`
+}
+
+func renderTaskList(tasks []task.Task) gen.TaskList {
+	rendered := gen.TaskList{Tasks: make([]gen.Task, 0, len(tasks))}
+	for i := range tasks {
+		rendered.Tasks = append(rendered.Tasks, renderTask(&tasks[i]))
+	}
+	return rendered
 }
 
 func boolValue(v *bool) bool { return v != nil && *v }
+
+// CompleteTask marks a task done and pays out its XP.
+func (a *API) CompleteTask(w http.ResponseWriter, r *http.Request, taskID openapi_types.UUID) {
+	a.progress(w, r, taskID, a.board.Complete)
+}
+
+// ReopenTask returns a task to work and withdraws its XP.
+func (a *API) ReopenTask(w http.ResponseWriter, r *http.Request, taskID openapi_types.UUID) {
+	a.progress(w, r, taskID, a.board.Reopen)
+}
+
+func (a *API) progress(
+	w http.ResponseWriter,
+	r *http.Request,
+	taskID uuid.UUID,
+	run func(context.Context, uuid.UUID, uuid.UUID) (*board.Progress, error),
+) {
+	userID, ok := UserFrom(r.Context())
+	if !ok {
+		WriteError(w, r, shared.NewError(shared.CodeSessionExpired, nil))
+		return
+	}
+
+	result, err := run(r.Context(), userID, taskID)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	WriteJSON(w, r, http.StatusOK, renderProgress(result))
+}
+
+func renderProgress(result *board.Progress) gen.Progress {
+	rendered := gen.Progress{
+		Tasks:     make([]gen.Task, 0, len(result.Tasks)),
+		XpAwarded: result.XPAwarded,
+		// The evaluator does not exist yet, and the field is declared
+		// non-nullable: an empty list is the honest answer, null is not.
+		UnlockedAchievements: []string{},
+	}
+	for i := range result.Tasks {
+		rendered.Tasks = append(rendered.Tasks, renderTask(&result.Tasks[i]))
+	}
+	if result.LevelUp != nil {
+		rendered.LevelUp = &struct {
+			FromLevel int32 `json:"fromLevel"`
+			ToLevel   int32 `json:"toLevel"`
+		}{FromLevel: result.LevelUp.From, ToLevel: result.LevelUp.To}
+	}
+	return rendered
+}

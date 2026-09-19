@@ -45,28 +45,52 @@ func TestGoEnumsMatchTheMigration(t *testing.T) {
 var (
 	enumBlock = regexp.MustCompile(`(?is)CREATE\s+TYPE\s+(\w+)\s+AS\s+ENUM\s*\(([^)]*)\)`)
 	enumValue = regexp.MustCompile(`'([^']*)'`)
+
+	enumAddValue = regexp.MustCompile(`(?is)ALTER\s+TYPE\s+(\w+)\s+ADD\s+VALUE(?:\s+IF\s+NOT\s+EXISTS)?\s+'([^']*)'`)
 )
 
+// parseEnums replays every migration's enum statements in order, so a value
+// added by a later ALTER TYPE counts as declared. Reading only the file that
+// creates the types would let Go and the database drift apart the moment a
+// value is added.
 func parseEnums(t *testing.T) map[string][]string {
 	t.Helper()
 
-	raw, err := migrations.FS.ReadFile("20260919120000_enum_types.sql")
+	entries, err := migrations.FS.ReadDir(".")
 	if err != nil {
-		t.Fatalf("read the enum migration: %v", err)
+		t.Fatalf("read the migrations: %v", err)
 	}
 
-	sql := string(raw)
-	if idx := strings.Index(sql, "-- +goose Down"); idx > 0 {
-		sql = sql[:idx]
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".sql") {
+			names = append(names, entry.Name())
+		}
 	}
+	slices.Sort(names)
 
 	out := make(map[string][]string)
-	for _, block := range enumBlock.FindAllStringSubmatch(sql, -1) {
-		var values []string
-		for _, match := range enumValue.FindAllStringSubmatch(block[2], -1) {
-			values = append(values, match[1])
+	for _, name := range names {
+		raw, err := migrations.FS.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
 		}
-		out[block[1]] = values
+
+		sql := string(raw)
+		if idx := strings.Index(sql, "-- +goose Down"); idx > 0 {
+			sql = sql[:idx]
+		}
+
+		for _, block := range enumBlock.FindAllStringSubmatch(sql, -1) {
+			var values []string
+			for _, match := range enumValue.FindAllStringSubmatch(block[2], -1) {
+				values = append(values, match[1])
+			}
+			out[block[1]] = values
+		}
+		for _, added := range enumAddValue.FindAllStringSubmatch(sql, -1) {
+			out[added[1]] = append(out[added[1]], added[2])
+		}
 	}
 	return out
 }

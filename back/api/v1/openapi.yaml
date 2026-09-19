@@ -228,12 +228,158 @@ paths:
       description: |
         A logical delete. The row stays so the XP ledger and the activity
         history keep referring to something real; the task leaves the user's
-        views. Deleting a task deletes its subtasks with it.
+        views, and any XP it was paid is withdrawn by a compensating entry.
+        Completed subtasks go with their parent; unfinished ones block the
+        request.
       responses:
-        "204": { description: Deleted. }
+        "200":
+          description: What was removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deletedIds]
+                properties:
+                  deletedIds:
+                    type: array
+                    items: { type: string, format: uuid }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/CSRFRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            The task still has unfinished subtasks. Finish, promote or delete
+            them first — they are open work, and the server will not take them
+            down on the client's behalf.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /tasks/{taskId}/move:
+    parameters:
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [tasks]
+      summary: Move a task
+      operationId: moveTask
+      description: |
+        The client names a place, never a position: two clients dragging at
+        once would compute the same number from different starting points and
+        the second write would land in the wrong place. Give `beforeTaskId` or
+        `afterTaskId`, or neither to append. The server assigns the position
+        and renumbers the quadrant when a gap is used up. Moving a subtask out
+        with this call promotes it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MoveRequest" }
+      responses:
+        "200":
+          description: Every task whose position changed, the moved one last.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            The task is completed. The quadrant it was completed in is what
+            priced its XP and is frozen with the snapshot; reopen it first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /tasks/{taskId}/promote:
+    parameters:
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [tasks]
+      summary: Turn a subtask into a task
+      operationId: promoteTask
+      description: |
+        The parent relation is dropped and the task takes a place at the end of
+        a quadrant — its former parent's unless the body names another. Tags,
+        colour, deadline and the XP snapshot survive, so a completed subtask
+        can be promoted without disturbing what it earned.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quadrant: { $ref: "#/components/schemas/Quadrant" }
+      responses:
+        "200":
+          description: Every task whose position changed, the promoted one last.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: The task has no parent, so there is nothing to promote.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /tasks/{taskId}/complete:
+    parameters:
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [tasks]
+      summary: Complete a task
+      operationId: completeTask
+      description: |
+        Marks the task done and, for a parent, every active subtask under it
+        with `completedVia: PARENT_CASCADE` and the same `completedAt`. XP is
+        priced from the effective quadrant — a subtask's is its parent's — and
+        frozen on the task, so a later change to the configuration never
+        rewrites what was earned. Status, snapshot, ledger entry and totals are
+        one transaction.
+      responses:
+        "200":
+          description: Everything the completion changed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Progress" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            Already completed, or a subtask whose parent cannot be read, which
+            must not be priced at a guessed quadrant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /tasks/{taskId}/reopen:
+    parameters:
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [tasks]
+      summary: Return a task to work
+      operationId: reopenTask
+      description: |
+        Clears the completion and its snapshot, and withdraws the XP with a
+        compensating negative entry; the original entry is never deleted, so
+        the history stays auditable. Subtasks completed by a cascade are not
+        reopened.
+      responses:
+        "200":
+          description: The task, with the withdrawn XP as a negative amount.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Progress" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
 
   /tasks/{taskId}/subtasks:
     parameters:
@@ -496,6 +642,46 @@ components:
     SortDirection:
       type: string
       enum: [ASC, DESC]
+
+    MoveRequest:
+      type: object
+      required: [targetQuadrant]
+      description: At most one neighbour; neither means the end of the list.
+      properties:
+        targetQuadrant: { $ref: "#/components/schemas/Quadrant" }
+        beforeTaskId: { type: string, format: uuid }
+        afterTaskId: { type: string, format: uuid }
+
+    TaskList:
+      type: object
+      required: [tasks]
+      properties:
+        tasks: { type: array, items: { $ref: "#/components/schemas/Task" } }
+
+    Progress:
+      type: object
+      description: |
+        What one call changed. The tasks are returned so the client can
+        reconcile its board without fetching it again.
+      required: [tasks, xpAwarded, unlockedAchievements]
+      properties:
+        tasks: { type: array, items: { $ref: "#/components/schemas/Task" } }
+        xpAwarded:
+          type: integer
+          format: int32
+          description: Negative when XP was withdrawn.
+        levelUp:
+          type: object
+          nullable: true
+          description: One object however many thresholds were crossed at once.
+          required: [fromLevel, toLevel]
+          properties:
+            fromLevel: { type: integer, format: int32 }
+            toLevel: { type: integer, format: int32 }
+        unlockedAchievements:
+          type: array
+          description: Achievement codes. Always empty until the evaluator exists.
+          items: { type: string }
 
     TaskDraft:
       type: object

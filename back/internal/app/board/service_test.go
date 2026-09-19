@@ -10,6 +10,7 @@ import (
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
@@ -23,6 +24,8 @@ type stubTasks struct {
 	created      []task.Task
 	updated      []task.Task
 	deleted      []uuid.UUID
+	repositioned []task.Placement
+	locked       []uuid.UUID
 	nextPosition int32
 	active       int
 	createErr    error
@@ -45,6 +48,13 @@ func (s *stubTasks) ByID(_ context.Context, _, taskID uuid.UUID) (*task.Task, er
 	return nil, shared.NewError(shared.CodeTaskNotFound, nil)
 }
 
+// ByIDForUpdate is the locking read; the stub has no concurrency to guard, so
+// it answers exactly as the plain one does.
+func (s *stubTasks) ByIDForUpdate(ctx context.Context, userID, taskID uuid.UUID) (*task.Task, error) {
+	s.locked = append(s.locked, taskID)
+	return s.ByID(ctx, userID, taskID)
+}
+
 func (s *stubTasks) Create(_ context.Context, item *task.Task) error {
 	if s.createErr != nil {
 		return s.createErr
@@ -59,8 +69,24 @@ func (s *stubTasks) Update(_ context.Context, item *task.Task) error {
 	return nil
 }
 
-func (s *stubTasks) SoftDelete(_ context.Context, _, taskID uuid.UUID, _ time.Time) error {
-	s.deleted = append(s.deleted, taskID)
+func (s *stubTasks) SoftDelete(_ context.Context, _ uuid.UUID, taskIDs []uuid.UUID, _ time.Time) error {
+	s.deleted = append(s.deleted, taskIDs...)
+	return nil
+}
+
+func (s *stubTasks) ScopeTasks(_ context.Context, _ uuid.UUID, quadrant shared.Quadrant) ([]task.Task, error) {
+	var scope []task.Task
+	for i := range s.tasks {
+		item := s.tasks[i]
+		if item.ParentID == nil && item.Quadrant != nil && *item.Quadrant == quadrant {
+			scope = append(scope, item)
+		}
+	}
+	return scope, nil
+}
+
+func (s *stubTasks) Reposition(_ context.Context, _ uuid.UUID, placements []task.Placement) error {
+	s.repositioned = append(s.repositioned, placements...)
 	return nil
 }
 
@@ -72,14 +98,45 @@ func (s *stubTasks) CountActive(context.Context, uuid.UUID) (int, error) {
 	return s.active, s.countErr
 }
 
+func (s *stubTasks) Subtasks(_ context.Context, _, parentID uuid.UUID) ([]task.Task, error) {
+	var children []task.Task
+	for i := range s.tasks {
+		if s.tasks[i].ParentID != nil && *s.tasks[i].ParentID == parentID {
+			children = append(children, s.tasks[i])
+		}
+	}
+	return children, nil
+}
+
+type stubLedger struct {
+	entries []progression.Entry
+	grants  map[uuid.UUID]int
+	err     error
+}
+
+func (l *stubLedger) Record(_ context.Context, entry *progression.Entry) error {
+	if l.err != nil {
+		return l.err
+	}
+	l.entries = append(l.entries, *entry)
+	return nil
+}
+
+func (l *stubLedger) GrantCount(_ context.Context, taskID uuid.UUID, _ shared.XPSource) (int, error) {
+	return l.grants[taskID], nil
+}
+
 type stubTx struct{}
 
 func (*stubTx) Do(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
 
 type stubUsers struct {
-	account *user.User
-	err     error
-	calls   int
+	account      *user.User
+	err          error
+	calls        int
+	stats        user.Stats
+	applied      []user.StatsDelta
+	accountLocks int
 }
 
 func (s *stubUsers) ByID(context.Context, uuid.UUID) (*user.User, error) {
@@ -95,6 +152,24 @@ func (s *stubUsers) UpdateSettings(context.Context, uuid.UUID, user.Settings) er
 	return nil
 }
 func (s *stubUsers) TouchLogin(context.Context, uuid.UUID, time.Time) error { return nil }
+
+func (s *stubUsers) ApplyStats(_ context.Context, _ uuid.UUID, delta user.StatsDelta) (user.Stats, error) {
+	s.stats.LifetimeXP += delta.XP
+	s.stats.TasksCompleted += delta.TasksCompleted
+	s.stats.SubtasksCompleted += delta.SubtasksCompleted
+	s.applied = append(s.applied, delta)
+	return s.stats, nil
+}
+
+func (s *stubUsers) SetLevel(_ context.Context, _ uuid.UUID, level int32) error {
+	s.stats.Level = level
+	return nil
+}
+
+func (s *stubUsers) LockAccount(context.Context, uuid.UUID) error {
+	s.accountLocks++
+	return nil
+}
 
 type stubCache struct {
 	stored map[string]user.Settings
@@ -235,7 +310,7 @@ func TestServiceList(t *testing.T) {
 				tasks = &stubTasks{}
 			}
 
-			service := board.NewService(tasks, users, nil, &stubTx{}, &fixedClock{at: now})
+			service := board.NewService(tasks, users, nil, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
 			_, err := service.List(context.Background(), userID, tt.query)
 
 			if tt.wantErr != "" {
@@ -299,9 +374,9 @@ func TestServiceCachesThePreferences(t *testing.T) {
 			var service *board.Service
 			if tt.cache != nil {
 				cached = tt.cache
-				service = board.NewService(tasks, users, cached, &stubTx{}, &fixedClock{at: now})
+				service = board.NewService(tasks, users, cached, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
 			} else {
-				service = board.NewService(tasks, users, nil, &stubTx{}, &fixedClock{at: now})
+				service = board.NewService(tasks, users, nil, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
 			}
 
 			for range 2 {
@@ -355,7 +430,7 @@ func TestServiceReportsTruncation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tasks := &stubTasks{tasks: rows(tt.returned)}
 			users := &stubUsers{account: &user.User{ID: userID}}
-			service := board.NewService(tasks, users, nil, &stubTx{}, &fixedClock{at: now})
+			service := board.NewService(tasks, users, nil, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
 
 			result, err := service.List(context.Background(), userID, board.Query{})
 			if err != nil {

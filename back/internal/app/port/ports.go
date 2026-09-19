@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
@@ -24,11 +25,16 @@ type TxManager interface {
 type TaskRepository interface {
 	ListBoard(ctx context.Context, filter task.Filter) ([]task.Task, error)
 	ByID(ctx context.Context, userID, taskID uuid.UUID) (*task.Task, error)
+	// ByIDForUpdate holds the row until the transaction ends, so a decision
+	// taken from what it says cannot be overtaken by a concurrent one.
+	ByIDForUpdate(ctx context.Context, userID, taskID uuid.UUID) (*task.Task, error)
 	Create(ctx context.Context, item *task.Task) error
 	Update(ctx context.Context, item *task.Task) error
-	SoftDelete(ctx context.Context, userID, taskID uuid.UUID, at time.Time) error
-	NextPosition(ctx context.Context, userID uuid.UUID, quadrant *shared.Quadrant, parentID *uuid.UUID) (int32, error)
+	SoftDelete(ctx context.Context, userID uuid.UUID, taskIDs []uuid.UUID, at time.Time) error
+	ScopeTasks(ctx context.Context, userID uuid.UUID, quadrant shared.Quadrant) ([]task.Task, error)
+	Reposition(ctx context.Context, userID uuid.UUID, placements []task.Placement) error
 	CountActive(ctx context.Context, userID uuid.UUID) (int, error)
+	Subtasks(ctx context.Context, userID, parentID uuid.UUID) ([]task.Task, error)
 }
 
 type UserRepository interface {
@@ -37,6 +43,20 @@ type UserRepository interface {
 	Create(ctx context.Context, account *user.User) error
 	UpdateSettings(ctx context.Context, id uuid.UUID, settings user.Settings) error
 	TouchLogin(ctx context.Context, id uuid.UUID, at time.Time) error
+	// LockAccount serialises whatever the caller is about to decide from a
+	// count of the account's own rows.
+	LockAccount(ctx context.Context, id uuid.UUID) error
+	// ApplyStats adds the delta and returns the totals it produced. The level
+	// is not among its arguments because it follows from the lifetime XP the
+	// update itself decides.
+	ApplyStats(ctx context.Context, id uuid.UUID, delta user.StatsDelta) (user.Stats, error)
+	SetLevel(ctx context.Context, id uuid.UUID, level int32) error
+}
+
+// XPLedger is the append-only record of every XP movement.
+type XPLedger interface {
+	Record(ctx context.Context, entry *progression.Entry) error
+	GrantCount(ctx context.Context, taskID uuid.UUID, source shared.XPSource) (int, error)
 }
 
 type Cache interface {

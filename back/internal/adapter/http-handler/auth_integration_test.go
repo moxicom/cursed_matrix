@@ -23,6 +23,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/token"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 )
 
@@ -87,6 +88,8 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 		postgres.NewUserRepository(pool),
 		cached,
 		postgres.NewTxManager(pool, quiet),
+		postgres.NewXPLedger(pool),
+		progression.DefaultConfig(),
 		&shared.SystemClock{},
 	)
 	limiter := redisadapter.NewRateLimiter(client, quiet)

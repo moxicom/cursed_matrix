@@ -43,6 +43,12 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, draft Draft) (*t
 	var created *task.Task
 
 	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		// The quota is counted and then acted on, so the count has to be
+		// stable: without this two creations racing would both see the last
+		// slot free and both take it.
+		if err := s.users.LockAccount(ctx, userID); err != nil {
+			return err
+		}
 		if err := s.withinQuota(ctx, userID); err != nil {
 			return err
 		}
@@ -82,7 +88,11 @@ func (s *Service) draftToTask(
 			return nil, parentErr
 		}
 
-		position, posErr := s.tasks.NextPosition(ctx, userID, nil, draft.ParentID)
+		siblings, sibErr := s.tasks.Subtasks(ctx, userID, *draft.ParentID)
+		if sibErr != nil {
+			return nil, sibErr
+		}
+		position, _, posErr := task.Place(siblings, nil, nil)
 		if posErr != nil {
 			return nil, posErr
 		}
@@ -90,9 +100,24 @@ func (s *Service) draftToTask(
 		// one-level rule the schema also enforces with a trigger.
 		item, err = task.NewSubtask(uuid.New(), parent, draft.Title, position, now)
 	} else {
-		position, posErr := s.tasks.NextPosition(ctx, userID, &draft.Quadrant, nil)
+		if !draft.Quadrant.Valid() {
+			return nil, shared.NewError(shared.CodeValidationFailed,
+				map[string]any{"field": "quadrant", "value": string(draft.Quadrant)})
+		}
+		// The same arithmetic a move uses, so appending is bounded by the same
+		// renumbering rather than climbing for ever.
+		scope, scopeErr := s.tasks.ScopeTasks(ctx, userID, draft.Quadrant)
+		if scopeErr != nil {
+			return nil, scopeErr
+		}
+		position, placements, posErr := task.Place(scope, nil, nil)
 		if posErr != nil {
 			return nil, posErr
+		}
+		if len(placements) > 0 {
+			if err := s.tasks.Reposition(ctx, userID, placements); err != nil {
+				return nil, err
+			}
 		}
 		item, err = task.NewRegular(uuid.New(), userID, draft.Title, draft.Quadrant, position, now)
 	}
@@ -141,16 +166,6 @@ func (s *Service) Update(ctx context.Context, userID, taskID uuid.UUID, patch Pa
 		return nil, err
 	}
 	return updated, nil
-}
-
-// Delete removes a task from the user's views without losing the row.
-func (s *Service) Delete(ctx context.Context, userID, taskID uuid.UUID) error {
-	return s.tx.Do(ctx, func(ctx context.Context) error {
-		if _, err := s.tasks.ByID(ctx, userID, taskID); err != nil {
-			return err
-		}
-		return s.tasks.SoftDelete(ctx, userID, taskID, s.clock.Now().UTC())
-	})
 }
 
 // withinQuota refuses a creation that would take the account past its plan.

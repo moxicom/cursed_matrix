@@ -317,3 +317,20 @@ func renderUser(account *user.User) gen.User {
 }
 
 var _ gen.ServerInterface = (*API)(nil)
+
+// optionalBody returns the request body when the caller sent one. An empty
+// body is not an error for an operation that does not require one; a body too
+// large to read still is.
+func optionalBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	if r.Body == nil {
+		return nil, true
+	}
+
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	if err != nil {
+		WriteError(w, r, shared.WrapError(err, shared.CodeValidationFailed,
+			map[string]any{"reason": "body too large"}))
+		return nil, false
+	}
+	return bytes.TrimSpace(raw), true
+}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
@@ -20,11 +21,13 @@ import (
 const settingsTTL = time.Minute
 
 type Service struct {
-	tasks port.TaskRepository
-	users port.UserRepository
-	cache port.Cache
-	tx    port.TxManager
-	clock shared.Clock
+	tasks  port.TaskRepository
+	users  port.UserRepository
+	cache  port.Cache
+	tx     port.TxManager
+	ledger port.XPLedger
+	xp     progression.Config
+	clock  shared.Clock
 }
 
 // NewService wires the board to its ports. The cache is optional: without it
@@ -34,9 +37,19 @@ func NewService(
 	users port.UserRepository,
 	cached port.Cache,
 	tx port.TxManager,
+	ledger port.XPLedger,
+	xp progression.Config,
 	clock shared.Clock,
 ) *Service {
-	return &Service{tasks: tasks, users: users, cache: cached, tx: tx, clock: clock}
+	return &Service{
+		tasks:  tasks,
+		users:  users,
+		cache:  cached,
+		tx:     tx,
+		ledger: ledger,
+		xp:     xp,
+		clock:  clock,
+	}
 }
 
 // settings resolves the preferences a board read depends on.

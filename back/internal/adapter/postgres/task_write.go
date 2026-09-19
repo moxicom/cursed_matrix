@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -126,22 +128,26 @@ func (r *TaskRepository) Update(ctx context.Context, item *task.Task) error {
 	return nil
 }
 
-// SoftDelete marks the task removed without losing it.
+// SoftDelete marks tasks removed without losing them.
 //
-// The row stays so the XP ledger, the activity history and the graph keep
-// referring to something real; only the user's working views stop showing it.
-func (r *TaskRepository) SoftDelete(ctx context.Context, userID, taskID uuid.UUID, at time.Time) error {
+// The rows stay so the XP ledger, the activity history and the graph keep
+// referring to something real; only the user's working views stop showing
+// them.
+func (r *TaskRepository) SoftDelete(
+	ctx context.Context,
+	userID uuid.UUID,
+	taskIDs []uuid.UUID,
+	at time.Time,
+) error {
+	if len(taskIDs) == 0 {
+		return nil
+	}
+
 	query := builder.
 		Update("tasks").
 		Set("deleted_at", at).
 		Set("updated_at", at).
-		Where(sq.Eq{"user_id": userID}).
-		Where(sq.Or{
-			sq.Eq{"id": taskID},
-			// A subtask cannot outlive its parent: left behind it would be a
-			// task with a parent the board no longer shows.
-			sq.Eq{"parent_task_id": taskID},
-		}).
+		Where(sq.Eq{"user_id": userID, "id": taskIDs}).
 		Where("deleted_at IS NULL")
 
 	statement, args, err := query.ToSql()
@@ -153,44 +159,86 @@ func (r *TaskRepository) SoftDelete(ctx context.Context, userID, taskID uuid.UUI
 	if err != nil {
 		return mapError(err, shared.CodeTaskNotFound)
 	}
-	if tag.RowsAffected() == 0 {
-		return shared.NewError(shared.CodeTaskNotFound, map[string]any{"taskId": taskID.String()})
+	if tag.RowsAffected() != int64(len(taskIDs)) {
+		return shared.NewError(shared.CodeTaskNotFound,
+			map[string]any{"expected": len(taskIDs), "deleted": tag.RowsAffected()})
 	}
 	return nil
 }
 
-// NextPosition returns the position a new task takes at the end of its list.
+// ScopeTasks returns the top-level tasks of one quadrant, in user order.
 //
-// Positions are spaced by PositionGap so a later reorder can drop a task
-// between two others without renumbering the column.
-func (r *TaskRepository) NextPosition(
+// This is the list a move is placed into, so it carries no subtasks: they are
+// ordered within their parent, not within the quadrant.
+func (r *TaskRepository) ScopeTasks(
 	ctx context.Context,
 	userID uuid.UUID,
-	quadrant *shared.Quadrant,
-	parentID *uuid.UUID,
-) (int32, error) {
+	quadrant shared.Quadrant,
+) ([]task.Task, error) {
 	query := builder.
-		Select("COALESCE(MAX(position), 0)").
-		From("tasks").
-		Where(sq.Eq{"user_id": userID}).
-		Where("deleted_at IS NULL")
-
-	if parentID != nil {
-		query = query.Where(sq.Eq{"parent_task_id": *parentID})
-	} else {
-		query = query.Where("parent_task_id IS NULL").Where(sq.Eq{"quadrant": quadrantArg(quadrant)})
-	}
+		Select("t.id", "t.position").
+		From("tasks t").
+		Where(sq.Eq{"t.user_id": userID, "t.quadrant": string(quadrant)}).
+		Where("t.parent_task_id IS NULL").
+		Where("t.deleted_at IS NULL").
+		OrderBy("t.position ASC", "t.id ASC")
 
 	statement, args, err := query.ToSql()
 	if err != nil {
-		return 0, shared.WrapError(err, shared.CodeInternal, nil)
+		return nil, shared.WrapError(err, shared.CodeInternal, nil)
 	}
 
-	var highest int32
-	if err := r.db.querier(ctx).QueryRow(ctx, statement, args...).Scan(&highest); err != nil {
-		return 0, mapError(err, shared.CodeInternal)
+	rows, err := r.db.querier(ctx).Query(ctx, statement, args...)
+	if err != nil {
+		return nil, mapError(err, shared.CodeTaskNotFound)
 	}
-	return highest + task.PositionGap, nil
+	defer rows.Close()
+
+	var scope []task.Task
+	for rows.Next() {
+		var item task.Task
+		if err := rows.Scan(&item.ID, &item.Position); err != nil {
+			return nil, mapError(err, shared.CodeTaskNotFound)
+		}
+		scope = append(scope, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapError(err, shared.CodeTaskNotFound)
+	}
+	return scope, nil
+}
+
+// Reposition writes a rebalanced scope back in one statement.
+func (r *TaskRepository) Reposition(
+	ctx context.Context,
+	userID uuid.UUID,
+	placements []task.Placement,
+) error {
+	if len(placements) == 0 {
+		return nil
+	}
+
+	values := make([]string, 0, len(placements))
+	args := make([]any, 0, len(placements)*2+1)
+	args = append(args, userID)
+
+	// The only thing built into the text is the placeholder number; every
+	// value is bound. The package forbids fmt.Sprintf here so that SQL is
+	// never assembled from anything that could carry a value.
+	for i, placement := range placements {
+		values = append(values,
+			"($"+strconv.Itoa(i*2+2)+"::uuid, $"+strconv.Itoa(i*2+3)+"::int)")
+		args = append(args, placement.ID, placement.Position)
+	}
+
+	statement := `UPDATE tasks AS t SET position = v.position, updated_at = now()
+		FROM (VALUES ` + strings.Join(values, ", ") + `) AS v (id, position)
+		WHERE t.id = v.id AND t.user_id = $1 AND t.deleted_at IS NULL`
+
+	if _, err := r.db.querier(ctx).Exec(ctx, statement, args...); err != nil {
+		return mapError(err, shared.CodeTaskNotFound)
+	}
+	return nil
 }
 
 // CountActive counts what the free plan's quota is measured against.
@@ -232,4 +280,80 @@ func sourceArg(source *shared.CompletionSource) any {
 		return nil
 	}
 	return string(*source)
+}
+
+// Subtasks returns the children of one task, in their user order.
+func (r *TaskRepository) Subtasks(ctx context.Context, userID, parentID uuid.UUID) ([]task.Task, error) {
+	query := builder.
+		Select(taskColumns...).
+		Column("COALESCE(tag_names.names, ARRAY[]::text[]) AS tags").
+		From("tasks t").
+		JoinClause(`LEFT JOIN LATERAL (
+			SELECT array_agg(g.name ORDER BY g.name) AS names
+			FROM task_tags tt
+			JOIN tags g ON g.id = tt.tag_id
+			WHERE tt.task_id = t.id
+		) tag_names ON TRUE`).
+		Where(sq.Eq{"t.user_id": userID, "t.parent_task_id": parentID}).
+		Where("t.deleted_at IS NULL").
+		OrderBy("t.position ASC", "t.id ASC")
+
+	statement, args, err := query.ToSql()
+	if err != nil {
+		return nil, shared.WrapError(err, shared.CodeInternal, nil)
+	}
+
+	rows, err := r.db.querier(ctx).Query(ctx, statement, args...)
+	if err != nil {
+		return nil, mapError(err, shared.CodeTaskNotFound)
+	}
+	defer rows.Close()
+
+	var subtasks []task.Task
+	for rows.Next() {
+		var row taskRow
+		if err := rows.Scan(
+			&row.ID, &row.UserID, &row.ParentTaskID, &row.Title, &row.Description,
+			&row.Quadrant, &row.Position, &row.Color, &row.DeadlineAt, &row.DeadlineHasTime,
+			&row.Status, &row.CreatedAt, &row.UpdatedAt, &row.CompletedAt, &row.XPAwarded,
+			&row.QuadrantAtCompletion, &row.CompletedVia, &row.DeletedAt, &row.Tags,
+		); err != nil {
+			return nil, mapError(err, shared.CodeTaskNotFound)
+		}
+		item, err := row.toDomain()
+		if err != nil {
+			return nil, err
+		}
+		subtasks = append(subtasks, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapError(err, shared.CodeTaskNotFound)
+	}
+	return subtasks, nil
+}
+
+// ByIDForUpdate reads a task and holds its row for the rest of the
+// transaction.
+//
+// Completing, reopening, deleting and moving all decide what to do from the
+// task's current state. Without the lock two of them can read the same state,
+// both decide it is safe, and both act — paying XP twice for one completion,
+// or withdrawing it twice for one reopening.
+func (r *TaskRepository) ByIDForUpdate(ctx context.Context, userID, taskID uuid.UUID) (*task.Task, error) {
+	// Locking on its own statement rather than on the read: the read joins the
+	// tags laterally, and a lock cannot be taken through the nullable side of
+	// an outer join.
+	const lock = `SELECT 1 FROM tasks
+		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+		FOR UPDATE`
+
+	var held int
+	err := r.db.querier(ctx).QueryRow(ctx, lock, taskID, userID).Scan(&held)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, shared.NewError(shared.CodeTaskNotFound, map[string]any{"taskId": taskID.String()})
+	}
+	if err != nil {
+		return nil, mapError(err, shared.CodeTaskNotFound)
+	}
+	return r.ByID(ctx, userID, taskID)
 }

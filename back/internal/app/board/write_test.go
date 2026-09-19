@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
@@ -15,7 +16,8 @@ import (
 
 func newWriteService(tasks *stubTasks) *board.Service {
 	users := &stubUsers{account: &user.User{Settings: user.Settings{Timezone: "UTC"}}}
-	return board.NewService(tasks, users, nil, &stubTx{},
+	return board.NewService(tasks, users, nil, &stubTx{}, &stubLedger{},
+		progression.DefaultConfig(),
 		&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)})
 }
 
@@ -82,8 +84,9 @@ func TestCreateDraft(t *testing.T) {
 				if created.Title != "a task" {
 					t.Errorf("title = %q, want it trimmed", created.Title)
 				}
-				if created.Position != 2048 {
-					t.Errorf("position = %d, want the next gap", created.Position)
+				// First in an empty quadrant: one gap in.
+				if created.Position != task.PositionGap {
+					t.Errorf("position = %d, want %d", created.Position, task.PositionGap)
 				}
 				if created.Color != shared.ColorNone {
 					t.Errorf("color = %q, want the default", created.Color)
@@ -139,7 +142,7 @@ func TestCreateDraft(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tasks := &stubTasks{nextPosition: 2048}
+			tasks := &stubTasks{}
 			service := newWriteService(tasks)
 
 			created, err := service.Create(context.Background(), userID, tt.draft)
@@ -155,6 +158,48 @@ func TestCreateDraft(t *testing.T) {
 			}
 			tt.assert(t, *created)
 		})
+	}
+}
+
+// TestCreateAppendsAfterWhatIsThere is the ordering rule at creation: a new
+// task goes to the end of its quadrant, not on top of what is already there.
+func TestCreateAppendsAfterWhatIsThere(t *testing.T) {
+	userID := uuid.New()
+	quadrant := shared.QuadrantImportantUrgent
+
+	tasks := &stubTasks{tasks: []task.Task{
+		{ID: uuid.New(), UserID: userID, Quadrant: &quadrant, Position: 1024, Color: shared.ColorNone},
+		{ID: uuid.New(), UserID: userID, Quadrant: &quadrant, Position: 2048, Color: shared.ColorNone},
+	}}
+	service := newWriteService(tasks)
+
+	created, err := service.Create(context.Background(), userID, board.Draft{
+		Title: "third", Quadrant: quadrant,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.Position != 3072 {
+		t.Errorf("position = %d, want 3072", created.Position)
+	}
+}
+
+// TestCreateCountsUnderALock is the quota race: the account has to be held
+// while the count is taken, or two creations both find the last slot free.
+func TestCreateCountsUnderALock(t *testing.T) {
+	users := &stubUsers{account: &user.User{Settings: user.Settings{Timezone: "UTC"}}}
+	tasks := &stubTasks{}
+	service := board.NewService(tasks, users, nil, &stubTx{}, &stubLedger{},
+		progression.DefaultConfig(),
+		&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)})
+
+	if _, err := service.Create(context.Background(), uuid.New(), board.Draft{
+		Title: "a task", Quadrant: shared.QuadrantImportantUrgent,
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if users.accountLocks != 1 {
+		t.Errorf("the account was locked %d times, want once", users.accountLocks)
 	}
 }
 
@@ -264,3 +309,74 @@ func TestUpdateDeadlineRules(t *testing.T) {
 }
 
 //go:fix inline
+
+// TestDeleteCountsEveryCompletedTask covers the case with no XP to take back:
+// a task that predates the ledger still stopped being completed, and leaving
+// its count behind overstates the profile for good.
+func TestDeleteCountsEveryCompletedTask(t *testing.T) {
+	userID := uuid.New()
+	quadrant := shared.QuadrantImportantUrgent
+	awarded := int32(50)
+	completedAt := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name          string
+		xp            *int32
+		wantXPDelta   int64
+		wantEntries   int
+		wantCompleted int32
+	}{
+		{
+			name:          "a paid task gives its XP back",
+			xp:            &awarded,
+			wantXPDelta:   -50,
+			wantEntries:   1,
+			wantCompleted: -1,
+		},
+		{
+			name: "one with no snapshot still stops counting",
+			// No ledger entry: there is nothing to reverse, and an entry of
+			// zero is not a fact. The counter moves all the same.
+			wantEntries:   0,
+			wantCompleted: -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			taskID := uuid.New()
+			tasks := &stubTasks{tasks: []task.Task{{
+				ID: taskID, UserID: userID, Title: "done", Status: shared.TaskStatusCompleted,
+				Quadrant: &quadrant, Position: 1024, Color: shared.ColorNone,
+				CompletedAt: &completedAt, XPAwarded: tt.xp,
+				QuadrantAtCompletion: &quadrant,
+			}}}
+			users := &stubUsers{account: &user.User{Settings: user.Settings{Timezone: "UTC"}}}
+			ledger := &stubLedger{}
+			service := board.NewService(tasks, users, nil, &stubTx{}, ledger,
+				progression.DefaultConfig(),
+				&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)})
+
+			deleted, err := service.Delete(context.Background(), userID, taskID)
+			if err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			if len(deleted) != 1 || deleted[0] != taskID {
+				t.Fatalf("deleted = %v", deleted)
+			}
+			if len(ledger.entries) != tt.wantEntries {
+				t.Errorf("%d ledger entries, want %d", len(ledger.entries), tt.wantEntries)
+			}
+			if len(users.applied) != 1 {
+				t.Fatalf("the aggregate was touched %d times, want once", len(users.applied))
+			}
+			if users.applied[0].XP != tt.wantXPDelta {
+				t.Errorf("XP delta = %d, want %d", users.applied[0].XP, tt.wantXPDelta)
+			}
+			if users.applied[0].TasksCompleted != tt.wantCompleted {
+				t.Errorf("tasksCompleted delta = %d, want %d",
+					users.applied[0].TasksCompleted, tt.wantCompleted)
+			}
+		})
+	}
+}

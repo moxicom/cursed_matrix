@@ -154,20 +154,62 @@ func TestTaskLifecycleThroughTheRouter(t *testing.T) {
 		}
 	})
 
-	t.Run("deleting a parent takes its subtasks with it", func(t *testing.T) {
-		if response := c.do(t, http.MethodDelete, "/tasks/"+parent.ID, ""); response.Code != http.StatusNoContent {
+	t.Run("a parent with unfinished subtasks will not be deleted", func(t *testing.T) {
+		response := c.do(t, http.MethodDelete, "/tasks/"+parent.ID, "")
+		if response.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want 409: %s", response.Code, response.Body)
+		}
+
+		var body struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatalf("body: %v", err)
+		}
+		if body.Error.Code != "HAS_ACTIVE_SUBTASKS" {
+			t.Errorf("code = %q", body.Error.Code)
+		}
+	})
+
+	t.Run("a completed subtask goes with its parent", func(t *testing.T) {
+		if response := c.do(t, http.MethodPost, "/tasks/"+child.ID+"/complete", ""); response.Code != http.StatusOK {
+			t.Fatalf("complete subtask = %d: %s", response.Code, response.Body)
+		}
+
+		response := c.do(t, http.MethodDelete, "/tasks/"+parent.ID, "")
+		if response.Code != http.StatusOK {
 			t.Fatalf("delete = %d: %s", response.Code, response.Body)
 		}
 
-		response := c.do(t, http.MethodGet, "/tasks?status=ALL", "")
+		var body struct {
+			DeletedIDs []string `json:"deletedIds"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatalf("body: %v", err)
+		}
+		if len(body.DeletedIDs) != 2 {
+			t.Fatalf("deletedIds = %v, want the parent and its subtask", body.DeletedIDs)
+		}
+
+		listed := c.do(t, http.MethodGet, "/tasks?status=ALL", "")
 		var board struct {
 			Tasks []taskView `json:"tasks"`
 		}
-		if err := json.Unmarshal(response.Body.Bytes(), &board); err != nil {
+		if err := json.Unmarshal(listed.Body.Bytes(), &board); err != nil {
 			t.Fatalf("board: %v", err)
 		}
 		if len(board.Tasks) != 0 {
-			t.Fatalf("%d tasks survived the delete: %+v", len(board.Tasks), board.Tasks)
+			t.Fatalf("%d tasks survived the delete", len(board.Tasks))
+		}
+	})
+
+	t.Run("the withdrawn XP leaves the account", func(t *testing.T) {
+		// The subtask was worth round(50 × 0.35) = 18 and is gone, so the
+		// lifetime total has to be back where it started.
+		if xp, _ := lifetimeXP(t, c); xp != 0 {
+			t.Errorf("lifetimeXp = %d, want 0 after the deletion", xp)
 		}
 	})
 
@@ -224,7 +266,7 @@ func TestFreePlanTaskQuota(t *testing.T) {
 	})
 
 	t.Run("deleting one frees a slot", func(t *testing.T) {
-		if response := c.do(t, http.MethodDelete, "/tasks/"+last, ""); response.Code != http.StatusNoContent {
+		if response := c.do(t, http.MethodDelete, "/tasks/"+last, ""); response.Code != http.StatusOK {
 			t.Fatalf("delete = %d: %s", response.Code, response.Body)
 		}
 

@@ -23,6 +23,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/config"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/pkg/utils"
 )
@@ -99,6 +100,8 @@ func run() error {
 			postgres.NewUserRepository(pool),
 			redisCache,
 			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
+			postgres.NewXPLedger(pool),
+			progression.DefaultConfig(),
 			&shared.SystemClock{},
 		)
 		limiter := redisadapter.NewRateLimiter(redisCache.Client(), utils.ForComponent(log, "ratelimit"))

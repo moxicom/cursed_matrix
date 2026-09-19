@@ -141,11 +141,13 @@ const (
 	XPSubtaskCompleted  XPSource = "SUBTASK_COMPLETED"
 	XPAchievementReward XPSource = "ACHIEVEMENT_REWARD"
 	XPTaskReopened      XPSource = "TASK_REOPENED"
+	XPTaskDeleted       XPSource = "TASK_DELETED"
 	XPAdminAdjustment   XPSource = "ADMIN_ADJUSTMENT"
 )
 
 var xpSources = []XPSource{
-	XPTaskCompleted, XPSubtaskCompleted, XPAchievementReward, XPTaskReopened, XPAdminAdjustment,
+	XPTaskCompleted, XPSubtaskCompleted, XPAchievementReward, XPTaskReopened,
+	XPAdminAdjustment, XPTaskDeleted,
 }
 
 func (x *XPSource) Valid() bool    { return contains(xpSources, *x) }

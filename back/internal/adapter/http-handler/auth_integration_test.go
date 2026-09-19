@@ -29,6 +29,15 @@ import (
 // routes — so the flow under test is the one that runs in production.
 func server(t *testing.T) http.Handler {
 	t.Helper()
+	// Generous on purpose: these tests exercise the flow, not the ceiling.
+	return serverWithLimits(t, httphandler.RateLimits{
+		AddressAttempts: 1000, AddressWindow: time.Minute,
+		AccountAttempts: 1000, AccountWindow: time.Minute,
+	})
+}
+
+func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler {
+	t.Helper()
 
 	dsn, redisURL := os.Getenv("TEST_DATABASE_URL"), os.Getenv("TEST_REDIS_URL")
 	if dsn == "" || redisURL == "" {
@@ -61,7 +70,11 @@ func server(t *testing.T) http.Handler {
 		&shared.SystemClock{},
 		24*time.Hour,
 	)
-	return httphandler.Routes(httphandler.NewAPI(service, httphandler.NewCookieWriter(false), 24*time.Hour), tokens)
+	limiter := redisadapter.NewRateLimiter(client, quiet)
+	return httphandler.Routes(
+		httphandler.NewAPI(service, httphandler.NewCookieWriter(false), 24*time.Hour, limiter, limits),
+		tokens, limiter, limits,
+	)
 }
 
 type client struct {
@@ -385,4 +398,32 @@ func TestDecodeRequiresJSON(t *testing.T) {
 			}
 		})
 	}
+}
+
+func post(t *testing.T, handler http.Handler, address, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
+	request.Header.Set("Content-Type", "application/json")
+	// The address the reverse proxy reports, which is what the per-address
+	// ceiling counts against.
+	request.Header.Set("X-Real-IP", address)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func errorCode(t *testing.T, recorder *httptest.ResponseRecorder) shared.ErrorCode {
+	t.Helper()
+
+	var body struct {
+		Error struct {
+			Code shared.ErrorCode `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode %q: %v", recorder.Body.String(), err)
+	}
+	return body.Error.Code
 }

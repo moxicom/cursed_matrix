@@ -11,6 +11,7 @@ import (
 
 	gen "github.com/moxicom/cursed_matrix/back/internal/adapter/http-handler/gen"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
+	"github.com/moxicom/cursed_matrix/back/internal/app/port"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
@@ -21,11 +22,19 @@ type API struct {
 	auth       *auth.Service
 	cookies    *CookieWriter
 	refreshTTL time.Duration
+	limiter    port.RateLimiter
+	limits     RateLimits
 }
 
 // NewAPI wires the handlers to the use cases.
-func NewAPI(service *auth.Service, cookies *CookieWriter, refreshTTL time.Duration) *API {
-	return &API{auth: service, cookies: cookies, refreshTTL: refreshTTL}
+func NewAPI(
+	service *auth.Service,
+	cookies *CookieWriter,
+	refreshTTL time.Duration,
+	limiter port.RateLimiter,
+	limits RateLimits,
+) *API {
+	return &API{service, cookies, refreshTTL, limiter, limits}
 }
 
 // Register creates an account and signs it in.
@@ -63,6 +72,19 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 	timezone := ""
 	if body.Timezone != nil {
 		timezone = *body.Timezone
+	}
+
+	// Counted before the attempt, so a guess costs its slot whether or not it
+	// succeeds: otherwise an attacker gets unlimited tries as long as they are
+	// wrong in a way that never reaches the counter.
+	allowed, retryAfter, err := AllowAccount(r.Context(), a.limiter, a.limits, body.Username)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	if !allowed {
+		writeRateLimited(w, r, retryAfter)
+		return
 	}
 
 	session, err := a.auth.Login(r.Context(), body.Username, body.Password, timezone)

@@ -40,3 +40,10 @@ auth:
   secret_key: JWT_SECRET
   access_ttl: 15m
   refresh_ttl: 720h
+  # Argon2 at 64 MiB is affordable because these endpoints are rare and
+  # bounded. Raise the windows before lowering the cost.
+  rate_limit:
+    address_attempts: 20
+    address_window: 5m
+    account_attempts: 5
+    account_window: 15m

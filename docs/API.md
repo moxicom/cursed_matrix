@@ -189,7 +189,13 @@ Response `200`: the payload of `GET /me`, plus the three `Set-Cookie` headers of
 whether the account exists — the same code, the same shape and the same timing
 for an unknown username as for a wrong password, which means hashing a dummy
 password when there is no such account rather than returning early. Both
-endpoints are rate limited per IP and per account.
+endpoints are rate limited on two counters, because one address trying many
+accounts and many addresses trying one account are different attacks and
+neither counter sees the other: 20 attempts per address in 5 minutes, and 5 per
+account name in 15 minutes. The numbers live in `back/config/config.yaml`.
+Refusals answer `429 RATE_LIMITED` with a `Retry-After` header. A login attempt
+is counted before it is checked, so a guess costs its slot whether or not it
+succeeds.
 
 ### `POST /auth/refresh`
 

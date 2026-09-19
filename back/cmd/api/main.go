@@ -92,9 +92,17 @@ func run() error {
 			&shared.SystemClock{},
 			cfg.Auth.RefreshTTL,
 		)
+		limiter := redisadapter.NewRateLimiter(redisCache.Client(), utils.ForComponent(log, "ratelimit"))
+		limits := httphandler.RateLimits{
+			AddressAttempts: cfg.Auth.RateLimit.AddressAttempts,
+			AddressWindow:   cfg.Auth.RateLimit.AddressWindow,
+			AccountAttempts: cfg.Auth.RateLimit.AccountAttempts,
+			AccountWindow:   cfg.Auth.RateLimit.AccountWindow,
+		}
 		api = httphandler.Routes(
-			httphandler.NewAPI(service, httphandler.NewCookieWriter(!cfg.Development()), cfg.Auth.RefreshTTL),
-			tokens,
+			httphandler.NewAPI(service, httphandler.NewCookieWriter(!cfg.Development()),
+				cfg.Auth.RefreshTTL, limiter, limits),
+			tokens, limiter, limits,
 		)
 	} else {
 		log.Warn("api disabled: the refresh store needs Redis")

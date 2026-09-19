@@ -43,6 +43,11 @@ auth:
   secret_key: TEST_AUTH_SECRET
   access_ttl: 15m
   refresh_ttl: 720h
+  rate_limit:
+    address_attempts: 20
+    address_window: 5m
+    account_attempts: 5
+    account_window: 15m
 `
 
 func writeConfig(t *testing.T, body string) string {
@@ -84,6 +89,9 @@ func TestLoadReadsStructureAndResolvesSecrets(t *testing.T) {
 		{name: "migrate on boot", got: cfg.Database.MigrateOnBoot, want: true},
 		{name: "cache ttl", got: cfg.Redis.DefaultTTL, want: 10 * time.Minute},
 		{name: "access token ttl", got: cfg.Auth.AccessTTL, want: 15 * time.Minute},
+		{name: "attempts per address", got: cfg.Auth.RateLimit.AddressAttempts, want: 20},
+		{name: "attempts per account", got: cfg.Auth.RateLimit.AccountAttempts, want: 5},
+		{name: "account window", got: cfg.Auth.RateLimit.AccountWindow, want: 15 * time.Minute},
 		{
 			name: "database url", got: cfg.DatabaseURL(),
 			want: "postgres://cursed:pg-secret@postgres:5432/cursed_matrix?sslmode=require",
@@ -126,6 +134,11 @@ func TestLoadRejectsBrokenConfigurations(t *testing.T) {
 			name:     "database host missing",
 			body:     strings.Replace(sampleConfig, "  host: postgres\n", "", 1),
 			wantWord: "database.host is required",
+		},
+		{
+			name:     "no attempt ceiling",
+			body:     strings.Replace(sampleConfig, "account_attempts: 5", "account_attempts: 0", 1),
+			wantWord: "auth.rate_limit.account_attempts",
 		},
 		{
 			name:     "unknown ssl mode",

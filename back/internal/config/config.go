@@ -70,9 +70,20 @@ type RedisConfig struct {
 }
 
 type AuthConfig struct {
-	SecretKey  string        `yaml:"secret_key" validate:"required"`
-	AccessTTL  time.Duration `yaml:"access_ttl" validate:"required,gt=0"`
-	RefreshTTL time.Duration `yaml:"refresh_ttl" validate:"required,gt=0,gtfield=AccessTTL"`
+	SecretKey  string          `yaml:"secret_key" validate:"required"`
+	AccessTTL  time.Duration   `yaml:"access_ttl" validate:"required,gt=0"`
+	RefreshTTL time.Duration   `yaml:"refresh_ttl" validate:"required,gt=0,gtfield=AccessTTL"`
+	RateLimit  RateLimitConfig `yaml:"rate_limit" validate:"required"`
+}
+
+// RateLimitConfig bounds the credential endpoints. Two ceilings, because one
+// address trying many accounts and many addresses trying one account are
+// different attacks and neither counter sees the other.
+type RateLimitConfig struct {
+	AddressAttempts int           `yaml:"address_attempts" validate:"required,gt=0"`
+	AddressWindow   time.Duration `yaml:"address_window" validate:"required,gt=0"`
+	AccountAttempts int           `yaml:"account_attempts" validate:"required,gt=0"`
+	AccountWindow   time.Duration `yaml:"account_window" validate:"required,gt=0"`
 }
 
 // ConfigPath resolves the configuration file to read: the flag value when given,

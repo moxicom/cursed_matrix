@@ -46,6 +46,12 @@ type TokenIssuer interface {
 	TTL() time.Duration
 }
 
+// RateLimiter counts attempts against a key and reports when one is over the
+// limit, with how long the caller has to wait.
+type RateLimiter interface {
+	Allow(ctx context.Context, key string, limit int, window time.Duration) (allowed bool, retryAfter time.Duration, err error)
+}
+
 type RefreshStore interface {
 	Save(ctx context.Context, userID uuid.UUID, tokenID string, ttl time.Duration) error
 	Consume(ctx context.Context, userID uuid.UUID, tokenID string) (bool, error)

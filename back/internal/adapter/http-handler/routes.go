@@ -15,13 +15,14 @@ import (
 // registering and signing in are open, refreshing and logging out need the
 // refresh cookie but tolerate a stale access token, and everything else needs a
 // valid session. The last two check the CSRF header on every unsafe method.
-func Routes(api *API, tokens port.TokenIssuer) http.Handler {
+func Routes(api *API, tokens port.TokenIssuer, limiter port.RateLimiter, limits RateLimits) http.Handler {
 	router := chi.NewRouter()
 
 	// No CSRF check on the way in: the client has no token to echo before its
 	// first response, and there is no session to protect yet. SameSite=Lax is
 	// what keeps a cross-site POST from carrying cookies here.
 	router.Group(func(public chi.Router) {
+		public.Use(LimitByAddress(limiter, limits))
 		public.Post("/auth/register", api.Register)
 		public.Post("/auth/login", api.Login)
 	})

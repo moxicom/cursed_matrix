@@ -3,7 +3,7 @@
 What is built, what is not, and what proves it. Every row points at the
 requirement in `CLAUDE.md` and at the code or test that backs the claim.
 
-Updated: 2026-09-19 (phase 2 complete, phase 3 started).
+Updated: 2026-09-19 (board and graph writes complete; progression reads outstanding).
 
 ## Legend
 
@@ -15,11 +15,11 @@ Updated: 2026-09-19 (phase 2 complete, phase 3 started).
 | **—** | Not started |
 | **bug** | Implemented but demonstrably wrong; see *Known defects* |
 
-The frontend is a complete prototype on mocks. The backend has finished
-phases 0–2 (skeleton, schema, authentication, rate limiting) and has started
-phase 3 with the board read path. A row reading *front: mock / back: schema*
-means "the screen works, the table exists, nothing connects them yet"; the
-board is now the first row where the screen could stop being a mock.
+The frontend is a complete prototype on mocks. The backend now serves every
+task, subtask, tag and link operation the board needs, with XP, levels and
+both free-plan quotas behind them. A row reading *front: mock / back: schema*
+means "the screen works, the table exists, nothing connects them yet" — that
+pair is now confined to the progression and graph-read features.
 
 ---
 
@@ -94,7 +94,9 @@ board is now the first row where the screen could stop being a mock.
 
 ## 2. HTTP contract (`docs/API.md`)
 
-Authentication and the board read are live; the rest is the phase-3 worklist.
+Everything the board and the graph write is live. What remains is the read
+side of the graph, search, and the whole progression surface — activity,
+achievements, the leaderboard — plus billing.
 
 | Endpoint | Status |
 |---|---|

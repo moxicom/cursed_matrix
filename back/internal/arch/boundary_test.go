@@ -19,13 +19,13 @@ func TestDependencyDirection(t *testing.T) {
 	tests := []struct {
 		name  string
 		root  string
-		allow func(path string) bool
+		allow func(file, path string) bool
 		why   string
 	}{
 		{
 			name: "domain imports nothing but the standard library",
 			root: "../domain",
-			allow: func(path string) bool {
+			allow: func(file, path string) bool {
 				if !strings.Contains(path, ".") { // no dot in the first segment: stdlib
 					return true
 				}
@@ -39,22 +39,26 @@ func TestDependencyDirection(t *testing.T) {
 		{
 			name: "application depends on the domain, never on an adapter",
 			root: "../app",
-			allow: func(path string) bool {
+			allow: func(file, path string) bool {
 				if !strings.Contains(path, ".") {
 					return true
 				}
 				if strings.HasPrefix(path, modulePath+"/internal/domain/") ||
-					strings.HasPrefix(path, modulePath+"/internal/app/") {
+					strings.HasPrefix(path, modulePath+"/internal/app/") ||
+					// pkg/ holds what could be lifted out of the service and
+					// depends on nothing internal, so using it changes nothing
+					// about what the application can be run against.
+					strings.HasPrefix(path, modulePath+"/pkg/") {
 					return true
 				}
 				return path == "github.com/google/uuid"
 			},
-			why: "a service that imports an adapter cannot be run against a different one",
+			why: "a service that imports an adapter, or a library that implies one, cannot be run against a different one",
 		},
 		{
 			name: "the logger package depends on nothing internal",
 			root: "../../pkg",
-			allow: func(path string) bool {
+			allow: func(file, path string) bool {
 				return !strings.HasPrefix(path, modulePath+"/internal/")
 			},
 			why: "pkg/ is meant to be reusable on its own",
@@ -62,8 +66,13 @@ func TestDependencyDirection(t *testing.T) {
 		{
 			name: "adapters do not import each other",
 			root: "../adapter",
-			allow: func(path string) bool {
-				return !strings.HasPrefix(path, modulePath+"/internal/adapter/")
+			allow: func(file, path string) bool {
+				if !strings.HasPrefix(path, modulePath+"/internal/adapter/") {
+					return true
+				}
+				// A package may use its own sub-packages — the generated code
+				// under http-handler/gen belongs to the handler that owns it.
+				return adapterName(path) == adapterName(file)
 			},
 			why: "PostgreSQL and Redis must be replaceable one at a time",
 		},
@@ -84,7 +93,22 @@ type violation struct {
 	path string
 }
 
-func imports(t *testing.T, root string, allow func(string) bool) []violation {
+// adapterName is the directory directly under adapter/, which is what makes
+// two packages parts of the same adapter.
+func adapterName(path string) string {
+	const marker = "adapter/"
+	_, after, ok := strings.Cut(path, marker)
+	if !ok {
+		return ""
+	}
+	rest := after
+	if before, _, ok := strings.Cut(rest, "/"); ok {
+		return before
+	}
+	return rest
+}
+
+func imports(t *testing.T, root string, allow func(file, path string) bool) []violation {
 	t.Helper()
 
 	var found []violation
@@ -110,7 +134,7 @@ func imports(t *testing.T, root string, allow func(string) bool) []violation {
 			if err != nil {
 				return err
 			}
-			if !allow(unquoted) {
+			if !allow(path, unquoted) {
 				found = append(found, violation{file: path, path: unquoted})
 			}
 		}

@@ -3,10 +3,11 @@
 # compile instead of failing in production.
 package: gen
 output: internal/adapter/http-handler/gen/api.gen.go
+# The plain chi server rather than the strict one: these handlers set cookies,
+# and only a handler holding the ResponseWriter can do that.
 generate:
   chi-server: true
   models: true
-  strict-server: true
   embedded-spec: true
 output-options:
   skip-prune: true

@@ -28,6 +28,7 @@ func NewRouter(
 	log *slog.Logger,
 	registry *prometheus.Registry,
 	ready func(context.Context) error,
+	api http.Handler,
 	extra ...func(http.Handler) http.Handler,
 ) *chi.Mux {
 	router := chi.NewRouter()
@@ -58,6 +59,10 @@ func NewRouter(
 	})
 
 	router.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+
+	if api != nil {
+		router.Mount("/api/v1", api)
+	}
 
 	return router
 }

@@ -49,6 +49,10 @@ func NewCache(ctx context.Context, opts Options, log *slog.Logger) (*Cache, erro
 
 func (c *Cache) Close() error { return c.client.Close() }
 
+// Client exposes the connection so the composition root can build the other
+// Redis-backed adapters on it instead of opening a second pool.
+func (c *Cache) Client() *redis.Client { return c.client }
+
 // GetInto decodes the current version of an entry into dst and reports a hit.
 func (c *Cache) GetInto(ctx context.Context, key cache.Key, dst any) (bool, error) {
 	version, err := c.version(ctx, key.Scope)

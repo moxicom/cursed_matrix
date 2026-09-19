@@ -14,11 +14,15 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	httphandler "github.com/moxicom/cursed_matrix/back/internal/adapter/http-handler"
 	httpserver "github.com/moxicom/cursed_matrix/back/internal/adapter/http-server"
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/metrics"
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/postgres"
 	redisadapter "github.com/moxicom/cursed_matrix/back/internal/adapter/redis"
+	"github.com/moxicom/cursed_matrix/back/internal/adapter/token"
+	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
 	"github.com/moxicom/cursed_matrix/back/internal/config"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/pkg/utils"
 )
 
@@ -77,9 +81,28 @@ func run() error {
 	registry := metrics.New()
 	registry.MustRegister(metrics.PoolCollector(pool))
 
+	var api http.Handler
+	if redisCache != nil {
+		tokens := token.NewJWTIssuer(cfg.AuthSecret(), cfg.Auth.AccessTTL, &shared.SystemClock{})
+		service := auth.NewService(
+			postgres.NewUserRepository(pool),
+			redisadapter.NewRefreshStore(redisCache.Client()),
+			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
+			tokens,
+			&shared.SystemClock{},
+			cfg.Auth.RefreshTTL,
+		)
+		api = httphandler.Routes(
+			httphandler.NewAPI(service, httphandler.NewCookieWriter(!cfg.Development()), cfg.Auth.RefreshTTL),
+			tokens,
+		)
+	} else {
+		log.Warn("api disabled: the refresh store needs Redis")
+	}
+
 	router := httpserver.NewRouter(&cfg, utils.ForComponent(log, "http"), registry.Registry, func(ctx context.Context) error {
 		return pool.Ping(ctx)
-	}, registry.Middleware)
+	}, api, registry.Middleware)
 
 	server := httpserver.NewServer(&cfg, router, utils.ForComponent(log, "http"))
 	serving := make(chan error, 1)

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
@@ -26,12 +27,23 @@ type TaskRepository interface {
 
 type UserRepository interface {
 	ByID(ctx context.Context, id uuid.UUID) (*user.User, error)
+	ByUsername(ctx context.Context, username string) (*user.User, error)
+	Create(ctx context.Context, account *user.User) error
+	UpdateSettings(ctx context.Context, id uuid.UUID, settings user.Settings) error
+	TouchLogin(ctx context.Context, id uuid.UUID, at time.Time) error
 }
 
 type Cache interface {
 	GetInto(ctx context.Context, key cache.Key, dst any) (bool, error)
 	Set(ctx context.Context, key cache.Key, value any, ttl time.Duration) error
 	Invalidate(ctx context.Context, scope cache.Scope) error
+}
+
+type TokenIssuer interface {
+	Issue(userID uuid.UUID, plan shared.Plan) (token string, expiry time.Time, err error)
+	Verify(raw string) (uuid.UUID, shared.Plan, error)
+	VerifyExpired(raw string) (uuid.UUID, shared.Plan, error)
+	TTL() time.Duration
 }
 
 type RefreshStore interface {

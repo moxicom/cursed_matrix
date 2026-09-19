@@ -23,6 +23,10 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 
 // ByID loads an account with its settings and progression aggregate.
 func (r *UserRepository) ByID(ctx context.Context, id uuid.UUID) (*user.User, error) {
+	return r.findBy(ctx, sq.Eq{"u.id": id})
+}
+
+func (r *UserRepository) findBy(ctx context.Context, where sq.Sqlizer) (*user.User, error) {
 	query := builder.
 		Select(
 			"u.id",
@@ -52,7 +56,7 @@ func (r *UserRepository) ByID(ctx context.Context, id uuid.UUID) (*user.User, er
 		From("users u").
 		LeftJoin("user_settings s ON s.user_id = u.id").
 		LeftJoin("user_stats st ON st.user_id = u.id").
-		Where(sq.Eq{"u.id": id}).
+		Where(where).
 		Where("u.deleted_at IS NULL")
 
 	statement, args, err := query.ToSql()

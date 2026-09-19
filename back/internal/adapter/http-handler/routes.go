@@ -55,6 +55,14 @@ func Routes(api *API, tokens port.TokenIssuer, limiter port.RateLimiter, limits 
 		session.Post("/tasks/{taskId}/reopen", bind(api).ReopenTask)
 		session.Post("/tasks/{taskId}/move", bind(api).MoveTask)
 		session.Post("/tasks/{taskId}/promote", bind(api).PromoteTask)
+
+		session.Get("/tags", api.ListTags)
+		session.Post("/tasks/{taskId}/tags", bind(api).AttachTag)
+		session.Delete("/tasks/{taskId}/tags/{tagId}", bind(api).DetachTag)
+
+		session.Post("/links", api.CreateLink)
+		session.Patch("/links/{linkId}", bind(api).UpdateLink)
+		session.Delete("/links/{linkId}", bind(api).DeleteLink)
 	})
 
 	return router

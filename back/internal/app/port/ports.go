@@ -12,8 +12,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/tag"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
@@ -51,6 +53,23 @@ type UserRepository interface {
 	// update itself decides.
 	ApplyStats(ctx context.Context, id uuid.UUID, delta user.StatsDelta) (user.Stats, error)
 	SetLevel(ctx context.Context, id uuid.UUID, level int32) error
+}
+
+type TagRepository interface {
+	List(ctx context.Context, userID uuid.UUID) ([]tag.Tag, error)
+	Upsert(ctx context.Context, userID uuid.UUID, name string) (*tag.Tag, error)
+	Attach(ctx context.Context, userID, taskID, tagID uuid.UUID) error
+	Detach(ctx context.Context, userID, taskID, tagID uuid.UUID) error
+	DeleteOrphans(ctx context.Context, userID uuid.UUID) error
+}
+
+type LinkRepository interface {
+	Create(ctx context.Context, item *link.Link) error
+	ByID(ctx context.Context, userID, linkID uuid.UUID) (*link.Link, error)
+	List(ctx context.Context, userID uuid.UUID) ([]link.Link, error)
+	Update(ctx context.Context, item *link.Link) error
+	Remove(ctx context.Context, userID, linkID uuid.UUID) error
+	Count(ctx context.Context, userID uuid.UUID) (int, error)
 }
 
 // XPLedger is the append-only record of every XP movement.

@@ -22,6 +22,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/token"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
+	"github.com/moxicom/cursed_matrix/back/internal/app/graph"
 	"github.com/moxicom/cursed_matrix/back/internal/config"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
@@ -99,6 +100,7 @@ func run() error {
 			postgres.NewTaskRepository(pool),
 			postgres.NewUserRepository(pool),
 			redisCache,
+			postgres.NewTagRepository(pool),
 			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
 			postgres.NewXPLedger(pool),
 			progression.DefaultConfig(),
@@ -113,8 +115,15 @@ func run() error {
 			ReadAttempts:    cfg.Auth.RateLimit.ReadAttempts,
 			ReadWindow:      cfg.Auth.RateLimit.ReadWindow,
 		}
+		graphs := graph.NewService(
+			postgres.NewLinkRepository(pool),
+			postgres.NewTaskRepository(pool),
+			postgres.NewUserRepository(pool),
+			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
+			&shared.SystemClock{},
+		)
 		api = httphandler.Routes(
-			httphandler.NewAPI(service, boards, httphandler.NewCookieWriter(!cfg.Development()),
+			httphandler.NewAPI(service, boards, graphs, httphandler.NewCookieWriter(!cfg.Development()),
 				cfg.Auth.RefreshTTL, limiter, limits),
 			tokens, limiter, limits,
 		)

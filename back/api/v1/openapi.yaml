@@ -26,6 +26,10 @@ tags:
     description: The signed-in user and their settings.
   - name: tasks
     description: The board.
+  - name: tags
+    description: The user's own labels.
+  - name: links
+    description: The network drawn over the tasks.
 
 paths:
   /auth/register:
@@ -156,9 +160,17 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [tasks, truncated]
+                required: [tasks, links, truncated]
                 properties:
                   tasks: { type: array, items: { $ref: "#/components/schemas/Task" } }
+                  links:
+                    type: array
+                    description: |
+                      Every link the user holds. They travel with the board
+                      because a card shows a link count and the topology filter
+                      needs them; fetched separately the two answers could
+                      disagree.
+                    items: { $ref: "#/components/schemas/TaskLink" }
                   truncated:
                     type: boolean
                     description: |
@@ -409,6 +421,154 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /tags:
+    get:
+      tags: [tags]
+      summary: The user's labels
+      operationId: listTags
+      description: |
+        Sorted by how many tasks carry each, descending. The count comes from
+        the server because the client's collapsing tag filter decides what to
+        show from it, over tasks it may not be holding.
+      responses:
+        "200":
+          description: Every label the user has.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tags]
+                properties:
+                  tags: { type: array, items: { $ref: "#/components/schemas/Tag" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /tasks/{taskId}/tags:
+    parameters:
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [tags]
+      summary: Put a label on a task
+      operationId: attachTag
+      description: |
+        Creates the label for this user if it is new and attaches it. Names are
+        unique per user, case-insensitively, so asking for "Backend" when
+        "backend" exists attaches the existing one rather than making a second
+        label the user would read as a duplicate.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 24 }
+      responses:
+        "200":
+          description: The label now on the task.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tag" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /tasks/{taskId}/tags/{tagId}:
+    parameters:
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: tagId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      tags: [tags]
+      summary: Take a label off a task
+      operationId: detachTag
+      description: |
+        A label left on no tasks is forgotten, which the client cannot observe
+        and does not need to.
+      responses:
+        "204": { description: Detached. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /links:
+    post:
+      tags: [links]
+      summary: Join two tasks
+      operationId: createLink
+      description: |
+        `type` defaults to `RELATED`. RELATED and CONNECTED_TO say nothing
+        about which end is which, so the pair is normalised and A→B is the same
+        link as B→A; BLOCKS and DEPENDS_ON keep their direction. A parent and
+        its own subtask cannot be linked — the graph already draws that
+        relation, and a second edge would say it twice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LinkDraft" }
+      responses:
+        "201":
+          description: The link.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskLink" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaReached" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: This pair is already joined that way.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: A task cannot be linked to itself.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /links/{linkId}:
+    parameters:
+      - { name: linkId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      tags: [links]
+      summary: Change what a link means
+      operationId: updateLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { $ref: "#/components/schemas/LinkType" }
+      responses:
+        "200":
+          description: The link.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskLink" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The new meaning collides with a link already joining this pair.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [links]
+      summary: Break a link
+      operationId: deleteLink
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /me:
     get:
       tags: [account]
@@ -642,6 +802,36 @@ components:
     SortDirection:
       type: string
       enum: [ASC, DESC]
+
+    Tag:
+      type: object
+      required: [id, name, taskCount]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 24 }
+        taskCount: { type: integer }
+
+    LinkType:
+      type: string
+      enum: [RELATED, CONNECTED_TO, BLOCKS, DEPENDS_ON]
+
+    LinkDraft:
+      type: object
+      required: [sourceTaskId, targetTaskId]
+      properties:
+        sourceTaskId: { type: string, format: uuid }
+        targetTaskId: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/LinkType" }
+
+    TaskLink:
+      type: object
+      required: [id, sourceTaskId, targetTaskId, type, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        sourceTaskId: { type: string, format: uuid }
+        targetTaskId: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/LinkType" }
+        createdAt: { type: string, format: date-time }
 
     MoveRequest:
       type: object

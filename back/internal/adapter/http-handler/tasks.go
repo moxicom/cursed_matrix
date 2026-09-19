@@ -14,8 +14,9 @@ import (
 )
 
 type tasksResponse struct {
-	Tasks     []gen.Task `json:"tasks"`
-	Truncated bool       `json:"truncated"`
+	Tasks     []gen.Task     `json:"tasks"`
+	Links     []gen.TaskLink `json:"links"`
+	Truncated bool           `json:"truncated"`
 }
 
 // ListTasks answers with the whole working set the filter matches.
@@ -38,7 +39,25 @@ func (a *API) ListTasks(w http.ResponseWriter, r *http.Request, params gen.ListT
 	for i := range result.Tasks {
 		rendered = append(rendered, renderTask(&result.Tasks[i]))
 	}
-	WriteJSON(w, r, http.StatusOK, tasksResponse{Tasks: rendered, Truncated: result.Truncated})
+
+	// The links come with the board because a card shows how many a task has
+	// and the topology filter needs them; fetching them separately would let
+	// the two answers disagree.
+	links, err := a.graph.Links(r.Context(), userID)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	edges := make([]gen.TaskLink, 0, len(links))
+	for i := range links {
+		edges = append(edges, renderLink(&links[i]))
+	}
+
+	WriteJSON(w, r, http.StatusOK, tasksResponse{
+		Tasks:     rendered,
+		Links:     edges,
+		Truncated: result.Truncated,
+	})
 }
 
 // boardQuery carries the query string across the boundary unvalidated: the

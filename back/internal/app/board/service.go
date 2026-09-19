@@ -24,6 +24,7 @@ type Service struct {
 	tasks  port.TaskRepository
 	users  port.UserRepository
 	cache  port.Cache
+	tags   port.TagRepository
 	tx     port.TxManager
 	ledger port.XPLedger
 	xp     progression.Config
@@ -36,6 +37,7 @@ func NewService(
 	tasks port.TaskRepository,
 	users port.UserRepository,
 	cached port.Cache,
+	tags port.TagRepository,
 	tx port.TxManager,
 	ledger port.XPLedger,
 	xp progression.Config,
@@ -45,6 +47,7 @@ func NewService(
 		tasks:  tasks,
 		users:  users,
 		cache:  cached,
+		tags:   tags,
 		tx:     tx,
 		ledger: ledger,
 		xp:     xp,

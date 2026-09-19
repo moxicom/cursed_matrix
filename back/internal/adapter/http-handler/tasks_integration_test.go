@@ -86,6 +86,7 @@ func TestListTasksThroughTheRouter(t *testing.T) {
 
 			var board struct {
 				Tasks     []json.RawMessage `json:"tasks"`
+				Links     []json.RawMessage `json:"links"`
 				Truncated bool              `json:"truncated"`
 			}
 			if err := json.Unmarshal(response.Body.Bytes(), &board); err != nil {
@@ -98,6 +99,11 @@ func TestListTasksThroughTheRouter(t *testing.T) {
 			}
 			if board.Truncated {
 				t.Fatalf("a board of %d tasks reported itself truncated", len(board.Tasks))
+			}
+			// Both fields are lists even when empty: the client iterates them
+			// without a nil check.
+			if board.Links == nil {
+				t.Fatalf("links rendered as null: %s", response.Body)
 			}
 		})
 	}

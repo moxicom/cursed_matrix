@@ -16,7 +16,7 @@ import (
 
 func newWriteService(tasks *stubTasks) *board.Service {
 	users := &stubUsers{account: &user.User{Settings: user.Settings{Timezone: "UTC"}}}
-	return board.NewService(tasks, users, nil, &stubTx{}, &stubLedger{},
+	return board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, &stubLedger{},
 		progression.DefaultConfig(),
 		&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)})
 }
@@ -189,7 +189,7 @@ func TestCreateAppendsAfterWhatIsThere(t *testing.T) {
 func TestCreateCountsUnderALock(t *testing.T) {
 	users := &stubUsers{account: &user.User{Settings: user.Settings{Timezone: "UTC"}}}
 	tasks := &stubTasks{}
-	service := board.NewService(tasks, users, nil, &stubTx{}, &stubLedger{},
+	service := board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, &stubLedger{},
 		progression.DefaultConfig(),
 		&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)})
 
@@ -353,7 +353,7 @@ func TestDeleteCountsEveryCompletedTask(t *testing.T) {
 			}}}
 			users := &stubUsers{account: &user.User{Settings: user.Settings{Timezone: "UTC"}}}
 			ledger := &stubLedger{}
-			service := board.NewService(tasks, users, nil, &stubTx{}, ledger,
+			service := board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, ledger,
 				progression.DefaultConfig(),
 				&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)})
 

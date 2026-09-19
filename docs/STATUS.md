@@ -46,9 +46,9 @@ board is now the first row where the screen could stop being a mock.
 | 16 | Archive = completed state | mock | done | CHECK `tasks_completion_snapshot` |
 | 17 | Deadline, states | mock | schema | `lib/deadline.ts`; `deadline_at`, `deadline_has_time` |
 | 18 | Colour as metadata | mock | done | CHECK `tasks_color_known`, `shared.TaskColor` |
-| 19 | Tags, many-to-many | mock | done | `tags`, `task_tags` with composite FKs; read path tested |
-| 20 | Task links | mock | done | `task_links` + both uniqueness indexes, verified against live PostgreSQL |
-| 21 | Link rules (no self, no duplicate) | mock | done | CHECK `task_links_no_self`, `LEAST/GREATEST` unique index |
+| 19 | Tags, many-to-many | mock | done | full CRUD through the API, case-folding names, orphan labels pruned |
+| 20 | Task links | mock | done | `POST/PATCH/DELETE /links`, all four types, returned with the board |
+| 21 | Link rules (no self, no duplicate) | mock | done | `SELF_LINK` and `DUPLICATE_LINK` proven through the API, both directions of an undirected pair |
 | 22 | Parent relation is not a link | mock | done | separate table, separate edge type |
 
 ### Graph, search, filters
@@ -83,7 +83,7 @@ board is now the first row where the screen could stop being a mock.
 | 54–60 | Six modules and their scope | mock | — | all six pages exist |
 | 61 | 20 business rules | partly | mostly done | rules 1–9 are enforced by the schema; 10–20 need the service layer |
 | 62 | Data model | n/a | done | 11 tables plus the outbox, 13 migrations |
-| 64 | Plans, access gate | mock | partial | the 35-active-task quota is enforced inside the insert's transaction and tested end to end; the link quota and the access gate are not |
+| 64 | Plans, access gate | mock | partial | both quotas — 35 active tasks, 25 links — are enforced under the account lock and tested end to end; the access gate is not, and `plan` is still hardcoded `FREE` |
 | 65 | Exact XP and level values | done | done | 50/35/20/10, ×0.35, `45·(n−1)²`, tests on both sides |
 | 66 | Reopen and soft delete | mock | done | both live, each with its own compensating ledger entry (`TASK_REOPENED`, `TASK_DELETED`) |
 | 67 | Landing, pricing, 404, settings | done | n/a | routes exist and render |
@@ -101,7 +101,7 @@ Authentication and the board read are live; the rest is the phase-3 worklist.
 | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/logout-all` | **done** — HttpOnly cookies, CSRF header, per-address and per-account rate limits |
 | `GET /me`, `PATCH /me` | **done** — `plan` still hardcoded `FREE`, `email` not writable |
 | `POST /me/export`, `DELETE /me` | — |
-| `GET /tasks` | **done** — nine filters, tags included, subtasks included; capped at 500 with a `truncated` flag |
+| `GET /tasks` | **done** — nine filters, tags, subtasks and the whole link network; capped at 500 with a `truncated` flag |
 | `POST /tasks` | **done** — server-assigned position, free-plan quota enforced (402) |
 | `PATCH /tasks/{id}` | **done** — absent vs null distinguished for `deadlineAt`; a completed task is frozen (409) |
 | `POST /tasks/{id}/subtasks` | **done** — one level only, counts against the quota |
@@ -110,8 +110,12 @@ Authentication and the board read are live; the rest is the phase-3 worklist.
 | `POST /tasks/{id}/reopen` | **done** — compensating entry, the original kept; cascaded subtasks stay completed |
 | `POST /tasks/{id}/move` | **done** — placed by neighbour, quadrant renumbered when a gap runs out; refuses a completed task (409) |
 | `POST /tasks/{id}/promote` | **done** — keeps tags, colour, deadline and the XP snapshot |
-| `GET /tags`, `POST /tasks/{id}/tags`, `DELETE /tasks/{id}/tags/{tagId}` | — |
-| `POST /links`, `PATCH /links/{id}`, `DELETE /links/{id}` | — |
+| `GET /tags` | **done** — sorted by task count, which the server computes |
+| `POST /tasks/{id}/tags` | **done** — creates the label if new; names fold case, so one label per spelling |
+| `DELETE /tasks/{id}/tags/{tagId}` | **done** — a label left on nothing is forgotten |
+| `POST /links` | **done** — undirected pairs normalised, self-link and parent-relation refused, 25-link quota |
+| `PATCH /links/{id}` | **done** — a retype that collides answers 409 |
+| `DELETE /links/{id}` | **done** |
 | `GET /graph`, `POST /activity/graph-opened` | — |
 | `GET /search` | — |
 | `GET /activity/heatmap`, `/events`, `/stats` | — |
@@ -150,7 +154,7 @@ Found by reviewing the frontend against the requirements; none are fixed.
 
 | Where | Defect | Requirement |
 |---|---|---|
-| `shared/config/domain.ts:198` | `FREE_LINK_CAP = 25` is declared and used nowhere — the link quota does not exist | §64 |
+| `shared/config/domain.ts:198` | `FREE_LINK_CAP = 25` is declared and used nowhere on the front; the server now enforces it | §64 |
 | `pages/graph/GraphPage.tsx` | `GRAPH_OPENED` is never emitted, so `CARTOGRAPHER` rests on a signal nothing produces | §69 |
 | `mocks/user.mock.ts` vs `ActivityPage.tsx:67` | 7420 XP is level 13 by the formula; the mock stores 12, and both numbers are on screen at once | §34 |
 | `board.store.ts:259` | `deleteTask` removes rows outright; the contract says soft delete with a compensating transaction | §66 |

@@ -12,6 +12,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/tag"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
@@ -124,6 +125,31 @@ func (l *stubLedger) Record(_ context.Context, entry *progression.Entry) error {
 
 func (l *stubLedger) GrantCount(_ context.Context, taskID uuid.UUID, _ shared.XPSource) (int, error) {
 	return l.grants[taskID], nil
+}
+
+type stubTags struct {
+	attached []string
+	detached int
+	pruned   int
+}
+
+func (t *stubTags) List(context.Context, uuid.UUID) ([]tag.Tag, error) { return nil, nil }
+
+func (t *stubTags) Upsert(_ context.Context, userID uuid.UUID, name string) (*tag.Tag, error) {
+	t.attached = append(t.attached, name)
+	return &tag.Tag{ID: uuid.New(), UserID: userID, Name: name}, nil
+}
+
+func (t *stubTags) Attach(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error { return nil }
+
+func (t *stubTags) Detach(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	t.detached++
+	return nil
+}
+
+func (t *stubTags) DeleteOrphans(context.Context, uuid.UUID) error {
+	t.pruned++
+	return nil
 }
 
 type stubTx struct{}
@@ -310,7 +336,7 @@ func TestServiceList(t *testing.T) {
 				tasks = &stubTasks{}
 			}
 
-			service := board.NewService(tasks, users, nil, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
+			service := board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
 			_, err := service.List(context.Background(), userID, tt.query)
 
 			if tt.wantErr != "" {
@@ -374,9 +400,9 @@ func TestServiceCachesThePreferences(t *testing.T) {
 			var service *board.Service
 			if tt.cache != nil {
 				cached = tt.cache
-				service = board.NewService(tasks, users, cached, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
+				service = board.NewService(tasks, users, cached, &stubTags{}, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
 			} else {
-				service = board.NewService(tasks, users, nil, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
+				service = board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
 			}
 
 			for range 2 {
@@ -430,7 +456,7 @@ func TestServiceReportsTruncation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tasks := &stubTasks{tasks: rows(tt.returned)}
 			users := &stubUsers{account: &user.User{ID: userID}}
-			service := board.NewService(tasks, users, nil, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
+			service := board.NewService(tasks, users, nil, &stubTags{}, &stubTx{}, &stubLedger{}, progression.DefaultConfig(), &fixedClock{at: now})
 
 			result, err := service.List(context.Background(), userID, board.Query{})
 			if err != nil {

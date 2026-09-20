@@ -26,6 +26,15 @@ map $uri $cursed_cache_control {
     ~^/api(/|$)    "";
 }
 
+# Access log for the API, with the two numbers that separate "the server was
+# slow" from "everything else was slow": how long the whole exchange took, and
+# how long of that was spent waiting for the backend. A request that is 3 ms
+# upstream and 500 ms total was not the backend's doing.
+log_format cursed_api '$remote_addr $request_method $uri$is_args$args '
+                      'status=$status bytes=$body_bytes_sent '
+                      'request_time=$request_time upstream_time=$upstream_response_time '
+                      'id=$upstream_http_x_request_id';
+
 # HSTS, but only once there is TLS to promise.
 #
 # This container serves plain HTTP; the certificate lives in whatever
@@ -149,6 +158,8 @@ server {
         # sees for an oversized body is the application's, with a code in it —
         # not a bare 413 from the proxy.
         client_max_body_size 64k;
+
+        access_log /var/log/nginx/access.log cursed_api;
 
         set $backend "${BACKEND_HOST}:${BACKEND_PORT}";
         proxy_pass http://$backend$request_uri;

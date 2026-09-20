@@ -70,8 +70,17 @@ func NewRouter(
 func requestContext(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := utils.WithRequestID(r.Context(), middleware.GetReqID(r.Context()))
+			requestID := middleware.GetReqID(r.Context())
+			ctx := utils.WithRequestID(r.Context(), requestID)
 			ctx = utils.ContextWithLogger(ctx, log.With("method", r.Method, "path", r.URL.Path))
+
+			// Echoed on every response, not only on refusals. Without it a slow
+			// request seen in a browser cannot be matched to the line in the
+			// log that says how long the server actually spent on it — which is
+			// the first thing worth knowing and the hardest to find out.
+			if requestID != "" {
+				w.Header().Set("X-Request-Id", requestID)
+			}
 
 			wrapped := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			started := time.Now()

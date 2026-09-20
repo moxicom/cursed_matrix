@@ -53,6 +53,16 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
   const nodesRef = useRef<Record<string, NodeState>>({});
   const viewRef = useRef<View>({ x: 0, y: 0, k: 1 });
   const alphaRef = useRef(1);
+  /**
+   * The pending animation frame, or 0 when the loop is asleep.
+   *
+   * The simulation used to run for ever: alpha was floored above zero, so the
+   * nodes never came to rest and every frame redrew the whole canvas — two
+   * full grids, every edge, every label — at 60 fps for as long as the page
+   * was open, on a graph of three nodes nobody was touching. It now settles,
+   * stops, and is woken by whatever changed.
+   */
+  const frameRef = useRef(0);
   /** Until the user pans/zooms, the world origin is kept in the canvas centre. */
   const viewportTouchedRef = useRef(false);
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
@@ -187,7 +197,10 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
       node.y += node.vy * (0.35 + alpha);
     });
 
-    alphaRef.current = Math.max(0.06, alpha * 0.995);
+    // Decays to a stop rather than to a floor: a floor is what kept the
+    // loop alive for ever.
+    const decayed = alpha * 0.995;
+    alphaRef.current = decayed < 0.01 ? 0 : decayed;
   }, []);
 
   const hoverRef = useRef<string | null>(null);
@@ -327,18 +340,51 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
     });
   }, [radius]);
 
+  /**
+   * Asks for one frame. Called by everything that changes what is on screen:
+   * the simulation while it still moves, and otherwise a pointer, a wheel, a
+   * resize or new data. Cheap to call repeatedly — a frame already booked is
+   * not booked twice.
+   */
+  const requestFrame = useCallback(() => {
+    if (frameRef.current !== 0 || canvasRef.current === null) return;
+
+    // Named so the frame can book the next one itself. Going back through
+    // requestFrame would be a callback that refers to itself before it is
+    // declared, which is exactly as circular as it sounds.
+    const step = () => {
+      frameRef.current = 0;
+      if (canvasRef.current === null) return;
+
+      if (alphaRef.current > 0) tick();
+      draw();
+      // Only the simulation books another frame. A hover or a pan draws once
+      // and goes quiet again.
+      if (alphaRef.current > 0) frameRef.current = requestAnimationFrame(step);
+    };
+
+    frameRef.current = requestAnimationFrame(step);
+  }, [draw, tick]);
+
   const setCanvas = useCallback(
     (element: HTMLCanvasElement | null) => {
       canvasRef.current = element;
       ctxRef.current = element?.getContext('2d') ?? null;
-      if (element) alphaRef.current = 1;
+      if (element) {
+        alphaRef.current = 1;
+        requestFrame();
+      }
     },
-    [],
+    [requestFrame],
   );
+
+  // redraw when the data or the selection changes, both of which are drawn
+  useEffect(() => {
+    requestFrame();
+  }, [requestFrame, input.nodes, input.links, input.selectedId]);
 
   // resize + render loop
   useEffect(() => {
-    let raf = 0;
 
     const resize = () => {
       const canvas = canvasRef.current;
@@ -353,27 +399,22 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
         viewRef.current.x = rect.width / 2;
         viewRef.current.y = rect.height / 2;
       }
-    };
-
-    const loop = () => {
-      if (canvasRef.current) {
-        tick();
-        draw();
-      }
-      raf = requestAnimationFrame(loop);
+      // Resizing clears the canvas, so what was on it has to be put back.
+      requestFrame();
     };
 
     resize();
     const initial = requestAnimationFrame(resize);
     window.addEventListener('resize', resize);
-    raf = requestAnimationFrame(loop);
+    requestFrame();
 
     return () => {
       window.removeEventListener('resize', resize);
       cancelAnimationFrame(initial);
-      cancelAnimationFrame(raf);
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = 0;
     };
-  }, [draw, tick]);
+  }, [requestFrame]);
 
   // pointer + wheel interaction
   useEffect(() => {
@@ -396,6 +437,7 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
       view.x = x - before.x * k;
       view.y = y - before.y * k;
       setZoom(k);
+      requestFrame();
     };
 
     const onDown = (event: PointerEvent) => {
@@ -410,6 +452,7 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
         moved: false,
       };
       alphaRef.current = 1;
+      requestFrame();
       canvas.setPointerCapture(event.pointerId);
     };
 
@@ -438,6 +481,7 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
           viewRef.current.x = pointer.panX + dx;
           viewRef.current.y = pointer.panY + dy;
         }
+        requestFrame();
         return;
       }
 
@@ -446,6 +490,8 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
       if (id !== hoverRef.current) {
         hoverRef.current = id;
         inputRef.current.onHover(id);
+        // The hovered node is drawn differently, and nothing else is moving.
+        requestFrame();
       }
     };
 
@@ -458,6 +504,8 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
         if (node) node.fixed = false;
         if (!pointer.moved) inputRef.current.onSelect(pointer.nodeId);
       }
+      // A node let go carries momentum, so the simulation has to run it out.
+      requestFrame();
     };
 
     canvas.addEventListener('wheel', onWheel, { passive: false });
@@ -473,7 +521,7 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointercancel', onUp);
     };
-  }, [nodeAt, toWorld]);
+  }, [nodeAt, requestFrame, toWorld]);
 
   const zoomBy = useCallback((factor: number) => {
     viewportTouchedRef.current = true;
@@ -487,7 +535,8 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
     view.x = cx - before.x * k;
     view.y = cy - before.y * k;
     setZoom(k);
-  }, [toWorld]);
+    requestFrame();
+  }, [requestFrame, toWorld]);
 
   const fit = useCallback(() => {
     viewportTouchedRef.current = true;
@@ -514,7 +563,8 @@ export function useForceGraph(input: ForceGraphInput): ForceGraphApi {
     view.x = w / 2 - ((x0 + x1) / 2) * k;
     view.y = h / 2 - ((y0 + y1) / 2) * k;
     setZoom(k);
-  }, []);
+    requestFrame();
+  }, [requestFrame]);
 
   return { attachCanvas: setCanvas, zoom, zoomBy, fit };
 }

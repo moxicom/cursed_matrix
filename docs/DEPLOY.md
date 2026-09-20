@@ -9,8 +9,18 @@ Compose plugin.
 * Docker Engine 24+ with the **Compose v2 plugin** and **buildx**.
 * A domain pointing at the host, if the site is to be reached by name.
 * Ports 80 and 443 free, for whatever terminates TLS.
-* About 2 GB of RAM: Postgres, Redis, the API, nginx, VictoriaMetrics and
-  Grafana. Dropping the monitoring pair frees roughly half of it.
+* Memory. Measured, not estimated:
+
+  | | |
+  |---|---|
+  | Postgres, Redis, the API, nginx | **130 MB** |
+  | VictoriaMetrics, Grafana, two exporters | **420 MB** |
+  | the Go compiler, while building | **up to 700 MB** |
+
+  The application is small; the monitoring costs three times what it watches,
+  and the compiler costs more than either. A 1 GB server runs the application
+  comfortably, runs it and the monitoring badly, and cannot build it at all
+  while serving. See "Building on a small server".
 
 Check before anything else:
 
@@ -190,6 +200,88 @@ server {
 `X-Real-IP` matters more than it looks: the per-address ceilings count by it,
 and the container's own nginx overwrites whatever a client sent. A terminator
 that does not set it makes every visitor share one counter.
+
+### Building on a small server
+
+The symptom is the host becoming unresponsive, or the build dying, at this
+step:
+
+```
+=> [back build 6/6] RUN ... go build -trimpath -ldflags=...
+```
+
+That is the Go compiler, and it is competing with the stack it is meant to
+replace. Confirm it:
+
+```sh
+dmesg -T | grep -i 'out of memory\|killed process' | tail
+free -m
+```
+
+An exit code of 137 says the same thing.
+
+Four ways out, cheapest first:
+
+**Give the host swap.** A build is exactly what swap is for — slow is fine,
+dead is not. 4 GB is plenty:
+
+```sh
+sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+**Build one package at a time.** The compiler's memory goes with its
+parallelism:
+
+```sh
+docker compose build --build-arg GO_BUILD_JOBS=1
+```
+
+**Stop the stack while building.** Nothing needs to serve during a build:
+
+```sh
+docker compose down
+docker compose build
+docker compose up -d
+```
+
+**Leave the monitoring off.** It is opt-in: in `.env`,
+
+```ini
+COMPOSE_PROFILES=
+```
+
+runs Postgres, Redis, the API and nginx and nothing else — 130 MB instead of
+550. Everything the product does works; what you lose is the dashboards.
+
+### On a 1 GB server
+
+Do not build there. 130 MB to run and 700 MB to compile do not fit in the same
+gigabyte, and swap turns the build from impossible into merely very slow.
+Build where there is room and ship the image:
+
+```sh
+# on your own machine, in the repository
+IMAGE_TAG=prod docker compose build back front
+docker save cursed-matrix/back:prod cursed-matrix/front:prod \
+  | gzip | ssh server 'gunzip | docker load'
+
+# on the server
+docker compose up -d --no-build
+```
+
+Then, in the server's `.env`:
+
+```ini
+COMPOSE_PROFILES=          # no monitoring
+REDIS_MAXMEMORY=64mb       # 256mb is a quarter of the host
+IMAGE_TAG=prod             # the tag you shipped
+```
+
+If you would rather build on the server anyway, give it 4 GB of swap, stop
+everything first, and pass `GO_BUILD_JOBS=1`. It will take minutes rather than
+seconds, and it will finish.
 
 ## 3. Build, migrate, start
 

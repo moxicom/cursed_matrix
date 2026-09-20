@@ -185,6 +185,15 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
 
   # -------------------------------------------------------------- monitoring
+  #
+  # Opt-in, because it costs more memory than the product it watches: roughly
+  # 420 MB against 130 MB for Postgres, Redis, the API and nginx together. On
+  # a host with room, COMPOSE_PROFILES=monitoring in .env turns all four on for
+  # every command without a flag anywhere; on a small server, leave it out.
+  #
+  # This is the opposite case from the backend, which used to hide behind a
+  # profile and should not have: that one is the application, and a profile
+  # made a plain `up` quietly skip it. These four are genuinely optional.
   # VictoriaMetrics in single-node mode: one binary that both scrapes and
   # stores, with a Prometheus-compatible query API. For a stack this size it
   # replaces Prometheus at a fraction of the memory and disk, and the scrape
@@ -192,6 +201,7 @@ services:
   # What it does not bring is rule evaluation — see infra/README.md.
   victoriametrics:
     <<: [*restart, *logging]
+    profiles: ["monitoring"]
     image: victoriametrics/victoria-metrics:v1.152.0
     command:
       - "-storageDataPath=/victoria-metrics-data"
@@ -218,6 +228,7 @@ services:
 
   grafana:
     <<: [*restart, *logging]
+    profiles: ["monitoring"]
     image: grafana/grafana:11.2.0
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
@@ -246,6 +257,7 @@ services:
 
   postgres-exporter:
     <<: [*restart, *logging]
+    profiles: ["monitoring"]
     image: prometheuscommunity/postgres-exporter:v0.15.0
     environment:
       DATA_SOURCE_NAME: postgres://${POSTGRES_USER:-cursed}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cursed_matrix}?sslmode=disable
@@ -259,6 +271,7 @@ services:
 
   redis-exporter:
     <<: [*restart, *logging]
+    profiles: ["monitoring"]
     image: oliver006/redis_exporter:v1.62.0
     environment:
       REDIS_ADDR: redis://redis:6379

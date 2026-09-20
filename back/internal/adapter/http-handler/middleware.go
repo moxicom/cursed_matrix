@@ -36,7 +36,7 @@ func UserFrom(ctx context.Context) (uuid.UUID, bool) {
 // Authenticate verifies the access cookie and puts the account on the context.
 // A request without a valid token is refused here, so no handler has to
 // remember to check.
-func Authenticate(tokens port.TokenIssuer) func(http.Handler) http.Handler {
+func Authenticate(tokens port.TokenIssuer, sessions port.RefreshStore, log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := CookieValue(r, AccessCookie)
@@ -48,6 +48,21 @@ func Authenticate(tokens port.TokenIssuer) func(http.Handler) http.Handler {
 			userID, subscription, err := tokens.Verify(raw)
 			if err != nil {
 				WriteError(w, r, err)
+				return
+			}
+
+			// An access token carries no state, so closing an account cannot
+			// withdraw the ones already issued; the store is asked instead.
+			// A store that is down answers nothing rather than locking
+			// everyone out — the same choice the rest of the product makes —
+			// which leaves a closed account at most one token lifetime.
+			blocked, err := sessions.AccessBlocked(r.Context(), userID)
+			if err != nil {
+				log.WarnContext(r.Context(), "cannot tell whether access was withdrawn",
+					"err", err, "userId", userID)
+			}
+			if blocked {
+				WriteError(w, r, shared.NewError(shared.CodeSessionExpired, nil))
 				return
 			}
 

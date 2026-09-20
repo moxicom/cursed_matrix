@@ -86,7 +86,7 @@ pair is now confined to the progression and graph-read features.
 | 64 | Plans, access gate | mock | done (back) | both quotas enforced under the account lock; a lapsed plan answers 402 on every application route while the account itself stays reachable |
 | 65 | Exact XP and level values | done | done | 50/35/20/10, ×0.35, `45·(n−1)²`, tests on both sides |
 | 66 | Reopen and soft delete | mock | done | both live, each with its own compensating ledger entry (`TASK_REOPENED`, `TASK_DELETED`) |
-| 67 | Landing, pricing, 404, settings | done | n/a | routes exist and render |
+| 67 | Landing, pricing, 404, settings | done | n/a | routes exist and render; the server now answers export and account deletion |
 | 68 | Input limits | done | done | 100/2000/24 in the UI and as CHECK constraints |
 | 69 | `GRAPH_OPENED` | bug | done (back) | `POST /activity/graph-opened` records it; the front still never calls it |
 
@@ -102,7 +102,8 @@ achievements, the leaderboard — plus billing.
 |---|---|
 | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/logout-all` | **done** — HttpOnly cookies, CSRF header, per-address and per-account rate limits |
 | `GET /me`, `PATCH /me` | **done** — the real plan and its expiry; `email` still not writable |
-| `POST /me/export`, `DELETE /me` | — |
+| `POST /me/export` | **done** — one transaction, deleted tasks included and marked |
+| `POST /me/delete` | **done** — re-authentication instead of an emailed token; see §4a |
 | `GET /tasks` | **done** — nine filters, tags, subtasks and the whole link network; capped at 500 with a `truncated` flag |
 | `POST /tasks` | **done** — server-assigned position, free-plan quota enforced (402) |
 | `PATCH /tasks/{id}` | **done** — absent vs null distinguished for `deadlineAt`; a completed task is frozen (409) |
@@ -126,7 +127,9 @@ achievements, the leaderboard — plus billing.
 | `GET /activity/stats` | **done** — the eight figures above the heatmap, over the same year |
 | `GET /achievements` | **done** — whole catalogue with progress; codes only, the client localises them |
 | `GET /leaderboard` | **done** — three periods, dense ranks, hidden users occupy none, `me` returned off-page |
-| `GET /plans`, `POST /billing/checkout`, `POST /billing/webhook` | — |
+| `GET /plans` | **done** — public, per-market prices, limits read from where the quotas read them |
+| `POST /billing/checkout` | **done** — grants the plan outright while billing is switched off; 503 when switched on with no provider |
+| `POST /billing/webhook` | — waits for a provider |
 
 Operational endpoints that do exist: `GET /healthz`, `GET /readyz`,
 `GET /metrics`.
@@ -177,6 +180,14 @@ Found by reviewing the frontend against the requirements; none are fixed.
 | Deleting a parent | Refused with `409` while any subtask is unfinished, rather than cascading. Open work is the user's to finish, promote or drop. |
 | `xp_transactions.grant_seq` | Added so a task completed, reopened and completed again earns its XP again. The original `(task_id, source)` uniqueness said a task may be rewarded once ever, which with reopen in the product cost the user that XP permanently. |
 | `TASK_DELETED` XP source | Added rather than reusing `TASK_REOPENED` (records a reopening that never happened) or `ADMIN_ADJUSTMENT` (claims a human intervened). |
+| Account deletion asks for the password | `docs/API.md` §3 calls for a token sent by email, but an address is optional here — the account is identified by its username — so most accounts have nowhere to send one. Re-authentication is the proof instead. Revisit if email becomes mandatory. |
+| `POST /me/delete`, not `DELETE /me` | The confirmation is a body, and a DELETE with a required body is awkward for clients and proxies alike. |
+| `GET /plans` omits `current` and `quota` | `docs/API.md` §12 bundles the caller's own plan and usage with the catalogue, but the pricing page is public — one of the two pages that needs no account — so the route returns the catalogue alone. A signed-in client reads its plan from `GET /me`. |
+| A granted plan does not stack | `Subscription.Extend` keeps time already paid for, which is right for a purchase. A grant made while billing is off is not a purchase: repeated calls set the expiry to one period from now, or a client in a loop would award itself years, quotas and all. |
+| Closing an account disowns its access tokens | An access token is believed on its signature, and the task, tag and link tables never read the account row — so a closed account could otherwise keep completing tasks and earning XP until the token expired. `RefreshStore.BlockAccess` records the withdrawal for one token lifetime; a Redis outage falls back to the old window rather than locking everyone out. |
+| Billing has an off switch | `billing.enabled: false` grants a purchase outright for `granted_period`, so the gate lifting, the quotas going away and the plan showing on the account can all be used before a provider is chosen. Switched on with no provider, a purchase is refused with 503 rather than accepted. |
+| A new account gets a trial | `billing.trial_period` sets `plan_expires_at` at registration. Zero reproduces the old behaviour — no expiry — and accounts made before this are not retroactively given a deadline. |
+| `deletedAt` on `Task` | Added for the export, which includes deleted tasks: a list carrying them without saying which would be worse than leaving them out. Always absent on the board. |
 
 ## 5. Open decisions blocking work
 
@@ -184,7 +195,7 @@ Found by reviewing the frontend against the requirements; none are fixed.
 |---|---|
 | `UpdateEmail` exists in the postgres adapter, is on no port and is called by nothing, while the contract declares `email` on `PATCH /me` | settings |
 | Whether `api` and `migrate` merge into one binary | image size (−13 MB) |
-| Payment provider and market (`SPEC` §27.2) | billing |
+| Payment provider and market (`SPEC` §27.2) | the webhook and real charging; everything downstream of a purchase already works with `billing.enabled: false` |
 
 Settled since the last revision: the plan comes from the `users` row the
 schema already had, so the token carries the subscription and the quotas count

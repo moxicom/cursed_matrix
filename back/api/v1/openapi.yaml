@@ -22,6 +22,8 @@ servers:
 tags:
   - name: auth
     description: Registration, sign-in and token rotation.
+  - name: billing
+    description: Plans and what buying one does.
   - name: account
     description: The signed-in user and their settings.
   - name: tasks
@@ -606,6 +608,118 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /plans:
+    get:
+      tags: [billing]
+      summary: What the plans cost
+      operationId: listPlans
+      description: |
+        Public, because the pricing page is one of the two pages that does not
+        need an account. Prices are set per market rather than converted, so
+        each carries its own currency. The limits come from the same place the
+        quotas read them, so the page cannot promise a number the server does
+        not enforce.
+
+        `billingEnabled` false means no payment provider is wired: buying
+        grants the plan outright, which is what makes the product usable end
+        to end before a provider is chosen.
+      responses:
+        "200":
+          description: The plans.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [billingEnabled, plans]
+                properties:
+                  billingEnabled: { type: boolean }
+                  plans: { type: array, items: { $ref: "#/components/schemas/PlanOffer" } }
+
+  /billing/checkout:
+    post:
+      tags: [billing]
+      summary: Buy a plan
+      operationId: checkout
+      description: |
+        With billing off, grants the plan there and then and answers with the
+        new subscription. The access token still carries the old plan, so the
+        client refreshes it before the change is visible everywhere.
+
+        With billing on and no provider wired, answers 503 rather than
+        accepting an instruction to charge that nothing will act on.
+
+        Reachable with a lapsed plan on purpose: the one thing someone whose
+        subscription ran out must be able to do is pay.
+      responses:
+        "200":
+          description: The subscription the account now holds.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Subscription" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+        "503":
+          description: Billing is on, but no provider is wired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /me/export:
+    post:
+      tags: [account]
+      summary: Take your data away
+      operationId: exportAccount
+      description: |
+        Everything the account holds, in one document: the account itself, its
+        settings and figures, every task including the deleted ones, the links,
+        the labels and the achievements. Read in one transaction, so the pieces
+        agree with each other.
+
+        Synchronous, which the free plan's size makes reasonable. An account
+        large enough to need a job would answer 202 with a link instead, and
+        the two shapes are told apart by the status.
+      responses:
+        "200":
+          description: The export.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountExport" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+
+  /me/delete:
+    post:
+      tags: [account]
+      summary: Close the account
+      operationId: deleteAccount
+      description: |
+        Asks for the password again: `docs/API.md` calls for a token sent by
+        email, but an address is optional in this product — the account is
+        identified by its username — so most accounts have nowhere to send
+        one. The password is something only the owner knows, which is what
+        stops a borrowed session from ending an account.
+
+        The delete is logical. Nothing earned is erased, because the XP ledger,
+        the activity history and other people's leaderboard standings all refer
+        to the row; what ends is access, and every ranking already excludes it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        "204": { description: Closed. }
+        "401":
+          description: No session, or the password does not match.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/CSRFRejected" }
+
   /leaderboard:
     get:
       tags: [leaderboard]
@@ -1020,6 +1134,55 @@ components:
       type: string
       enum: [ASC, DESC]
 
+    PlanOffer:
+      type: object
+      required: [plan, prices]
+      properties:
+        plan: { $ref: "#/components/schemas/Plan" }
+        prices: { type: array, items: { $ref: "#/components/schemas/PlanPrice" } }
+        activeTaskLimit:
+          type: integer
+          nullable: true
+          description: Null means no limit; the client renders no counter for it.
+        taskLinkLimit: { type: integer, nullable: true }
+
+    PlanPrice:
+      type: object
+      required: [language, currency, amount]
+      properties:
+        language: { $ref: "#/components/schemas/Language" }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        amount:
+          type: integer
+          format: int64
+          description: In the currency's minor units — cents, kopecks — never a float.
+
+    Subscription:
+      type: object
+      required: [plan, expired]
+      properties:
+        plan: { $ref: "#/components/schemas/Plan" }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        expired: { type: boolean }
+
+    AccountExport:
+      type: object
+      required: [exportedAt, account, tasks, links, tags, achievements]
+      properties:
+        exportedAt: { type: string, format: date-time }
+        account: { $ref: "#/components/schemas/User" }
+        tasks: { type: array, items: { $ref: "#/components/schemas/Task" } }
+        links: { type: array, items: { $ref: "#/components/schemas/TaskLink" } }
+        tags: { type: array, items: { $ref: "#/components/schemas/Tag" } }
+        achievements:
+          type: array
+          items:
+            type: object
+            required: [code, unlockedAt]
+            properties:
+              code: { type: string }
+              unlockedAt: { type: string, format: date-time }
+
     LeaderboardPeriod:
       type: string
       enum: [WEEK, MONTH, ALL_TIME]
@@ -1301,6 +1464,14 @@ components:
         xpAwarded: { type: integer, format: int32, nullable: true }
         quadrantAtCompletion: { allOf: [{ $ref: "#/components/schemas/Quadrant" }], nullable: true }
         completedVia: { allOf: [{ $ref: "#/components/schemas/CompletionSource" }], nullable: true }
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Always absent on the board, which never shows a deleted task. It
+            is here for the export, which includes them — a list that carried
+            them without saying which would be worse than leaving them out.
         tags: { type: array, items: { type: string } }
 
     Plan:

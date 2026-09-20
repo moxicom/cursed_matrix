@@ -51,3 +51,21 @@ auth:
     # client, it does not pace the UI.
     read_attempts: 300
     read_window: 1m
+
+# Billing is off until a provider is chosen. While it is off, buying a plan
+# grants it outright for granted_period — the product works end to end and
+# nobody is charged. Turning it on without a provider refuses the purchase
+# rather than taking money the server cannot collect.
+billing:
+  enabled: false
+  # Zero would mean no trial at all; accounts created before this existed have
+  # no expiry and keep none.
+  trial_period: 336h
+  granted_period: 720h
+  prices:
+    - language: EN
+      currency: USD
+      amount: 500
+    - language: RU
+      currency: RUB
+      amount: 49000

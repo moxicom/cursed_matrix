@@ -50,6 +50,15 @@ auth:
     account_window: 15m
     read_attempts: 300
     read_window: 1m
+
+billing:
+  enabled: false
+  trial_period: 336h
+  granted_period: 720h
+  prices:
+    - language: EN
+      currency: USD
+      amount: 500
 `
 
 func writeConfig(t *testing.T, body string) string {
@@ -141,6 +150,16 @@ func TestLoadRejectsBrokenConfigurations(t *testing.T) {
 			name:     "no attempt ceiling",
 			body:     strings.Replace(sampleConfig, "account_attempts: 5", "account_attempts: 0", 1),
 			wantWord: "auth.rate_limit.account_attempts",
+		},
+		{
+			name:     "a price with no currency",
+			body:     strings.Replace(sampleConfig, "currency: USD", "currency: ''", 1),
+			wantWord: "billing.prices[0].currency",
+		},
+		{
+			name:     "a granted period of zero",
+			body:     strings.Replace(sampleConfig, "granted_period: 720h", "granted_period: 0s", 1),
+			wantWord: "billing.granted_period",
 		},
 		{
 			name:     "read ceiling zero",

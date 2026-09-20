@@ -21,6 +21,7 @@ import (
 func Routes(
 	api *API,
 	tokens port.TokenIssuer,
+	sessions port.RefreshStore,
 	limiter port.RateLimiter,
 	limits RateLimits,
 	profiles *profile.Service,
@@ -38,6 +39,11 @@ func Routes(
 		public.Post("/auth/login", api.Login)
 	})
 
+	// The pricing page is one of the two that does not need an account.
+	router.Group(func(pricing chi.Router) {
+		pricing.Get("/plans", api.ListPlans)
+	})
+
 	// Refreshing and logging out are authenticated by the refresh cookie itself,
 	// not by the access token: that one is expected to be stale or gone.
 	router.Group(func(refreshing chi.Router) {
@@ -48,7 +54,7 @@ func Routes(
 
 	router.Group(func(session chi.Router) {
 		session.Use(RequireCSRF)
-		session.Use(Authenticate(tokens))
+		session.Use(Authenticate(tokens, sessions, log))
 		// After authentication, so it knows whose day it is, and before the
 		// handlers, so any visit counts and not only a board read.
 		session.Use(TrackStreak(profiles, log))
@@ -58,6 +64,14 @@ func Routes(
 		session.Post("/auth/logout-all", api.LogoutAll)
 		session.Get("/me", api.GetMe)
 		session.Patch("/me", api.UpdateSettings)
+		// The export reads every task the account ever had, which is the same
+		// unbounded work the board does, so it carries the same ceiling.
+		session.With(LimitReads(limiter, limits)).Post("/me/export", api.ExportAccount)
+		session.Post("/me/delete", api.DeleteAccount)
+
+		// Outside the gate on purpose: the one thing someone whose plan ran
+		// out must be able to do is pay.
+		session.With(LimitReads(limiter, limits)).Post("/billing/checkout", api.Checkout)
 
 		// Everything below is the application itself, and an account whose
 		// paid time ran out cannot reach it. chi fixes a group's middleware

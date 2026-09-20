@@ -21,6 +21,7 @@ const (
 	CodeCSRFTokenInvalid ErrorCode = "CSRF_TOKEN_INVALID"
 
 	CodeSubscriptionRequired ErrorCode = "SUBSCRIPTION_REQUIRED"
+	CodeBillingUnavailable   ErrorCode = "BILLING_UNAVAILABLE"
 	CodeQuotaLimitReached    ErrorCode = "QUOTA_LIMIT_REACHED"
 
 	CodeTaskNotFound        ErrorCode = "TASK_NOT_FOUND"

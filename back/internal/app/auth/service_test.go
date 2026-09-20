@@ -52,18 +52,32 @@ func (s *stubUsers) TouchLogin(context.Context, uuid.UUID, time.Time) error {
 func (*stubUsers) ApplyStats(context.Context, uuid.UUID, user.StatsDelta) (user.Stats, error) {
 	return user.Stats{}, nil
 }
-func (*stubUsers) SetLevel(context.Context, uuid.UUID, int32) error { return nil }
-func (*stubUsers) LockAccount(context.Context, uuid.UUID) error     { return nil }
+func (*stubUsers) SetLevel(context.Context, uuid.UUID, int32) error       { return nil }
+func (*stubUsers) LockAccount(context.Context, uuid.UUID) error           { return nil }
+func (*stubUsers) SoftDelete(context.Context, uuid.UUID, time.Time) error { return nil }
+
+func (*stubUsers) SetSubscription(context.Context, uuid.UUID, user.Subscription) error {
+	return nil
+}
 
 func (*stubUsers) TouchStreak(context.Context, uuid.UUID, time.Time) (user.StreakChange, error) {
 	return user.StreakChange{}, nil
 }
 
-type stubRefresh struct{}
+type stubRefresh struct{ blocked bool }
 
 func (*stubRefresh) Save(context.Context, uuid.UUID, string, time.Duration) error { return nil }
 func (*stubRefresh) Consume(context.Context, uuid.UUID, string) (bool, error)     { return true, nil }
 func (*stubRefresh) RevokeAll(context.Context, uuid.UUID) error                   { return nil }
+
+func (s *stubRefresh) BlockAccess(context.Context, uuid.UUID, time.Duration) error {
+	s.blocked = true
+	return nil
+}
+
+func (s *stubRefresh) AccessBlocked(context.Context, uuid.UUID) (bool, error) {
+	return s.blocked, nil
+}
 
 type stubTokens struct{}
 
@@ -146,11 +160,11 @@ func TestUpdateSettingsRetiresTheCache(t *testing.T) {
 
 			var configured *stubCache
 			service := auth.NewService(users, &stubRefresh{}, &stubTx{}, &stubTokens{}, nil,
-				&shared.SystemClock{}, time.Hour)
+				&shared.SystemClock{}, time.Hour, 14*24*time.Hour)
 			if tt.cache != nil {
 				configured = tt.cache
 				service = auth.NewService(users, &stubRefresh{}, &stubTx{}, &stubTokens{}, configured,
-					&shared.SystemClock{}, time.Hour)
+					&shared.SystemClock{}, time.Hour, 14*24*time.Hour)
 			}
 
 			_, err := service.UpdateSettings(context.Background(), userID,
@@ -226,7 +240,7 @@ func TestLoginRetiresTheCacheWhenTheZoneChanges(t *testing.T) {
 			}}
 			cached := &stubCache{}
 			service := auth.NewService(users, &stubRefresh{}, &stubTx{}, &stubTokens{}, cached,
-				&shared.SystemClock{}, time.Hour)
+				&shared.SystemClock{}, time.Hour, 14*24*time.Hour)
 
 			if _, err := service.Login(context.Background(), "traveller", "correct horse battery", tt.sent); err != nil {
 				t.Fatalf("Login: %v", err)

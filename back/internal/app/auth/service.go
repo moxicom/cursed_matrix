@@ -53,6 +53,11 @@ type Service struct {
 	cache      port.Cache
 	clock      shared.Clock
 	refreshTTL time.Duration
+
+	// trialPeriod is how long a new account may use the product before it has
+	// to pay. Zero leaves the account without an expiry, which is what every
+	// account made before trials existed has.
+	trialPeriod time.Duration
 }
 
 // NewService wires the use cases to their ports.
@@ -64,15 +69,17 @@ func NewService(
 	cached port.Cache,
 	clock shared.Clock,
 	refreshTTL time.Duration,
+	trialPeriod time.Duration,
 ) *Service {
 	return &Service{
-		users:      users,
-		refresh:    refresh,
-		tx:         tx,
-		tokens:     tokens,
-		cache:      cached,
-		clock:      clock,
-		refreshTTL: refreshTTL,
+		users:       users,
+		refresh:     refresh,
+		tx:          tx,
+		tokens:      tokens,
+		cache:       cached,
+		clock:       clock,
+		refreshTTL:  refreshTTL,
+		trialPeriod: trialPeriod,
 	}
 }
 
@@ -108,6 +115,7 @@ func (s *Service) Register(ctx context.Context, creds Credentials) (*Session, er
 			ShowInLeaderboard:    false,
 			NotificationsEnabled: true,
 		},
+		Subscription: user.Trial(s.trialPeriod, s.clock.Now().UTC()),
 	}
 
 	if err := s.tx.Do(ctx, func(ctx context.Context) error {
@@ -338,4 +346,48 @@ func normalizeEmail(email *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+// DeleteAccount closes an account after the user proves it is theirs.
+//
+// The contract asks for a token sent by email, but an address is optional in
+// this product — the account is identified by its username — so most accounts
+// have nowhere to send one. The password is the proof instead: it is
+// something only the owner knows, and asking for it again is what stops a
+// borrowed session from ending someone's account.
+//
+// The delete is logical. Nothing the user earned is erased: the XP ledger, the
+// activity history and everyone else's leaderboard standings all refer to this
+// row. What ends is access — every query that reads an account requires it not
+// to be deleted, and every ranking already excludes it.
+func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID, password string) error {
+	return s.tx.Do(ctx, func(ctx context.Context) error {
+		account, err := s.users.ByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+
+		if err := utils.VerifyPassword(password, account.PasswordHash); err != nil {
+			if errors.Is(err, utils.ErrPasswordMismatch) {
+				return shared.NewError(shared.CodeInvalidCredentials, nil)
+			}
+			return shared.WrapError(err, shared.CodeInternal, nil)
+		}
+
+		if err := s.users.SoftDelete(ctx, userID, s.clock.Now().UTC()); err != nil {
+			return err
+		}
+		if err := s.refresh.RevokeAll(ctx, userID); err != nil {
+			return err
+		}
+		// Revoking the refresh token is not enough: an access token is
+		// believed on its signature, and the task, tag and link tables never
+		// look at the account row, so a closed account could still write for
+		// as long as its last token lived. Disowning it closes that window.
+		if err := s.refresh.BlockAccess(ctx, userID, s.tokens.TTL()); err != nil {
+			return err
+		}
+		s.forget(ctx, userID)
+		return nil
+	})
 }

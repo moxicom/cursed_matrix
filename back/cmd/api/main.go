@@ -22,6 +22,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/token"
 	"github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
+	"github.com/moxicom/cursed_matrix/back/internal/app/billing"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/graph"
 	"github.com/moxicom/cursed_matrix/back/internal/app/profile"
@@ -89,14 +90,16 @@ func run() error {
 	var api http.Handler
 	if redisCache != nil {
 		tokens := token.NewJWTIssuer(cfg.AuthSecret(), cfg.Auth.AccessTTL, &shared.SystemClock{})
+		sessions := redisadapter.NewRefreshStore(redisCache.Client())
 		service := auth.NewService(
 			postgres.NewUserRepository(pool),
-			redisadapter.NewRefreshStore(redisCache.Client()),
+			sessions,
 			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
 			tokens,
 			redisCache,
 			&shared.SystemClock{},
 			cfg.Auth.RefreshTTL,
+			cfg.Billing.TrialPeriod,
 		)
 		awards := achievement.NewService(
 			postgres.NewAchievementRepository(pool),
@@ -117,6 +120,24 @@ func run() error {
 			Clock:  &shared.SystemClock{},
 			Cache:  redisCache,
 		})
+		prices := make([]billing.Price, 0, len(cfg.Billing.Prices))
+		for _, price := range cfg.Billing.Prices {
+			prices = append(prices, billing.Price{
+				Language: shared.Language(price.Language),
+				Currency: price.Currency,
+				Amount:   price.Amount,
+			})
+		}
+		plans := billing.NewService(
+			postgres.NewUserRepository(pool),
+			redisCache,
+			billing.Config{
+				Enabled:       cfg.Billing.Enabled,
+				GrantedPeriod: cfg.Billing.GrantedPeriod,
+				Prices:        prices,
+			},
+			&shared.SystemClock{},
+		)
 		limiter := redisadapter.NewRateLimiter(redisCache.Client(), utils.ForComponent(log, "ratelimit"))
 		limits := httphandler.RateLimits{
 			AddressAttempts: cfg.Auth.RateLimit.AddressAttempts,
@@ -135,19 +156,24 @@ func run() error {
 			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
 			&shared.SystemClock{},
 		)
-		profiles := profile.NewService(
-			postgres.NewUserRepository(pool),
-			postgres.NewActivityRepository(pool),
-			redisCache,
-			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
-			awards,
-			postgres.NewLeaderboardRepository(pool),
-			&shared.SystemClock{},
-		)
+		profiles := profile.NewService(profile.Deps{
+			Users:        postgres.NewUserRepository(pool),
+			Events:       postgres.NewActivityRepository(pool),
+			Tx:           postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
+			Ranking:      postgres.NewLeaderboardRepository(pool),
+			Tasks:        postgres.NewTaskRepository(pool),
+			Links:        postgres.NewLinkRepository(pool),
+			Tags:         postgres.NewTagRepository(pool),
+			Achievements: postgres.NewAchievementRepository(pool),
+			Awards:       awards,
+			Clock:        &shared.SystemClock{},
+			Cache:        redisCache,
+		})
+
 		api = httphandler.Routes(
-			httphandler.NewAPI(service, boards, graphs, profiles, awards, httphandler.NewCookieWriter(!cfg.Development()),
+			httphandler.NewAPI(service, boards, graphs, profiles, awards, plans, httphandler.NewCookieWriter(!cfg.Development()),
 				cfg.Auth.RefreshTTL, limiter, limits, &shared.SystemClock{}),
-			tokens, limiter, limits, profiles, &shared.SystemClock{}, utils.ForComponent(log, "streak"),
+			tokens, sessions, limiter, limits, profiles, &shared.SystemClock{}, utils.ForComponent(log, "streak"),
 		)
 	} else {
 		log.Warn("api disabled: the refresh store needs Redis")

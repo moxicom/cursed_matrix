@@ -237,3 +237,61 @@ func (r *UserRepository) TouchStreak(
 	change.Extended = true
 	return change, nil
 }
+
+// SoftDelete marks the account removed.
+//
+// The row stays because the XP ledger, the activity history and everyone
+// else's leaderboard positions refer to it. Every query that reads an account
+// already requires deleted_at IS NULL, so the account disappears from the
+// product — including from every ranking — without anything being erased.
+func (r *UserRepository) SoftDelete(ctx context.Context, id uuid.UUID, at time.Time) error {
+	query := builder.
+		Update("users").
+		Set("deleted_at", at).
+		Set("updated_at", at).
+		Where(sq.Eq{"id": id}).
+		Where("deleted_at IS NULL")
+
+	statement, args, err := query.ToSql()
+	if err != nil {
+		return shared.WrapError(err, shared.CodeInternal, nil)
+	}
+
+	tag, err := r.db.querier(ctx).Exec(ctx, statement, args...)
+	if err != nil {
+		return mapError(err, shared.CodeUserNotFound)
+	}
+	if tag.RowsAffected() == 0 {
+		return shared.NewError(shared.CodeUserNotFound, nil)
+	}
+	return nil
+}
+
+// SetSubscription writes what the account is entitled to and until when.
+func (r *UserRepository) SetSubscription(
+	ctx context.Context,
+	id uuid.UUID,
+	subscription user.Subscription,
+) error {
+	query := builder.
+		Update("users").
+		Set("plan", string(subscription.Plan)).
+		Set("plan_expires_at", subscription.ExpiresAt).
+		Set("updated_at", sq.Expr("now()")).
+		Where(sq.Eq{"id": id}).
+		Where("deleted_at IS NULL")
+
+	statement, args, err := query.ToSql()
+	if err != nil {
+		return shared.WrapError(err, shared.CodeInternal, nil)
+	}
+
+	tag, err := r.db.querier(ctx).Exec(ctx, statement, args...)
+	if err != nil {
+		return mapError(err, shared.CodeUserNotFound)
+	}
+	if tag.RowsAffected() == 0 {
+		return shared.NewError(shared.CodeUserNotFound, nil)
+	}
+	return nil
+}

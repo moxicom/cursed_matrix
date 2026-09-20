@@ -20,6 +20,9 @@ var statuses = map[shared.ErrorCode]int{
 
 	shared.CodeSubscriptionRequired: http.StatusPaymentRequired,
 	shared.CodeQuotaLimitReached:    http.StatusPaymentRequired,
+	// Billing is switched on but no provider is wired: the server cannot take
+	// the money, and saying so is better than accepting the instruction.
+	shared.CodeBillingUnavailable: http.StatusServiceUnavailable,
 
 	shared.CodeTaskNotFound: http.StatusNotFound,
 	shared.CodeUserNotFound: http.StatusNotFound,

@@ -23,6 +23,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/token"
 	"github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
+	"github.com/moxicom/cursed_matrix/back/internal/app/billing"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/graph"
 	"github.com/moxicom/cursed_matrix/back/internal/app/profile"
@@ -77,14 +78,16 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 	t.Cleanup(func() { _ = cached.Close() })
 
 	tokens := token.NewJWTIssuer("test-secret", 15*time.Minute, &shared.SystemClock{})
+	sessions := redisadapter.NewRefreshStore(client)
 	service := auth.NewService(
 		postgres.NewUserRepository(pool),
-		redisadapter.NewRefreshStore(client),
+		sessions,
 		postgres.NewTxManager(pool, quiet),
 		tokens,
 		cached,
 		&shared.SystemClock{},
 		24*time.Hour,
+		14*24*time.Hour,
 	)
 	awards := achievement.NewService(
 		postgres.NewAchievementRepository(pool),
@@ -114,19 +117,35 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 		postgres.NewTxManager(pool, quiet),
 		&shared.SystemClock{},
 	)
-	limiter := redisadapter.NewRateLimiter(client, quiet)
-	profiles := profile.NewService(
+	plans := billing.NewService(
 		postgres.NewUserRepository(pool),
-		postgres.NewActivityRepository(pool),
 		cached,
-		postgres.NewTxManager(pool, quiet),
-		awards,
-		postgres.NewLeaderboardRepository(pool),
+		billing.Config{
+			GrantedPeriod: 30 * 24 * time.Hour,
+			Prices: []billing.Price{
+				{Language: shared.LanguageEN, Currency: "USD", Amount: 500},
+			},
+		},
 		&shared.SystemClock{},
 	)
+	limiter := redisadapter.NewRateLimiter(client, quiet)
+	profiles := profile.NewService(profile.Deps{
+		Users:        postgres.NewUserRepository(pool),
+		Events:       postgres.NewActivityRepository(pool),
+		Tx:           postgres.NewTxManager(pool, quiet),
+		Ranking:      postgres.NewLeaderboardRepository(pool),
+		Tasks:        postgres.NewTaskRepository(pool),
+		Links:        postgres.NewLinkRepository(pool),
+		Tags:         postgres.NewTagRepository(pool),
+		Achievements: postgres.NewAchievementRepository(pool),
+		Awards:       awards,
+		Clock:        &shared.SystemClock{},
+		Cache:        cached,
+	})
+
 	return httphandler.Routes(
-		httphandler.NewAPI(service, boards, graphs, profiles, awards, httphandler.NewCookieWriter(false), 24*time.Hour, limiter, limits, &shared.SystemClock{}),
-		tokens, limiter, limits, profiles, &shared.SystemClock{}, quiet,
+		httphandler.NewAPI(service, boards, graphs, profiles, awards, plans, httphandler.NewCookieWriter(false), 24*time.Hour, limiter, limits, &shared.SystemClock{}),
+		tokens, sessions, limiter, limits, profiles, &shared.SystemClock{}, quiet,
 	)
 }
 

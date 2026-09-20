@@ -357,3 +357,56 @@ func (r *TaskRepository) ByIDForUpdate(ctx context.Context, userID, taskID uuid.
 	}
 	return r.ByID(ctx, userID, taskID)
 }
+
+// All returns every task the account ever had, deleted ones included.
+//
+// The board's cap does not apply: an export that quietly stopped at five
+// hundred tasks would be worse than no export, because nothing would say so.
+func (r *TaskRepository) All(ctx context.Context, userID uuid.UUID) ([]task.Task, error) {
+	query := builder.
+		Select(taskColumns...).
+		Column("COALESCE(tag_names.names, ARRAY[]::text[]) AS tags").
+		From("tasks t").
+		LeftJoin("tasks p ON p.id = t.parent_task_id").
+		JoinClause(`LEFT JOIN LATERAL (
+			SELECT array_agg(g.name ORDER BY g.name) AS names
+			FROM task_tags tt
+			JOIN tags g ON g.id = tt.tag_id
+			WHERE tt.task_id = t.id
+		) tag_names ON TRUE`).
+		Where(sq.Eq{"t.user_id": userID}).
+		OrderBy("t.created_at ASC", "t.id ASC")
+
+	statement, args, err := query.ToSql()
+	if err != nil {
+		return nil, shared.WrapError(err, shared.CodeInternal, nil)
+	}
+
+	rows, err := r.db.querier(ctx).Query(ctx, statement, args...)
+	if err != nil {
+		return nil, mapError(err, shared.CodeTaskNotFound)
+	}
+	defer rows.Close()
+
+	var tasks []task.Task
+	for rows.Next() {
+		var row taskRow
+		if err := rows.Scan(
+			&row.ID, &row.UserID, &row.ParentTaskID, &row.Title, &row.Description,
+			&row.Quadrant, &row.Position, &row.Color, &row.DeadlineAt, &row.DeadlineHasTime,
+			&row.Status, &row.CreatedAt, &row.UpdatedAt, &row.CompletedAt, &row.XPAwarded,
+			&row.QuadrantAtCompletion, &row.CompletedVia, &row.DeletedAt, &row.Tags,
+		); err != nil {
+			return nil, mapError(err, shared.CodeTaskNotFound)
+		}
+		item, err := row.toDomain()
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapError(err, shared.CodeTaskNotFound)
+	}
+	return tasks, nil
+}

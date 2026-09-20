@@ -10,13 +10,16 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/moxicom/cursed_matrix/back/internal/app/achievement"
+	awards "github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
 	"github.com/moxicom/cursed_matrix/back/internal/app/preferences"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/leaderboard"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/tag"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
 
@@ -25,34 +28,54 @@ import (
 const dayGateTTL = 36 * time.Hour
 
 type Service struct {
-	users   port.UserRepository
-	events  port.ActivityRepository
-	cache   port.Cache
-	tx      port.TxManager
-	awards  *achievement.Service
-	ranking port.LeaderboardRepository
-	clock   shared.Clock
-	prefs   *preferences.Reader
+	users      port.UserRepository
+	events     port.ActivityRepository
+	cache      port.Cache
+	tx         port.TxManager
+	ranking    port.LeaderboardRepository
+	tasks      port.TaskRepository
+	links      port.LinkRepository
+	tags       port.TagRepository
+	awardsRepo port.AchievementRepository
+	awards     *awards.Service
+	clock      shared.Clock
+	prefs      *preferences.Reader
 }
 
-func NewService(
-	users port.UserRepository,
-	events port.ActivityRepository,
-	cached port.Cache,
-	tx port.TxManager,
-	awards *achievement.Service,
-	ranking port.LeaderboardRepository,
-	clock shared.Clock,
-) *Service {
+// Deps are the ports the profile needs. A struct rather than eleven
+// parameters: they are nearly all interfaces, so a wrong order compiles and
+// fails at runtime.
+type Deps struct {
+	Users        port.UserRepository
+	Events       port.ActivityRepository
+	Tx           port.TxManager
+	Ranking      port.LeaderboardRepository
+	Tasks        port.TaskRepository
+	Links        port.LinkRepository
+	Tags         port.TagRepository
+	Achievements port.AchievementRepository
+	Awards       *awards.Service
+	Clock        shared.Clock
+
+	// Cache is optional: without it the streak is checked on every request
+	// and the timezone resolved from the database.
+	Cache port.Cache
+}
+
+func NewService(deps Deps) *Service {
 	return &Service{
-		users:   users,
-		events:  events,
-		cache:   cached,
-		tx:      tx,
-		awards:  awards,
-		ranking: ranking,
-		clock:   clock,
-		prefs:   preferences.NewReader(users, cached),
+		users:      deps.Users,
+		events:     deps.Events,
+		cache:      deps.Cache,
+		tx:         deps.Tx,
+		ranking:    deps.Ranking,
+		tasks:      deps.Tasks,
+		links:      deps.Links,
+		tags:       deps.Tags,
+		awardsRepo: deps.Achievements,
+		awards:     deps.Awards,
+		clock:      deps.Clock,
+		prefs:      preferences.NewReader(deps.Users, deps.Cache),
 	}
 }
 
@@ -336,4 +359,74 @@ func decodeCursor(value string) (*activity.Cursor, error) {
 		return nil, invalid
 	}
 	return &activity.Cursor{OccurredAt: occurredAt, ID: parsed}, nil
+}
+
+// Export is everything the account holds, in one document.
+type Export struct {
+	ExportedAt   time.Time
+	Account      *user.User
+	Tasks        []task.Task
+	Links        []link.Link
+	Tags         []tag.Tag
+	Achievements []UnlockedAchievement
+}
+
+// UnlockedAchievement names what was earned by its code, which is what the
+// export is for: an identifier the user can read, not one of ours.
+type UnlockedAchievement struct {
+	Code       string
+	UnlockedAt time.Time
+}
+
+// ExportAll gathers the account's data for the user to take away.
+//
+// It runs in one transaction so the pieces agree with each other: a task
+// completed between two of these reads would otherwise appear finished in one
+// list and open in another.
+func (s *Service) ExportAll(ctx context.Context, userID uuid.UUID) (*Export, error) {
+	export := &Export{ExportedAt: s.clock.Now().UTC()}
+
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		account, err := s.users.ByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		export.Account = account
+
+		// Deleted tasks are included: they are the user's, and an export that
+		// quietly left some out would not be the export they asked for.
+		if export.Tasks, err = s.tasks.All(ctx, userID); err != nil {
+			return err
+		}
+		if export.Links, err = s.links.List(ctx, userID); err != nil {
+			return err
+		}
+		if export.Tags, err = s.tags.List(ctx, userID); err != nil {
+			return err
+		}
+		unlocks, err := s.awardsRepo.Unlocked(ctx, userID)
+		if err != nil {
+			return err
+		}
+		catalogue, err := s.awardsRepo.Catalogue(ctx)
+		if err != nil {
+			return err
+		}
+
+		codes := make(map[uuid.UUID]string, len(catalogue))
+		for i := range catalogue {
+			codes[catalogue[i].ID] = catalogue[i].Code
+		}
+		for _, unlock := range unlocks {
+			export.Achievements = append(export.Achievements, UnlockedAchievement{
+				Code:       codes[unlock.AchievementID],
+				UnlockedAt: unlock.UnlockedAt,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return export, nil
 }

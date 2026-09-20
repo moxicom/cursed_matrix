@@ -30,6 +30,7 @@ type Config struct {
 	Database DatabaseConfig `yaml:"database" validate:"required"`
 	Redis    RedisConfig    `yaml:"redis" validate:"required"`
 	Auth     AuthConfig     `yaml:"auth" validate:"required"`
+	Billing  BillingConfig  `yaml:"billing" validate:"required"`
 
 	databaseURL string
 	redisURL    string
@@ -88,6 +89,35 @@ type RateLimitConfig struct {
 	AccountWindow   time.Duration `yaml:"account_window" validate:"required,gt=0"`
 	ReadAttempts    int           `yaml:"read_attempts" validate:"required,gt=0"`
 	ReadWindow      time.Duration `yaml:"read_window" validate:"required,gt=0"`
+}
+
+// BillingConfig decides whether money is taken at all.
+//
+// With Enabled false there is no provider and none is pretended: a purchase
+// grants the plan outright for GrantedPeriod, which is what makes the product
+// usable end to end before a payment provider is chosen. Turning it on without
+// wiring a provider refuses the purchase rather than accepting one it cannot
+// charge for.
+type BillingConfig struct {
+	Enabled bool `yaml:"enabled"`
+
+	// TrialPeriod is how long a new account may use the product. Zero means
+	// no trial and no expiry, which is how every account created before this
+	// existed behaves.
+	TrialPeriod   time.Duration `yaml:"trial_period" validate:"gte=0"`
+	GrantedPeriod time.Duration `yaml:"granted_period" validate:"required,gt=0"`
+
+	// Prices are set per language rather than converted, because a price is a
+	// product decision in each market, not an exchange rate.
+	Prices []PriceConfig `yaml:"prices" validate:"required,dive"`
+}
+
+// PriceConfig is one market's price, in the currency's minor units — cents,
+// kopecks — so nothing is ever held as a float.
+type PriceConfig struct {
+	Language string `yaml:"language" validate:"required,oneof=EN RU"`
+	Currency string `yaml:"currency" validate:"required,len=3"`
+	Amount   int64  `yaml:"amount" validate:"required,gt=0"`
 }
 
 // ConfigPath resolves the configuration file to read: the flag value when given,

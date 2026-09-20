@@ -23,8 +23,10 @@ func (r *UserRepository) ByUsername(ctx context.Context, username string) (*user
 func (r *UserRepository) Create(ctx context.Context, account *user.User) error {
 	statements := []sq.Sqlizer{
 		builder.Insert("users").
-			Columns("id", "username", "email", "password_hash", "created_at").
-			Values(account.ID, account.Username, account.Email, account.PasswordHash, account.CreatedAt),
+			Columns("id", "username", "email", "password_hash", "created_at",
+				"plan", "plan_expires_at").
+			Values(account.ID, account.Username, account.Email, account.PasswordHash,
+				account.CreatedAt, string(account.Subscription.Plan), account.Subscription.ExpiresAt),
 
 		builder.Insert("user_settings").
 			Columns("user_id", "language", "timezone", "show_in_leaderboard").

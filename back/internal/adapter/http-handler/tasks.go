@@ -118,6 +118,7 @@ func renderTask(t *task.Task) gen.Task {
 		UpdatedAt:       t.UpdatedAt,
 		CompletedAt:     t.CompletedAt,
 		XpAwarded:       t.XPAwarded,
+		DeletedAt:       t.DeletedAt,
 		Tags:            t.Tags,
 	}
 	if rendered.Tags == nil {

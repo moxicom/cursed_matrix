@@ -76,3 +76,40 @@ func (s *Settings) LocalDate(instant time.Time) time.Time {
 	local := instant.In(s.Location())
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
 }
+
+// Trial starts an account's free run.
+//
+// Zero means no trial and no expiry, which is how every account created before
+// trials existed behaves — they are not retroactively given a deadline.
+func Trial(period time.Duration, now time.Time) Subscription {
+	if period <= 0 {
+		return Subscription{Plan: shared.PlanFree}
+	}
+	until := now.Add(period)
+	return Subscription{Plan: shared.PlanFree, ExpiresAt: &until}
+}
+
+// Granted is a plan handed out without payment: it runs for one period from
+// now, however many times it is asked for.
+//
+// Not Extend, which adds to what is left. That is right for a purchase — the
+// remainder was paid for — but a grant nobody paid for must not accumulate,
+// or asking repeatedly would buy years for free.
+func Granted(plan shared.Plan, period time.Duration, now time.Time) Subscription {
+	until := now.Add(period)
+	return Subscription{Plan: plan, ExpiresAt: &until}
+}
+
+// Extend grants a plan for another period.
+//
+// Time already paid for is kept: extending runs from whichever is later, the
+// current expiry or now, so buying again before the old one lapses adds to it
+// instead of throwing the remainder away.
+func (s *Subscription) Extend(plan shared.Plan, period time.Duration, now time.Time) Subscription {
+	from := now
+	if s.ExpiresAt != nil && s.ExpiresAt.After(now) && s.Plan == plan {
+		from = *s.ExpiresAt
+	}
+	until := from.Add(period)
+	return Subscription{Plan: plan, ExpiresAt: &until}
+}

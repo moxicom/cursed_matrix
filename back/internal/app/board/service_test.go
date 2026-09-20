@@ -107,6 +107,8 @@ func (s *stubTasks) Search(context.Context, uuid.UUID, string, int) ([]task.Hit,
 	return nil, nil
 }
 
+func (s *stubTasks) All(context.Context, uuid.UUID) ([]task.Task, error) { return s.tasks, nil }
+
 func (s *stubTasks) ListGraph(_ context.Context, filter task.Filter) ([]task.Node, error) {
 	nodes := make([]task.Node, 0, len(s.tasks))
 	for i := range s.tasks {
@@ -306,6 +308,11 @@ func (s *stubUsers) SetLevel(_ context.Context, _ uuid.UUID, level int32) error 
 
 func (s *stubUsers) LockAccount(context.Context, uuid.UUID) error {
 	s.accountLocks++
+	return nil
+}
+func (*stubUsers) SoftDelete(context.Context, uuid.UUID, time.Time) error { return nil }
+
+func (*stubUsers) SetSubscription(context.Context, uuid.UUID, user.Subscription) error {
 	return nil
 }
 

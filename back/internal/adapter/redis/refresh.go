@@ -9,6 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 )
 
 // RefreshStore keeps the revocable half of the session in Redis: one key per
@@ -80,3 +81,29 @@ func (s *RefreshStore) tokenKey(userID uuid.UUID, generation int64, tokenID stri
 }
 
 var _ port.RefreshStore = (*RefreshStore)(nil)
+
+// BlockAccess marks an account's access tokens unusable.
+//
+// A refresh token can be revoked because the store holds it; an access token
+// cannot, because nothing holds it — it is believed on its signature alone.
+// Closing an account therefore needs somewhere to say so for as long as the
+// last issued token could still be presented, which is what this is.
+func (s *RefreshStore) BlockAccess(ctx context.Context, userID uuid.UUID, ttl time.Duration) error {
+	if err := s.client.Set(ctx, s.blockKey(userID), 1, ttl).Err(); err != nil {
+		return shared.WrapError(err, shared.CodeInternal, nil)
+	}
+	return nil
+}
+
+// AccessBlocked reports whether the account's tokens have been disowned.
+func (s *RefreshStore) AccessBlocked(ctx context.Context, userID uuid.UUID) (bool, error) {
+	found, err := s.client.Exists(ctx, s.blockKey(userID)).Result()
+	if err != nil {
+		return false, shared.WrapError(err, shared.CodeInternal, nil)
+	}
+	return found == 1, nil
+}
+
+func (s *RefreshStore) blockKey(userID uuid.UUID) string {
+	return keyPrefix + ":blocked:" + userID.String()
+}

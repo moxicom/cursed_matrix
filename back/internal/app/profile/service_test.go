@@ -13,7 +13,10 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/domain/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/leaderboard"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/tag"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/task"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
 
@@ -37,8 +40,13 @@ func (s *stubUsers) TouchLogin(context.Context, uuid.UUID, time.Time) error { re
 func (s *stubUsers) ApplyStats(context.Context, uuid.UUID, user.StatsDelta) (user.Stats, error) {
 	return user.Stats{}, nil
 }
-func (s *stubUsers) SetLevel(context.Context, uuid.UUID, int32) error { return nil }
-func (s *stubUsers) LockAccount(context.Context, uuid.UUID) error     { return nil }
+func (s *stubUsers) SetLevel(context.Context, uuid.UUID, int32) error     { return nil }
+func (s *stubUsers) LockAccount(context.Context, uuid.UUID) error         { return nil }
+func (*stubUsers) SoftDelete(context.Context, uuid.UUID, time.Time) error { return nil }
+
+func (*stubUsers) SetSubscription(context.Context, uuid.UUID, user.Subscription) error {
+	return nil
+}
 
 func (s *stubUsers) TouchStreak(_ context.Context, _ uuid.UUID, at time.Time) (user.StreakChange, error) {
 	s.touches++
@@ -220,7 +228,12 @@ func TestTouchDayCountsEachDayOnce(t *testing.T) {
 				change:   user.StreakChange{Extended: true, Current: 1, Longest: 1},
 			}
 			clock := &movingClock{}
-			service := profile.NewService(users, &stubEvents{}, &stubCache{}, &stubTx{}, awardsFor(users, clock), &stubRanking{}, clock)
+			service := profile.NewService(profile.Deps{
+				Users: users, Events: &stubEvents{}, Cache: &stubCache{}, Tx: &stubTx{},
+				Ranking: &stubRanking{}, Tasks: &stubTasks{}, Links: &stubLinks{},
+				Tags: &stubTags{}, Achievements: &stubAwards{},
+				Awards: awardsFor(users, clock), Clock: clock,
+			})
 
 			for _, at := range tt.visits {
 				clock.at = at
@@ -243,7 +256,12 @@ func TestTouchDayWithoutACache(t *testing.T) {
 	}
 	events := &stubEvents{}
 	clock := &movingClock{at: time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC)}
-	service := profile.NewService(users, events, nil, &stubTx{}, awardsFor(users, clock), &stubRanking{}, clock)
+	service := profile.NewService(profile.Deps{
+		Users: users, Events: events, Cache: nil, Tx: &stubTx{},
+		Ranking: &stubRanking{}, Tasks: &stubTasks{}, Links: &stubLinks{},
+		Tags: &stubTags{}, Achievements: &stubAwards{},
+		Awards: awardsFor(users, clock), Clock: clock,
+	})
 
 	// No cache means every visit asks; the statement itself is what keeps the
 	// day from being counted twice.
@@ -282,7 +300,12 @@ func TestTouchDayRecordsOnlyRealExtensions(t *testing.T) {
 			users := &stubUsers{settings: user.Settings{Timezone: "UTC"}, change: tt.change}
 			events := &stubEvents{}
 			clock := &movingClock{at: time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC)}
-			service := profile.NewService(users, events, &stubCache{}, &stubTx{}, awardsFor(users, clock), &stubRanking{}, clock)
+			service := profile.NewService(profile.Deps{
+				Users: users, Events: events, Cache: &stubCache{}, Tx: &stubTx{},
+				Ranking: &stubRanking{}, Tasks: &stubTasks{}, Links: &stubLinks{},
+				Tags: &stubTags{}, Achievements: &stubAwards{},
+				Awards: awardsFor(users, clock), Clock: clock,
+			})
 
 			change, err := service.TouchDay(context.Background(), uuid.New())
 			if err != nil {
@@ -330,7 +353,12 @@ func TestHeatmapIsAFullYearEndingToday(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubUsers{settings: user.Settings{Timezone: tt.timezone}}
-			service := profile.NewService(users, &stubEvents{}, nil, &stubTx{}, awardsFor(users, &movingClock{at: tt.now}), &stubRanking{}, &movingClock{at: tt.now})
+			service := profile.NewService(profile.Deps{
+				Users: users, Events: &stubEvents{}, Cache: nil, Tx: &stubTx{},
+				Ranking: &stubRanking{}, Tasks: &stubTasks{}, Links: &stubLinks{},
+				Tags: &stubTags{}, Achievements: &stubAwards{},
+				Awards: awardsFor(users, &movingClock{at: tt.now}), Clock: &movingClock{at: tt.now},
+			})
 
 			days, err := service.Heatmap(context.Background(), uuid.New())
 			if err != nil {
@@ -352,3 +380,59 @@ func TestHeatmapIsAFullYearEndingToday(t *testing.T) {
 func awardsFor(users *stubUsers, clock shared.Clock) *appachievement.Service {
 	return appachievement.NewService(&stubAwards{}, users, &stubEvents{}, clock)
 }
+
+// The export's reads are not what these tests are about; empty ones keep the
+// service constructible.
+type stubTasks struct{}
+
+func (*stubTasks) ListBoard(context.Context, task.Filter) ([]task.Task, error) { return nil, nil }
+func (*stubTasks) ByID(context.Context, uuid.UUID, uuid.UUID) (*task.Task, error) {
+	return nil, nil
+}
+
+func (*stubTasks) ByIDForUpdate(context.Context, uuid.UUID, uuid.UUID) (*task.Task, error) {
+	return nil, nil
+}
+func (*stubTasks) Create(context.Context, *task.Task) error { return nil }
+func (*stubTasks) Update(context.Context, *task.Task) error { return nil }
+func (*stubTasks) SoftDelete(context.Context, uuid.UUID, []uuid.UUID, time.Time) error {
+	return nil
+}
+
+func (*stubTasks) ScopeTasks(context.Context, uuid.UUID, shared.Quadrant) ([]task.Task, error) {
+	return nil, nil
+}
+func (*stubTasks) Reposition(context.Context, uuid.UUID, []task.Placement) error { return nil }
+func (*stubTasks) CountActive(context.Context, uuid.UUID) (int, error)           { return 0, nil }
+func (*stubTasks) Subtasks(context.Context, uuid.UUID, uuid.UUID) ([]task.Task, error) {
+	return nil, nil
+}
+func (*stubTasks) ListGraph(context.Context, task.Filter) ([]task.Node, error) { return nil, nil }
+func (*stubTasks) Search(context.Context, uuid.UUID, string, int) ([]task.Hit, error) {
+	return nil, nil
+}
+func (*stubTasks) All(context.Context, uuid.UUID) ([]task.Task, error) { return nil, nil }
+
+type stubLinks struct{}
+
+func (*stubLinks) Create(context.Context, *link.Link) error { return nil }
+func (*stubLinks) ByID(context.Context, uuid.UUID, uuid.UUID) (*link.Link, error) {
+	return nil, nil
+}
+func (*stubLinks) List(context.Context, uuid.UUID) ([]link.Link, error) { return nil, nil }
+func (*stubLinks) Update(context.Context, *link.Link) error             { return nil }
+func (*stubLinks) Remove(context.Context, uuid.UUID, uuid.UUID) error   { return nil }
+func (*stubLinks) Count(context.Context, uuid.UUID) (int, error)        { return 0, nil }
+func (*stubLinks) RemoveForTasks(context.Context, uuid.UUID, []uuid.UUID) error {
+	return nil
+}
+
+type stubTags struct{}
+
+func (*stubTags) List(context.Context, uuid.UUID) ([]tag.Tag, error) { return nil, nil }
+func (*stubTags) Upsert(context.Context, uuid.UUID, string) (*tag.Tag, error) {
+	return nil, nil
+}
+func (*stubTags) Attach(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error { return nil }
+func (*stubTags) Detach(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error { return nil }
+func (*stubTags) DeleteOrphans(context.Context, uuid.UUID) error                { return nil }

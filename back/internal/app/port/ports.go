@@ -42,6 +42,8 @@ type TaskRepository interface {
 	Subtasks(ctx context.Context, userID, parentID uuid.UUID) ([]task.Task, error)
 	ListGraph(ctx context.Context, filter task.Filter) ([]task.Node, error)
 	Search(ctx context.Context, userID uuid.UUID, term string, limit int) ([]task.Hit, error)
+	// All is the export's read: every task the account ever had, with no cap.
+	All(ctx context.Context, userID uuid.UUID) ([]task.Task, error)
 }
 
 type UserRepository interface {
@@ -53,6 +55,8 @@ type UserRepository interface {
 	// LockAccount serialises whatever the caller is about to decide from a
 	// count of the account's own rows.
 	LockAccount(ctx context.Context, id uuid.UUID) error
+	SoftDelete(ctx context.Context, id uuid.UUID, at time.Time) error
+	SetSubscription(ctx context.Context, id uuid.UUID, subscription user.Subscription) error
 	// TouchStreak marks the user's own calendar day and reports what that did
 	// to the streak. A second call on the same day changes nothing.
 	TouchStreak(ctx context.Context, id uuid.UUID, at time.Time) (user.StreakChange, error)
@@ -144,4 +148,9 @@ type RefreshStore interface {
 	Save(ctx context.Context, userID uuid.UUID, tokenID string, ttl time.Duration) error
 	Consume(ctx context.Context, userID uuid.UUID, tokenID string) (bool, error)
 	RevokeAll(ctx context.Context, userID uuid.UUID) error
+	// BlockAccess disowns the access tokens already issued to an account.
+	// They carry no state, so nothing else can withdraw them before they
+	// expire on their own.
+	BlockAccess(ctx context.Context, userID uuid.UUID, ttl time.Duration) error
+	AccessBlocked(ctx context.Context, userID uuid.UUID) (bool, error)
 }

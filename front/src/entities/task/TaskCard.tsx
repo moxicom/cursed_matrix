@@ -90,7 +90,6 @@ export function TaskCard({
               {task.title}
             </button>
           </h3>
-          <span className="flex-none pt-2 text-9 text-txt-ghost">{task.id.toUpperCase()}</span>
         </div>
 
         <div className="mt-7 flex flex-wrap items-center gap-x-9 gap-y-4 pl-24">

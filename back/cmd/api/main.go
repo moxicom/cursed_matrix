@@ -140,12 +140,16 @@ func run() error {
 		)
 		limiter := redisadapter.NewRateLimiter(redisCache.Client(), utils.ForComponent(log, "ratelimit"))
 		limits := httphandler.RateLimits{
-			AddressAttempts: cfg.Auth.RateLimit.AddressAttempts,
-			AddressWindow:   cfg.Auth.RateLimit.AddressWindow,
-			AccountAttempts: cfg.Auth.RateLimit.AccountAttempts,
-			AccountWindow:   cfg.Auth.RateLimit.AccountWindow,
-			ReadAttempts:    cfg.Auth.RateLimit.ReadAttempts,
-			ReadWindow:      cfg.Auth.RateLimit.ReadWindow,
+			AddressAttempts:  cfg.Auth.RateLimit.AddressAttempts,
+			AddressWindow:    cfg.Auth.RateLimit.AddressWindow,
+			AccountAttempts:  cfg.Auth.RateLimit.AccountAttempts,
+			AccountWindow:    cfg.Auth.RateLimit.AccountWindow,
+			RegisterAttempts: cfg.Auth.RateLimit.RegisterAttempts,
+			RegisterWindow:   cfg.Auth.RateLimit.RegisterWindow,
+			ReadAttempts:     cfg.Auth.RateLimit.ReadAttempts,
+			ReadWindow:       cfg.Auth.RateLimit.ReadWindow,
+			WriteAttempts:    cfg.Auth.RateLimit.WriteAttempts,
+			WriteWindow:      cfg.Auth.RateLimit.WriteWindow,
 		}
 		graphs := graph.NewService(
 			postgres.NewLinkRepository(pool),

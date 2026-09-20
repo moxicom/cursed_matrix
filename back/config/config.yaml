@@ -47,10 +47,16 @@ auth:
     address_window: 5m
     account_attempts: 5
     account_window: 15m
-    # Far above what a person browsing can produce: this stops a runaway
-    # client, it does not pace the UI.
+    # Making accounts is the one open endpoint that costs a hash, a row and a
+    # free trial. A person needs one; a script wants thousands.
+    register_attempts: 5
+    register_window: 1h
+    # Far above what a person browsing can produce: these stop a runaway
+    # client, they do not pace the UI.
     read_attempts: 300
     read_window: 1m
+    write_attempts: 240
+    write_window: 1m
 
 # Billing is off until a provider is chosen. While it is off, buying a plan
 # grants it outright for granted_period — the product works end to end and

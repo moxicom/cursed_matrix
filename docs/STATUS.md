@@ -3,7 +3,7 @@
 What is built, what is not, and what proves it. Every row points at the
 requirement in `CLAUDE.md` and at the code or test that backs the claim.
 
-Updated: 2026-09-20 (backend complete and connected; the frontend now reads and writes through the API, and the mock fixtures are deleted).
+Updated: 2026-09-20 (backend complete and connected; hardened against flooding, account spam and two reachable dependency vulnerabilities — see §6).
 
 ## Legend
 
@@ -240,3 +240,74 @@ cookie (`docs/API.md` §1.4, rewritten); the contract is API-first —
 returns the link network with its tasks, as `docs/API.md` specifies.
 
 The remaining *Open Questions* live in `docs/SPEC.md` and are not repeated here.
+
+---
+
+## 6. Attack surface
+
+Written before wiring a payment provider, because a provider turns a nuisance
+into a bill. Each row states what is enforced, where, and what proved it.
+
+### What refuses a caller
+
+| Ceiling | Where | Value | Answers |
+|---|---|---|---|
+| Requests per address | nginx `cursed_api` | 20/s, burst 40 | volume, before it reaches Go or Redis |
+| Credential requests per address | nginx `cursed_auth` | 20/min | the cost of being guessed at |
+| Connections per address | nginx `cursed_conn` | 48 | a connection that never finishes |
+| Credential attempts per address | backend | 20 / 5 min | one address scanning many accounts |
+| Credential attempts per account | backend | 5 / 15 min | many addresses guessing one account |
+| Registrations per address | backend | 5 / hour | one address manufacturing accounts and trials |
+| Reads per account | backend | 300 / min | a session repeating an unbounded query |
+| Writes per account | backend | 240 / min | a session churning: create and delete stays under every quota for ever |
+| Public reads per address | backend | 300 / min, own key | pricing, which has no session to count by |
+| Concurrent password hashes | process | 4, then refuse after 2s | argon2 is 64 MiB by design, and the design is ours to pay for |
+
+The two layers are deliberate. nginx stops volume without knowing anything; the
+backend stops the attacks that volume alone cannot describe — this account,
+this name, this address making accounts. It also means a Redis outage, which
+makes the backend's counters fail open on purpose, no longer removes every
+ceiling: the edge still holds.
+
+### What bounds a request
+
+| Bound | Value | Where |
+|---|---|---|
+| Request body | 64 KiB at the edge, 16 KiB read by the backend | `client_max_body_size`, `http.MaxBytesReader` |
+| Header read | 5s | `read_header_timeout` |
+| Whole request | 60s | `middleware.Timeout` |
+| Title / description / tag | 100 / 2000 / 24 | service validation and `CHECK` constraints |
+| Password | 12–128 | before the hash is computed |
+| Unknown JSON fields | refused | `DisallowUnknownFields` |
+| Content-Type | must be JSON | so no HTML form can post one |
+
+### Dependencies
+
+`govulncheck` found two reachable vulnerabilities and both are fixed:
+
+| Advisory | Was | Now | Why it mattered |
+|---|---|---|---|
+| GO-2025-3553 | `golang-jwt/v5 v5.2.1` | `v5.2.2` | excessive allocation parsing a token header — on the path of every request carrying a session cookie |
+| GO-2025-3540 | `go-redis/v9 v9.7.0` | `v9.7.3` | responses could arrive out of order when `CLIENT SETINFO` timed out on connection setup |
+
+`npm audit` reported four; the Vite and esbuild ones are gone with Vite 7. The
+two that remain are `react-router` 6:
+
+* **SSR hydration, `deserializeErrors()`** — needs server-side rendering, which
+  this application does not do.
+* **Open redirect via a backslash in `<Link>`/`useNavigate`** — every redirect
+  target in this application passes through `isInternalPath`
+  (`front/src/shared/lib/safe-path.ts`), which rejects a value that does not
+  start with `/`, starts with `//`, contains a backslash, or contains a control
+  character. The fix upstream is react-router 7, a major upgrade; it is worth
+  doing on its own, not as part of a security change.
+
+### Left as it is, with reasons
+
+| Thing | Why |
+|---|---|
+| The backend's counters fail open when Redis is down | A limiter that shuts the door when its own store is down turns a cache outage into a product outage. The edge ceilings are not affected by it. |
+| An account ceiling can lock a real user out | Anyone who knows a username can spend its budget. The alternative is not counting it, which is worse; a challenge instead of a refusal is the upgrade path. |
+| Registration says when a username is taken | It has to: the user must be told to pick another. The registration ceiling bounds how fast that can be used to enumerate names, and a refused attempt costs a slot too. |
+| `X-Real-IP` is trusted | nginx overwrites it from its own connection, and the backend publishes no port. A deployment that exposes the backend directly must stop trusting it. |
+| Tags and activity rows have no ceiling of their own | The quotas in `CLAUDE.md` §64 name active tasks and links, and nothing else. The write ceiling bounds the rate — 240 a minute — but not the total, so one free account can still accumulate rows indefinitely over days. Adding a tag quota would be inventing a product rule; it is named here so the decision is made deliberately rather than by omission. |

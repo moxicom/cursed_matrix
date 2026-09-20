@@ -152,6 +152,10 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 type client struct {
 	handler http.Handler
 	cookies map[string]string
+	// address is what the reverse proxy would report. Empty leaves httptest's
+	// own, which is the same for every caller — fine until a test needs two
+	// callers the address ceilings can tell apart.
+	address string
 }
 
 func (c *client) do(t *testing.T, method, path, body string) *httptest.ResponseRecorder {
@@ -159,6 +163,9 @@ func (c *client) do(t *testing.T, method, path, body string) *httptest.ResponseR
 
 	request := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 	request.Header.Set("Content-Type", "application/json")
+	if c.address != "" {
+		request.Header.Set("X-Real-IP", c.address)
+	}
 	for name, value := range c.cookies {
 		request.AddCookie(&http.Cookie{Name: name, Value: value})
 	}

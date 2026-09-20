@@ -93,9 +93,9 @@ func (s *Service) Register(ctx context.Context, creds Credentials) (*Session, er
 		return nil, err
 	}
 
-	hash, err := utils.HashPassword(creds.Password)
+	hash, err := utils.HashPassword(ctx, creds.Password)
 	if err != nil {
-		return nil, shared.WrapError(err, shared.CodeInternal, nil)
+		return nil, hashingError(err)
 	}
 
 	language := creds.Language
@@ -141,17 +141,19 @@ func (s *Service) Login(ctx context.Context, username, password, timezone string
 	account, err := s.users.ByUsername(ctx, strings.TrimSpace(username))
 	if err != nil {
 		if shared.CodeOf(err) == shared.CodeUserNotFound {
-			_ = utils.VerifyAbsentAccount(password)
+			if absent := utils.VerifyAbsentAccount(ctx, password); errors.Is(absent, utils.ErrHashBusy) {
+				return nil, hashingError(absent)
+			}
 			return nil, shared.NewError(shared.CodeInvalidCredentials, nil)
 		}
 		return nil, err
 	}
 
-	if err := utils.VerifyPassword(password, account.PasswordHash); err != nil {
+	if err := utils.VerifyPassword(ctx, password, account.PasswordHash); err != nil {
 		if errors.Is(err, utils.ErrPasswordMismatch) {
 			return nil, shared.NewError(shared.CodeInvalidCredentials, nil)
 		}
-		return nil, shared.WrapError(err, shared.CodeInternal, nil)
+		return nil, hashingError(err)
 	}
 
 	now := s.clock.Now()
@@ -367,11 +369,11 @@ func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID, password 
 			return err
 		}
 
-		if err := utils.VerifyPassword(password, account.PasswordHash); err != nil {
+		if err := utils.VerifyPassword(ctx, password, account.PasswordHash); err != nil {
 			if errors.Is(err, utils.ErrPasswordMismatch) {
 				return shared.NewError(shared.CodeInvalidCredentials, nil)
 			}
-			return shared.WrapError(err, shared.CodeInternal, nil)
+			return hashingError(err)
 		}
 
 		if err := s.users.SoftDelete(ctx, userID, s.clock.Now().UTC()); err != nil {
@@ -390,4 +392,16 @@ func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID, password 
 		s.forget(ctx, userID)
 		return nil
 	})
+}
+
+// hashingError separates "this server is saturated" from "this server is
+// broken". Every hash runs in one of a few slots, and a request that waited
+// for one and did not get it has learned nothing about the password: telling
+// the caller to try again shortly is the truthful answer, and a 500 would send
+// an operator looking for a fault that is not there.
+func hashingError(err error) error {
+	if errors.Is(err, utils.ErrHashBusy) {
+		return shared.WrapError(err, shared.CodeRateLimited, map[string]any{"retryAfterSeconds": 2})
+	}
+	return shared.WrapError(err, shared.CodeInternal, nil)
 }

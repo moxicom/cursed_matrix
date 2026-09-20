@@ -26,6 +26,49 @@ map $uri $cursed_cache_control {
     ~^/api(/|$)    "";
 }
 
+# HSTS, but only once there is TLS to promise.
+#
+# This container serves plain HTTP; the certificate lives in whatever
+# terminates TLS in front of it. Sending the header unconditionally would tell
+# a browser to refuse plain HTTP even on a development host reached over it,
+# and an empty value makes nginx omit the header entirely — so it appears the
+# moment a terminator forwards X-Forwarded-Proto: https, and not before.
+map $http_x_forwarded_proto $cursed_hsts {
+    default "";
+    https   "max-age=31536000; includeSubDomains";
+}
+
+# --- rate and connection limits --------------------------------------
+#
+# The backend counts attempts too, and more precisely — per account as well as
+# per address. This layer exists because that counting costs a request: a
+# flood that nginx refuses never reaches Go, never touches Redis and never
+# allocates 64 MiB for an argon2 hash. The edge stops volume; the application
+# stops the attacks volume alone cannot describe.
+#
+# Keys are the client address as nginx sees it on its own connection, so a
+# forged X-Forwarded-For cannot spread a flood across imaginary addresses.
+
+# An empty key is not counted, which is how one location carries two ceilings:
+# the strict one applies only to the credential endpoints.
+map $uri $cursed_auth_key {
+    default                                   "";
+    ~^/api/v1/auth/(register|login|refresh)$  $binary_remote_addr;
+}
+
+# 20 r/s sustained is far above a person browsing — the board opens with a
+# handful of parallel reads — and far below what a loop produces.
+limit_req_zone  $binary_remote_addr  zone=cursed_api:10m   rate=20r/s;
+# 20 a minute across register, login and refresh. Guessing is bounded by the
+# account counter in the backend; this bounds the cost of being guessed at.
+limit_req_zone  $cursed_auth_key     zone=cursed_auth:10m  rate=20r/m;
+limit_conn_zone $binary_remote_addr  zone=cursed_conn:10m;
+
+# The same status the application's own limiter answers with, so a client sees
+# one behaviour whichever layer refused it.
+limit_req_status  429;
+limit_conn_status 429;
+
 server {
     listen      8080;
     server_name _;
@@ -37,9 +80,15 @@ server {
     # (see the /api location) rather than at startup.
     resolver 127.0.0.11 valid=10s ipv6=off;
 
-    # Uploads are small JSON bodies; the import endpoint (API.md §17.2) is the
-    # only one that carries a file, and 10m covers a large Todoist export.
-    client_max_body_size 10m;
+    # Nothing here takes an upload. Every request body is a small JSON
+    # document, and the backend reads at most 16 KiB of one; a cap here means
+    # a larger body is refused before nginx has buffered it.
+    client_max_body_size 1m;
+
+    # One address, at most this many connections held open at once. Slowloris
+    # is already answered by read_header_timeout in Go, but a connection that
+    # never finishes still occupies a worker until then.
+    limit_conn cursed_conn 48;
 
     server_tokens off;
 
@@ -65,6 +114,7 @@ server {
     add_header Permissions-Policy      "geolocation=(), microphone=(), camera=()" always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
     add_header Cache-Control           $cursed_cache_control always;
+    add_header Strict-Transport-Security $cursed_hsts always;
 
     # --- liveness --------------------------------------------------------
     # Answered by nginx alone, so the container stays healthy while the API is
@@ -90,6 +140,16 @@ server {
     # This way the frontend comes up regardless and /api answers 502 until the
     # backend is running.
     location /api/ {
+        # Both ceilings apply; the auth one counts nothing outside the
+        # credential endpoints, because its key is empty there.
+        limit_req zone=cursed_api  burst=40 nodelay;
+        limit_req zone=cursed_auth burst=10 nodelay;
+
+        # Well above the 16 KiB the backend will read, so the refusal a client
+        # sees for an oversized body is the application's, with a code in it —
+        # not a bare 413 from the proxy.
+        client_max_body_size 64k;
+
         set $backend "${BACKEND_HOST}:${BACKEND_PORT}";
         proxy_pass http://$backend$request_uri;
 

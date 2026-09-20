@@ -25,7 +25,7 @@ func TestHashAndVerify(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			hash, err := utils.HashPassword(tc.password)
+			hash, err := utils.HashPassword(t.Context(), tc.password)
 			if err != nil {
 				t.Fatalf("HashPassword: %v", err)
 			}
@@ -33,7 +33,7 @@ func TestHashAndVerify(t *testing.T) {
 				t.Fatal("the hash contains the password")
 			}
 
-			err = utils.VerifyPassword(tc.verify, hash)
+			err = utils.VerifyPassword(t.Context(), tc.verify, hash)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("VerifyPassword = %v, want %v", err, tc.wantErr)
 			}
@@ -42,11 +42,11 @@ func TestHashAndVerify(t *testing.T) {
 }
 
 func TestHashIsSaltedPerCall(t *testing.T) {
-	first, err := utils.HashPassword("same password")
+	first, err := utils.HashPassword(t.Context(), "same password")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
-	second, err := utils.HashPassword("same password")
+	second, err := utils.HashPassword(t.Context(), "same password")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
@@ -55,14 +55,14 @@ func TestHashIsSaltedPerCall(t *testing.T) {
 		t.Fatal("two hashes of one password are identical; the salt is not random")
 	}
 	for _, hash := range []string{first, second} {
-		if err := utils.VerifyPassword("same password", hash); err != nil {
+		if err := utils.VerifyPassword(t.Context(), "same password", hash); err != nil {
 			t.Errorf("a freshly made hash does not verify: %v", err)
 		}
 	}
 }
 
 func TestVerifyRejectsMalformedHashes(t *testing.T) {
-	valid, err := utils.HashPassword("password")
+	valid, err := utils.HashPassword(t.Context(), "password")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestVerifyRejectsMalformedHashes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := utils.VerifyPassword("password", tc.hash); err == nil {
+			if err := utils.VerifyPassword(t.Context(), "password", tc.hash); err == nil {
 				t.Error("VerifyPassword accepted a hash it cannot read")
 			}
 		})
@@ -100,7 +100,7 @@ func TestVerifyAbsentAccountAlwaysFails(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := utils.VerifyAbsentAccount(tc.password); !errors.Is(err, utils.ErrPasswordMismatch) {
+			if err := utils.VerifyAbsentAccount(t.Context(), tc.password); !errors.Is(err, utils.ErrPasswordMismatch) {
 				t.Errorf("VerifyAbsentAccount = %v, want ErrPasswordMismatch", err)
 			}
 		})

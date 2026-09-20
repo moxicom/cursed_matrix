@@ -197,7 +197,7 @@ func TestUpdateSettingsRetiresTheCache(t *testing.T) {
 // timezone. Missing it there would leave the board reading deadlines in the
 // old zone until the entry expired on its own.
 func TestLoginRetiresTheCacheWhenTheZoneChanges(t *testing.T) {
-	hash, err := utils.HashPassword("correct horse battery")
+	hash, err := utils.HashPassword(t.Context(), "correct horse battery")
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}

@@ -48,8 +48,12 @@ auth:
     address_window: 5m
     account_attempts: 5
     account_window: 15m
+    register_attempts: 5
+    register_window: 1h
     read_attempts: 300
     read_window: 1m
+    write_attempts: 240
+    write_window: 1m
 
 billing:
   enabled: false
@@ -77,6 +81,9 @@ func setSecrets(t *testing.T) {
 	t.Setenv("TEST_AUTH_SECRET", "auth-secret")
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("REDIS_URL", "")
+	// Like the two above: the environment overrides the file, and the shell
+	// running the tests may well carry the project's own .env.
+	t.Setenv("APP_ENV", "")
 }
 
 func TestLoadReadsStructureAndResolvesSecrets(t *testing.T) {
@@ -165,6 +172,18 @@ func TestLoadRejectsBrokenConfigurations(t *testing.T) {
 			name:     "read ceiling zero",
 			body:     strings.Replace(sampleConfig, "read_attempts: 300", "read_attempts: 0", 1),
 			wantWord: "auth.rate_limit.read_attempts",
+		},
+		{
+			name:     "write ceiling zero",
+			body:     strings.Replace(sampleConfig, "write_attempts: 240", "write_attempts: 0", 1),
+			wantWord: "auth.rate_limit.write_attempts",
+		},
+		{
+			// Without a ceiling here one address can manufacture accounts, and
+			// a config that forgot it must not start.
+			name:     "registration ceiling zero",
+			body:     strings.Replace(sampleConfig, "register_attempts: 5", "register_attempts: 0", 1),
+			wantWord: "auth.rate_limit.register_attempts",
 		},
 		{
 			name:     "unknown ssl mode",
@@ -404,5 +423,45 @@ func TestShippedConfigLoads(t *testing.T) {
 
 	if _, err := config.Load("../../config/config.yaml"); err != nil {
 		t.Fatalf("the configuration shipped in the repository does not load: %v", err)
+	}
+}
+
+// The YAML is committed and the same file is mounted on every host, so the
+// deployment has to be able to say it is production without editing it.
+// Getting this wrong is quiet and expensive: Development() decides whether the
+// session cookie carries Secure.
+func TestEnvironmentComesFromTheEnvironment(t *testing.T) {
+	tests := []struct {
+		name        string
+		appEnv      string
+		wantEnv     string
+		wantDevMode bool
+	}{
+		{name: "unset leaves the file's value", appEnv: "", wantEnv: "production", wantDevMode: false},
+		{name: "production turns off development", appEnv: "production", wantEnv: "production", wantDevMode: false},
+		{name: "anything but production is development", appEnv: "staging", wantEnv: "staging", wantDevMode: true},
+		{name: "surrounding space is trimmed", appEnv: "  production  ", wantEnv: "production", wantDevMode: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setSecrets(t)
+			// Set in every case: an inherited value from the shell would make
+			// the "unset" case pass or fail for the wrong reason.
+			t.Setenv("APP_ENV", tt.appEnv)
+
+			cfg, err := config.Load(writeConfig(t, sampleConfig))
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+
+			if cfg.Env != tt.wantEnv {
+				t.Errorf("Env = %q, want %q", cfg.Env, tt.wantEnv)
+			}
+			if cfg.Development() != tt.wantDevMode {
+				t.Errorf("Development() = %v, want %v — this decides the Secure cookie flag",
+					cfg.Development(), tt.wantDevMode)
+			}
+		})
 	}
 }

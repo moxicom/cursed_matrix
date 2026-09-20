@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -20,6 +21,12 @@ const (
 
 	databaseURLOverrideEnv = "DATABASE_URL"
 	redisURLOverrideEnv    = "REDIS_URL"
+
+	// envOverrideEnv names the deployment rather than tunes it, so it comes
+	// from the environment like the secrets do. The YAML is committed and the
+	// same file is mounted everywhere; whether this is production is a
+	// property of the host, not of the file.
+	envOverrideEnv = "APP_ENV"
 )
 
 // Config is the process configuration: structure and tuning from YAML, secrets
@@ -77,18 +84,28 @@ type AuthConfig struct {
 	RateLimit  RateLimitConfig `yaml:"rate_limit" validate:"required"`
 }
 
-// RateLimitConfig bounds what one caller may ask for. The two credential
-// ceilings are separate because one address trying many accounts and many
-// addresses trying one account are different attacks and neither counter sees
-// the other; the read ceiling is a different concern again — not guessing, but
-// one signed-in session repeating an expensive query.
+// RateLimitConfig bounds what one caller may ask for. Each ceiling answers an
+// attack the others cannot see:
+//
+//   - Address: one address trying many accounts — a scan.
+//   - Account: many addresses trying one account — stuffing.
+//   - Register: one address making many accounts — the cost is an argon2 hash
+//     and a row each, and a thousand of them is a thousand free trials.
+//   - Read: one session repeating an unbounded query.
+//   - Write: one session repeating a transaction. The quota bounds how much an
+//     account may hold, not how fast it may churn: create and delete in a loop
+//     stays under every quota and still writes for ever.
 type RateLimitConfig struct {
-	AddressAttempts int           `yaml:"address_attempts" validate:"required,gt=0"`
-	AddressWindow   time.Duration `yaml:"address_window" validate:"required,gt=0"`
-	AccountAttempts int           `yaml:"account_attempts" validate:"required,gt=0"`
-	AccountWindow   time.Duration `yaml:"account_window" validate:"required,gt=0"`
-	ReadAttempts    int           `yaml:"read_attempts" validate:"required,gt=0"`
-	ReadWindow      time.Duration `yaml:"read_window" validate:"required,gt=0"`
+	AddressAttempts  int           `yaml:"address_attempts" validate:"required,gt=0"`
+	AddressWindow    time.Duration `yaml:"address_window" validate:"required,gt=0"`
+	AccountAttempts  int           `yaml:"account_attempts" validate:"required,gt=0"`
+	AccountWindow    time.Duration `yaml:"account_window" validate:"required,gt=0"`
+	RegisterAttempts int           `yaml:"register_attempts" validate:"required,gt=0"`
+	RegisterWindow   time.Duration `yaml:"register_window" validate:"required,gt=0"`
+	ReadAttempts     int           `yaml:"read_attempts" validate:"required,gt=0"`
+	ReadWindow       time.Duration `yaml:"read_window" validate:"required,gt=0"`
+	WriteAttempts    int           `yaml:"write_attempts" validate:"required,gt=0"`
+	WriteWindow      time.Duration `yaml:"write_window" validate:"required,gt=0"`
 }
 
 // BillingConfig decides whether money is taken at all.
@@ -176,6 +193,12 @@ func load(path string, required secretRequirement) (Config, error) {
 }
 
 func (c *Config) applyDefaults() {
+	// The environment overrides the file: a deployment must be able to say it
+	// is production without editing a committed file, and forgetting to edit
+	// that file is how a session cookie goes out without Secure.
+	if fromEnv := strings.TrimSpace(os.Getenv(envOverrideEnv)); fromEnv != "" {
+		c.Env = fromEnv
+	}
 	if c.Env == "" {
 		c.Env = "development"
 	}

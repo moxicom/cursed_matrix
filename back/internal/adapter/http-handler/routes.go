@@ -35,18 +35,27 @@ func Routes(
 	// what keeps a cross-site POST from carrying cookies here.
 	router.Group(func(public chi.Router) {
 		public.Use(LimitByAddress(limiter, limits))
-		public.Post("/auth/register", api.Register)
+		// A second, much stricter counter on top of the shared credential one:
+		// twenty attempts in five minutes is a reasonable number of mistyped
+		// passwords and an unreasonable number of new accounts.
+		public.With(LimitRegistrations(limiter, limits)).Post("/auth/register", api.Register)
 		public.Post("/auth/login", api.Login)
 	})
 
-	// The pricing page is one of the two that does not need an account.
+	// The pricing page is one of the two that does not need an account — and
+	// being public is exactly why it is counted: there is no session to count
+	// by. Its own budget, not the credential one: a visitor reading the prices
+	// must not spend what they need in order to sign in.
 	router.Group(func(pricing chi.Router) {
+		pricing.Use(LimitPublicByAddress(limiter, limits))
 		pricing.Get("/plans", api.ListPlans)
 	})
 
 	// Refreshing and logging out are authenticated by the refresh cookie itself,
-	// not by the access token: that one is expected to be stale or gone.
+	// not by the access token: that one is expected to be stale or gone. Counted
+	// by address for the same reason: there is no verified account here yet.
 	router.Group(func(refreshing chi.Router) {
+		refreshing.Use(LimitByAddress(limiter, limits))
 		refreshing.Use(RequireCSRF)
 		refreshing.Post("/auth/refresh", api.Refresh)
 		refreshing.Post("/auth/logout", api.Logout)
@@ -63,7 +72,11 @@ func Routes(
 		// still has to be able to see it, change their settings and pay.
 		session.Post("/auth/logout-all", api.LogoutAll)
 		session.Get("/me", api.GetMe)
-		session.Patch("/me", api.UpdateSettings)
+		// A settings write is a row and a cache invalidation each time, so it
+		// carries the write ceiling. "Sign out everywhere" deliberately does
+		// not: it is the endpoint that stops a runaway client, and throttling
+		// it would take away the brake.
+		session.With(LimitWrites(limiter, limits)).Patch("/me", api.UpdateSettings)
 		// The export reads every task the account ever had, which is the same
 		// unbounded work the board does, so it carries the same ceiling.
 		session.With(LimitReads(limiter, limits)).Post("/me/export", api.ExportAccount)
@@ -78,6 +91,9 @@ func Routes(
 		// before its routes, so the gate needs a group of its own.
 		session.Group(func(app chi.Router) {
 			app.Use(RequireSubscription(clock))
+			// Every change below passes this. Reads are untouched by it, so a
+			// client that has run out of write budget can still see its work.
+			app.Use(LimitWrites(limiter, limits))
 
 			// Only the board carries the read ceiling. On the whole group it would
 			// mean a client stuck in a loop also loses "sign out everywhere" —

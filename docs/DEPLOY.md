@@ -6,11 +6,87 @@ Compose plugin.
 
 ## 0. What the server needs
 
-* Docker Engine 24+ with `docker compose` v2.
+* Docker Engine 24+ with the **Compose v2 plugin** and **buildx**.
 * A domain pointing at the host, if the site is to be reached by name.
 * Ports 80 and 443 free, for whatever terminates TLS.
 * About 2 GB of RAM: Postgres, Redis, the API, nginx, VictoriaMetrics and
   Grafana. Dropping the monitoring pair frees roughly half of it.
+
+Check before anything else:
+
+```sh
+docker compose version     # Docker Compose version v2.x or later
+docker buildx version      # github.com/docker/buildx v0.x
+```
+
+If the first one answers
+
+```
+unknown flag: --profile
+Usage:  docker [OPTIONS] COMMAND [ARG...]
+```
+
+or `'compose' is not a docker command`, the plugin is missing: the docker CLI
+did not recognise `compose` as a subcommand and tried to read the rest as its
+own flags. This is what `apt install docker.io` gives you — the engine from the
+distribution's repository, without the plugins.
+
+The stack needs both plugins, not out of taste: the compose files use
+`profiles:` and `!override`, which are Compose v2, and the images build with
+`--mount=type=cache` and `--platform=$BUILDPLATFORM`, which are BuildKit.
+
+Both plugins are single binaries the CLI looks for in
+`/usr/local/lib/docker/cli-plugins`. Installing them touches no package, does
+not restart the daemon, and does not disturb anything already running — which
+matters if this host already serves something from Docker:
+
+```sh
+sudo mkdir -p /usr/local/lib/docker/cli-plugins
+ARCH=$(dpkg --print-architecture)          # amd64 or arm64
+
+sudo curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+BUILDX=$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest \
+  | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+sudo curl -SL "https://github.com/docker/buildx/releases/download/$BUILDX/buildx-$BUILDX.linux-$ARCH" \
+  -o /usr/local/lib/docker/cli-plugins/docker-buildx
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+
+docker compose version && docker buildx version
+```
+
+Switching the host to Docker's own packages (`docker-ce`) is the tidier
+long-term answer, but it removes and reinstalls the engine: the daemon stops,
+and every container on the host stops with it. Do that during a window where
+that is acceptable, never as a step in this procedure.
+
+### If something already runs on this host
+
+The stack publishes these ports. Everything but the first is on the loopback,
+but a collision still stops the container from starting:
+
+| Port | Service | Bound to |
+|---|---|---|
+| 8080 | the site (`FRONT_PORT`) | every interface unless you change it |
+| 5432 | Postgres | 127.0.0.1 |
+| 6379 | Redis | 127.0.0.1 |
+| 8428 | VictoriaMetrics | 127.0.0.1 |
+| 3000 | Grafana | 127.0.0.1 |
+
+```sh
+sudo ss -ltnp | grep -E ':(8080|5432|6379|8428|3000)\b'
+```
+
+Anything that answers is a collision; change the matching `*_PORT` in `.env`.
+The compose project is named `cursed-matrix`, so its networks and containers
+are its own and `docker compose down` here stops nothing else.
+
+With a reverse proxy already on the host, skip §2 and point the proxy you have
+at `FRONT_PORT` instead. What it must send is in §2: `X-Forwarded-Proto`, so
+HSTS appears, and `X-Real-IP`, without which every visitor shares one
+rate-limit counter.
 
 ## 1. Fetch and configure
 
@@ -22,13 +98,41 @@ cp .env.example .env
 Fill in `.env`. Every secret is generated, never chosen:
 
 ```sh
-for name in POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET GRAFANA_ADMIN_PASSWORD; do
-  printf '%s=%s\n' "$name" "$(openssl rand -hex 32)"
-done
+make secrets
 ```
+
+It writes a fresh value into every secret that is still empty, leaves the ones
+already set alone, and then asks compose to read the file back — so the step
+that says it worked has checked.
 
 Hex and not base64: the Postgres and Redis passwords are substituted into
 connection URLs, where a `/` or a `+` breaks the parse.
+
+### "I filled it in and compose still says it is missing"
+
+Compose prefers an **environment variable** over the value in `.env`. If one of
+these names is exported in the shell — empty — it wins and the file is ignored:
+
+```sh
+printenv REDIS_PASSWORD        # an empty line means it is exported, and empty
+env | grep -E 'POSTGRES_PASSWORD|REDIS_PASSWORD|JWT_SECRET|GRAFANA_ADMIN'
+unset REDIS_PASSWORD           # then run compose again
+```
+
+The Makefile does this to itself: it reads `.env` at startup and exports what
+it found, so a value filled in during the same `make` run is not the one its
+later commands see. That is why `make secrets` clears these four names before
+checking.
+
+If nothing is exported, look at the line itself:
+
+```sh
+grep -n 'REDIS_PASSWORD' .env | cat -A
+```
+
+`cat -A` shows what is otherwise invisible: `^M$` at the end means Windows line
+endings and a stray carriage return inside the value; a trailing space, or
+`KEY = value` with spaces around the `=`, means the name never matched.
 
 Two settings decide whether this is a deployment or a laptop:
 
@@ -90,21 +194,20 @@ that does not set it makes every visitor share one counter.
 ## 3. Build, migrate, start
 
 ```sh
-docker compose --profile backend build
+docker compose build
 docker compose up -d postgres redis
 docker compose run --rm migrate up          # needs no Go on the host
-docker compose --profile backend up -d
+docker compose up -d
 ```
 
 Migrations are a separate step on purpose: the API does not run them at
 startup, so an upgrade that needs a schema change fails loudly before the new
 code serves a request against the old schema.
 
-**`--profile backend` is not optional.** A plain `docker compose up -d` starts
-everything *except* the API, leaving whatever was already running in place — a
-deploy that appears to succeed and changes nothing. Same for the mounted
-`back/config/config.yaml`: editing it needs `docker compose --profile backend
-up -d` to take effect, not a plain `up`.
+`back/config/config.yaml` is mounted rather than baked into the image, so
+editing it takes effect on the next `docker compose up -d` — but only then. A
+running container keeps the file it parsed at startup, and its health probe,
+which re-reads the file, is what will tell you the two have diverged.
 
 ## 4. Check it came up
 
@@ -122,9 +225,9 @@ exercises the database, Redis, the cookie scheme and the XP ledger in one go.
 
 ```sh
 git pull
-docker compose --profile backend build
+docker compose build
 docker compose run --rm migrate up
-docker compose --profile backend up -d
+docker compose up -d
 ```
 
 `restart: unless-stopped` brings everything back after a reboot on its own.

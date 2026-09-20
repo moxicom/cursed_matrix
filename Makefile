@@ -15,10 +15,10 @@ POSTGRES_USER ?= cursed
 POSTGRES_DB   ?= cursed_matrix
 
 .DEFAULT_GOAL := help
-.PHONY: help init up up-backend dev down stop restart build rebuild ps logs \
+.PHONY: help init up migrate dev down stop restart build rebuild ps logs \
         logs-front health psql redis-cli pg-dump metrics grafana dev-reset \
         front-shell clean nuke back-build back-test back-test-integration \
-        back-lint back-tidy back-migrate-up back-migrate-down back-migrate-status \
+        secrets back-lint back-tidy back-migrate-up back-migrate-down back-migrate-status \
         back-migrate-create back-shell back-image-debug back-fmt back-generate
 
 help: ## Show this help
@@ -33,11 +33,30 @@ init: ## Create .env from the template (does not overwrite an existing one)
 	  echo "(hex, not base64: these go into postgres:// and redis:// URLs,"; \
 	  echo " where a / or + from base64 breaks the URL parse)"; }
 
-up: ## Start frontend, datastores and monitoring
+secrets: ## Generate any secret in .env that is still empty
+	@test -f .env || { echo "no .env — run 'make init' first" >&2; exit 1; }
+	@for name in POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET GRAFANA_ADMIN_PASSWORD; do \
+	  if grep -qE "^$$name=.+" .env; then \
+	    echo "  $$name already set"; \
+	  else \
+	    value=$$(openssl rand -hex 32); \
+	    sed -i.bak "s|^$$name=.*|$$name=$$value|" .env && rm -f .env.bak; \
+	    echo "  $$name generated"; \
+	  fi; \
+	done
+	@echo "Checking that compose can read them:"
+	@# With the names cleared from the environment: this Makefile exports what
+	@# it read from .env at startup, which was empty, and compose prefers an
+	@# environment variable over the file. The same trap catches anyone whose
+	@# shell exports one of these names — see `printenv REDIS_PASSWORD`.
+	@env -u POSTGRES_PASSWORD -u REDIS_PASSWORD -u JWT_SECRET -u GRAFANA_ADMIN_PASSWORD \
+	  $(COMPOSE) config --quiet && echo "  .env is complete"
+
+up: ## Build and start the whole stack
 	$(COMPOSE) up -d --build
 
-up-backend: ## Start everything including back/ (requires back/Dockerfile)
-	$(COMPOSE) --profile backend up -d --build
+migrate: ## Apply pending migrations (needs no Go on the host)
+	$(COMPOSE) run --rm migrate up
 
 dev: ## Start with the Vite dev server (HMR) instead of nginx
 	$(DEV_COMPOSE) up --build

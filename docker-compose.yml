@@ -1,13 +1,11 @@
 # cursed_matrix — local and single-host stack.
 #
-#   docker compose --profile backend up -d   the whole application
-#   docker compose up -d                     everything except the backend
-#   docker compose run --rm migrate up       apply pending migrations
+#   docker compose up -d --build         the whole application
+#   docker compose run --rm migrate up   apply pending migrations
 #
-# The backend sits behind a profile, which is a trap worth knowing about: a
-# plain `up` leaves it running whatever it was already running, so a change to
-# back/ or to its mounted config appears to deploy and does not. Deploying
-# means `--profile backend`. docs/DEPLOY.md is the procedure.
+# Everything the application needs starts with a plain `up`. The migration
+# runner is the one exception: it is a one-shot, so it sits behind a profile
+# and is invoked by name. docs/DEPLOY.md is the procedure.
 #
 # Published ports bind to 127.0.0.1 on purpose. Postgres, Redis, Prometheus and
 # the exporters must not be reachable from the network on a host that also
@@ -53,7 +51,6 @@ services:
   # ----------------------------------------------------------------- backend
   back:
     <<: [*restart, *logging]
-    profiles: ["backend"]
     build:
       context: ./back
       dockerfile: Dockerfile

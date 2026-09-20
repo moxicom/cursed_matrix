@@ -231,12 +231,10 @@ sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-**Build one package at a time.** The compiler's memory goes with its
-parallelism:
-
-```sh
-docker compose build --build-arg GO_BUILD_JOBS=1
-```
+**Not by building one package at a time.** `go build -p 1` is the obvious
+lever and it does not work: measured from a cold cache, the peak went from
+680 MB to 738 MB and the build took three times as long. The peak is set by
+the largest single package, not by how many compile at once.
 
 **Stop the stack while building.** Nothing needs to serve during a build:
 
@@ -279,9 +277,9 @@ REDIS_MAXMEMORY=64mb       # 256mb is a quarter of the host
 IMAGE_TAG=prod             # the tag you shipped
 ```
 
-If you would rather build on the server anyway, give it 4 GB of swap, stop
-everything first, and pass `GO_BUILD_JOBS=1`. It will take minutes rather than
-seconds, and it will finish.
+If you would rather build on the server anyway, the only thing that works is
+swap: 4 GB of it, with the stack stopped first. The build will take minutes
+rather than seconds, and it will finish.
 
 ## 3. Build, migrate, start
 

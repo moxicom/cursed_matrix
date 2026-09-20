@@ -12,11 +12,6 @@ ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
 
-# How many packages the compiler builds at once. Empty means one per core,
-# which is what you want on a build machine and what kills a small server: the
-# peak is roughly 700 MB on twelve cores, and a 2 GB host running the stack
-# has nowhere near that spare. Pass --build-arg GO_BUILD_JOBS=1 there.
-ARG GO_BUILD_JOBS=
 
 WORKDIR /src
 
@@ -30,11 +25,10 @@ COPY . .
 # CGO off gives a static binary; trimpath and -s -w keep the image small and the
 # build reproducible.
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    JOBS=${GO_BUILD_JOBS:+-p ${GO_BUILD_JOBS}} && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build $JOBS -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/api ./cmd/api && \
+    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/api ./cmd/api && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build $JOBS -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/migrate ./cmd/migrate
+    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/migrate ./cmd/migrate
 
 # ----------------------------------------------------------------- debug stage
 #

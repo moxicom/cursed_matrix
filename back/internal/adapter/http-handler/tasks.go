@@ -277,11 +277,16 @@ func (a *API) MoveTask(w http.ResponseWriter, r *http.Request, taskID openapi_ty
 		return
 	}
 
-	changed, err := a.board.MoveTask(r.Context(), userID, taskID, board.Move{
-		Quadrant: shared.Quadrant(body.TargetQuadrant),
+	move := board.Move{
+		ParentID: body.ParentTaskId,
 		Before:   body.BeforeTaskId,
 		After:    body.AfterTaskId,
-	})
+	}
+	if body.TargetQuadrant != nil {
+		move.Quadrant = shared.Quadrant(*body.TargetQuadrant)
+	}
+
+	changed, err := a.board.MoveTask(r.Context(), userID, taskID, move)
 	if err != nil {
 		WriteError(w, r, err)
 		return

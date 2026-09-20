@@ -5,6 +5,8 @@ package httphandler_test
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
+	"sort"
 	"testing"
 )
 
@@ -252,6 +254,151 @@ func TestCompletedTasksCannotBeMoved(t *testing.T) {
 			`{"targetQuadrant":"NOT_IMPORTANT_NOT_URGENT"}`)
 		if response.Code != http.StatusOK {
 			t.Fatalf("move = %d, want 200: %s", response.Code, response.Body)
+		}
+	})
+}
+
+// TestReorderingSubtasks is CLAUDE.md §11: the subtasks of one parent have
+// their own order, and the user can change it.
+func TestReorderingSubtasks(t *testing.T) {
+	c := signedInClient(t)
+	parent := newTask(t, c, "parent", "IMPORTANT_URGENT")
+
+	subtask := func(title string) taskView {
+		t.Helper()
+		response := c.do(t, http.MethodPost, "/tasks/"+parent.ID+"/subtasks", `{"title":"`+title+`"}`)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("subtask %q = %d: %s", title, response.Code, response.Body)
+		}
+		return decodeTask(t, response.Body.Bytes())
+	}
+
+	first, second, third := subtask("first"), subtask("second"), subtask("third")
+
+	order := func() []string {
+		t.Helper()
+		response := c.do(t, http.MethodGet, "/tasks", "")
+		var board struct {
+			Tasks []taskView `json:"tasks"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &board); err != nil {
+			t.Fatalf("board: %v", err)
+		}
+
+		children := make([]taskView, 0, 3)
+		for _, item := range board.Tasks {
+			if item.ParentTaskID != nil && *item.ParentTaskID == parent.ID {
+				children = append(children, item)
+			}
+		}
+		sort.Slice(children, func(i, j int) bool { return children[i].Position < children[j].Position })
+
+		titles := make([]string, 0, len(children))
+		for _, item := range children {
+			titles = append(titles, item.Title)
+		}
+		return titles
+	}
+
+	t.Run("they start in the order they were added", func(t *testing.T) {
+		if got := order(); !slices.Equal(got, []string{"first", "second", "third"}) {
+			t.Fatalf("order = %v", got)
+		}
+	})
+
+	t.Run("one can be moved before another", func(t *testing.T) {
+		body := `{"parentTaskId":"` + parent.ID + `","beforeTaskId":"` + first.ID + `"}`
+		response := c.do(t, http.MethodPost, "/tasks/"+third.ID+"/move", body)
+		if response.Code != http.StatusOK {
+			t.Fatalf("move = %d: %s", response.Code, response.Body)
+		}
+
+		if got := order(); !slices.Equal(got, []string{"third", "first", "second"}) {
+			t.Fatalf("order = %v", got)
+		}
+	})
+
+	t.Run("and it is still a subtask", func(t *testing.T) {
+		// Reordering is not promotion: the parent relation survives.
+		response := c.do(t, http.MethodGet, "/tasks", "")
+		var board struct {
+			Tasks []taskView `json:"tasks"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &board); err != nil {
+			t.Fatalf("board: %v", err)
+		}
+		for _, item := range board.Tasks {
+			if item.ID != third.ID {
+				continue
+			}
+			if item.ParentTaskID == nil || *item.ParentTaskID != parent.ID {
+				t.Errorf("parentTaskId = %v, want it kept", item.ParentTaskID)
+			}
+			if item.Quadrant != nil && item.Quadrant == nil {
+				t.Error("a subtask gained a quadrant of its own")
+			}
+		}
+	})
+
+	t.Run("moving to the end appends", func(t *testing.T) {
+		body := `{"parentTaskId":"` + parent.ID + `"}`
+		if response := c.do(t, http.MethodPost, "/tasks/"+third.ID+"/move", body); response.Code != http.StatusOK {
+			t.Fatalf("move = %d: %s", response.Code, response.Body)
+		}
+		if got := order(); !slices.Equal(got, []string{"first", "second", "third"}) {
+			t.Fatalf("order = %v", got)
+		}
+	})
+
+	tests := []struct {
+		name       string
+		taskID     string
+		body       string
+		wantStatus int
+	}{
+		{
+			name:       "naming both destinations is ambiguous",
+			taskID:     second.ID,
+			body:       `{"parentTaskId":"` + parent.ID + `","targetQuadrant":"IMPORTANT_URGENT"}`,
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name:       "naming neither says nothing",
+			taskID:     second.ID,
+			body:       `{}`,
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name:       "a task that has no parent cannot be reordered under one",
+			taskID:     parent.ID,
+			body:       `{"parentTaskId":"` + parent.ID + `"}`,
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			// A task does not become somebody's subtask by being moved.
+			name:       "nor moved under a parent that is not its own",
+			taskID:     second.ID,
+			body:       `{"parentTaskId":"` + third.ID + `"}`,
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response := c.do(t, http.MethodPost, "/tasks/"+tt.taskID+"/move", tt.body)
+			if response.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", response.Code, tt.wantStatus, response.Body)
+			}
+		})
+	}
+
+	t.Run("a quadrant still promotes it out", func(t *testing.T) {
+		body := `{"targetQuadrant":"NOT_IMPORTANT_URGENT"}`
+		if response := c.do(t, http.MethodPost, "/tasks/"+second.ID+"/move", body); response.Code != http.StatusOK {
+			t.Fatalf("move = %d: %s", response.Code, response.Body)
+		}
+		if got := order(); !slices.Equal(got, []string{"first", "third"}) {
+			t.Errorf("order = %v, want the promoted one gone from the parent", got)
 		}
 	})
 }

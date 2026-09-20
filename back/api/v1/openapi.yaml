@@ -1361,10 +1361,20 @@ components:
 
     MoveRequest:
       type: object
-      required: [targetQuadrant]
-      description: At most one neighbour; neither means the end of the list.
+      description: |
+        Exactly one destination — a quadrant, or the parent to sit under —
+        because those are the two orderings a task can belong to and nothing
+        belongs to both. At most one neighbour; neither means the end of the
+        list.
       properties:
         targetQuadrant: { $ref: "#/components/schemas/Quadrant" }
+        parentTaskId:
+          type: string
+          format: uuid
+          description: |
+            Reorders a subtask among its siblings. Must be the parent it
+            already has: a task does not become somebody's subtask by being
+            moved, it is created under a parent and leaves by being promoted.
         beforeTaskId: { type: string, format: uuid }
         afterTaskId: { type: string, format: uuid }
 

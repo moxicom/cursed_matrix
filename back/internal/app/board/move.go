@@ -14,16 +14,23 @@ import (
 
 // Move is where the client wants a task, expressed as a neighbour rather than
 // a number.
+//
+// Exactly one destination: a quadrant, or a parent to sit under. They are the
+// two orderings a task can belong to — the quadrant's list, or its parent's —
+// and nothing belongs to both.
 type Move struct {
 	Quadrant shared.Quadrant
+	ParentID *uuid.UUID
 	Before   *uuid.UUID
 	After    *uuid.UUID
 }
 
-// MoveTask puts a task in a quadrant, at a place named by its neighbours.
+// MoveTask puts a task where the client asked, at a place named by its
+// neighbours.
 //
-// Moving a subtask this way promotes it: it leaves its parent and takes a
-// place among the quadrant's own tasks, which is the same outcome as Promote.
+// Into a quadrant, a subtask is promoted: it leaves its parent and takes a
+// place among the quadrant's own tasks, which is what Promote does. Within a
+// parent, a subtask is only reordered among its siblings.
 func (s *Service) MoveTask(ctx context.Context, userID, taskID uuid.UUID, move Move) ([]task.Task, error) {
 	var changed []task.Task
 
@@ -39,12 +46,8 @@ func (s *Service) MoveTask(ctx context.Context, userID, taskID uuid.UUID, move M
 			return shared.NewError(shared.CodeCompletedTaskFrozen,
 				map[string]any{"taskId": taskID.String()})
 		}
-		if !move.Quadrant.Valid() {
-			return shared.NewError(shared.CodeValidationFailed,
-				map[string]any{"field": "targetQuadrant", "value": string(move.Quadrant)})
-		}
 
-		moved, err := s.placeInQuadrant(ctx, userID, item, move.Quadrant, move.Before, move.After, &changed)
+		moved, err := s.place(ctx, userID, item, move, &changed)
 		if err != nil {
 			return err
 		}
@@ -55,6 +58,82 @@ func (s *Service) MoveTask(ctx context.Context, userID, taskID uuid.UUID, move M
 		return nil, err
 	}
 	return changed, nil
+}
+
+// place sends the move to whichever ordering it named.
+func (s *Service) place(
+	ctx context.Context,
+	userID uuid.UUID,
+	item *task.Task,
+	move Move,
+	changed *[]task.Task,
+) (*task.Task, error) {
+	switch {
+	case move.ParentID != nil && move.Quadrant != "":
+		return nil, shared.NewError(shared.CodeValidationFailed,
+			map[string]any{"field": "parentTaskId", "reason": "one destination"})
+
+	case move.ParentID != nil:
+		return s.placeUnderParent(ctx, userID, item, *move.ParentID, move.Before, move.After, changed)
+
+	case move.Quadrant.Valid():
+		return s.placeInQuadrant(ctx, userID, item, move.Quadrant, move.Before, move.After, changed)
+	}
+
+	return nil, shared.NewError(shared.CodeValidationFailed,
+		map[string]any{"field": "targetQuadrant", "value": string(move.Quadrant)})
+}
+
+// placeUnderParent reorders a subtask among its siblings.
+//
+// Only within the parent it already has: moving a task under a different one
+// would turn an independent task into somebody's subtask, which is not
+// something the product offers — a subtask is made under its parent, and
+// leaves by being promoted.
+func (s *Service) placeUnderParent(
+	ctx context.Context,
+	userID uuid.UUID,
+	item *task.Task,
+	parentID uuid.UUID,
+	before, after *uuid.UUID,
+	changed *[]task.Task,
+) (*task.Task, error) {
+	if !item.IsSubtask() {
+		return nil, shared.NewError(shared.CodeNotASubtask,
+			map[string]any{"taskId": item.ID.String()})
+	}
+	if *item.ParentID != parentID {
+		return nil, shared.NewError(shared.CodeValidationFailed,
+			map[string]any{"field": "parentTaskId", "reason": "not this task's parent"})
+	}
+
+	siblings, err := s.tasks.Subtasks(ctx, userID, parentID)
+	if err != nil {
+		return nil, err
+	}
+	siblings = without(siblings, item.ID)
+
+	position, placements, err := task.Place(siblings, before, after)
+	if err != nil {
+		return nil, err
+	}
+	if len(placements) > 0 {
+		if err := s.tasks.Reposition(ctx, userID, placements); err != nil {
+			return nil, err
+		}
+		for _, placement := range placements {
+			*changed = append(*changed, task.Task{ID: placement.ID, Position: placement.Position})
+		}
+	}
+
+	item.Position = position
+	if err := item.Validate(); err != nil {
+		return nil, err
+	}
+	if err := s.tasks.Update(ctx, item); err != nil {
+		return nil, err
+	}
+	return item, nil
 }
 
 // Promote turns a subtask into a task of its own.

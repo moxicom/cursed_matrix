@@ -186,3 +186,220 @@ func color(v string) *shared.TaskColor {
 	value := shared.TaskColor(v)
 	return &value
 }
+
+// TestEveryEnumRoundTrips walks all eight of them through the boundary they
+// all cross: a known value survives being written and read back, an unknown
+// one is refused both ways, and the values listed here are exactly the set
+// the package offers.
+//
+// One table rather than eight near-identical ones: what is being checked is
+// that none of them is the odd one out.
+func TestEveryEnumRoundTrips(t *testing.T) {
+	tests := []struct {
+		name     string
+		known    []string
+		declared int
+		unknown  string
+		encode   func(string) (driver.Value, error)
+		decode   func(any) (string, error)
+		parse    func(string) (string, error)
+	}{
+		{
+			name: "quadrant",
+			known: []string{
+				"IMPORTANT_URGENT", "IMPORTANT_NOT_URGENT",
+				"NOT_IMPORTANT_URGENT", "NOT_IMPORTANT_NOT_URGENT",
+			},
+			declared: len(shared.Quadrants()),
+			unknown:  "SOMEWHAT_URGENT",
+			encode:   func(v string) (driver.Value, error) { q := shared.Quadrant(v); return q.Value() },
+			decode: func(src any) (string, error) {
+				var q shared.Quadrant
+				if err := q.Scan(src); err != nil {
+					return "", err
+				}
+				return q.String(), nil
+			},
+			parse: func(v string) (string, error) { q, err := shared.ParseQuadrant(v); return string(q), err },
+		},
+		{
+			name:     "task status",
+			known:    []string{"ACTIVE", "COMPLETED"},
+			declared: len(shared.TaskStatuses()),
+			unknown:  "ABANDONED",
+			encode:   func(v string) (driver.Value, error) { s := shared.TaskStatus(v); return s.Value() },
+			decode: func(src any) (string, error) {
+				var s shared.TaskStatus
+				if err := s.Scan(src); err != nil {
+					return "", err
+				}
+				return s.String(), nil
+			},
+			parse: func(v string) (string, error) { s, err := shared.ParseTaskStatus(v); return string(s), err },
+		},
+		{
+			name:     "completion source",
+			known:    []string{"DIRECT", "PARENT_CASCADE"},
+			declared: len(shared.CompletionSources()),
+			unknown:  "BY_ACCIDENT",
+			encode:   func(v string) (driver.Value, error) { c := shared.CompletionSource(v); return c.Value() },
+			decode: func(src any) (string, error) {
+				var c shared.CompletionSource
+				if err := c.Scan(src); err != nil {
+					return "", err
+				}
+				return c.String(), nil
+			},
+		},
+		{
+			name:     "language",
+			known:    []string{"EN", "RU"},
+			declared: len(shared.Languages()),
+			unknown:  "FR",
+			encode:   func(v string) (driver.Value, error) { l := shared.Language(v); return l.Value() },
+			decode: func(src any) (string, error) {
+				var l shared.Language
+				if err := l.Scan(src); err != nil {
+					return "", err
+				}
+				return l.String(), nil
+			},
+			parse: func(v string) (string, error) { l, err := shared.ParseLanguage(v); return string(l), err },
+		},
+		{
+			name:     "plan",
+			known:    []string{"FREE", "PRO", "SELF_HOSTED"},
+			declared: len(shared.Plans()),
+			unknown:  "ENTERPRISE",
+			encode:   func(v string) (driver.Value, error) { p := shared.Plan(v); return p.Value() },
+			decode: func(src any) (string, error) {
+				var p shared.Plan
+				if err := p.Scan(src); err != nil {
+					return "", err
+				}
+				return p.String(), nil
+			},
+			parse: func(v string) (string, error) { p, err := shared.ParsePlan(v); return string(p), err },
+		},
+		{
+			name:     "link type",
+			known:    []string{"RELATED", "CONNECTED_TO", "BLOCKS", "DEPENDS_ON"},
+			declared: len(shared.LinkTypes()),
+			unknown:  "SUPERSEDES",
+			encode:   func(v string) (driver.Value, error) { l := shared.LinkType(v); return l.Value() },
+			decode: func(src any) (string, error) {
+				var l shared.LinkType
+				if err := l.Scan(src); err != nil {
+					return "", err
+				}
+				return l.String(), nil
+			},
+		},
+		{
+			name: "xp source",
+			known: []string{
+				"TASK_COMPLETED", "SUBTASK_COMPLETED", "ACHIEVEMENT_REWARD",
+				"TASK_REOPENED", "ADMIN_ADJUSTMENT", "TASK_DELETED",
+			},
+			declared: len(shared.XPSources()),
+			unknown:  "FOUND_IT",
+			encode:   func(v string) (driver.Value, error) { x := shared.XPSource(v); return x.Value() },
+			decode: func(src any) (string, error) {
+				var x shared.XPSource
+				if err := x.Scan(src); err != nil {
+					return "", err
+				}
+				return x.String(), nil
+			},
+		},
+		{
+			name: "activity event type",
+			known: []string{
+				"TASK_CREATED", "TASK_COMPLETED", "SUBTASK_COMPLETED", "TASK_LINKED",
+				"LEVEL_UP", "ACHIEVEMENT_UNLOCKED", "STREAK_EXTENDED", "GRAPH_OPENED",
+			},
+			declared: len(shared.ActivityEventTypes()),
+			unknown:  "TASK_POSTPONED",
+			encode:   func(v string) (driver.Value, error) { a := shared.ActivityEventType(v); return a.Value() },
+			decode: func(src any) (string, error) {
+				var a shared.ActivityEventType
+				if err := a.Scan(src); err != nil {
+					return "", err
+				}
+				return a.String(), nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A value added to the package and not here would otherwise go
+			// through this boundary untested.
+			if len(tt.known) != tt.declared {
+				t.Fatalf("%d values listed, the package offers %d", len(tt.known), tt.declared)
+			}
+
+			for _, value := range tt.known {
+				stored, err := tt.encode(value)
+				if err != nil {
+					t.Fatalf("%q does not encode: %v", value, err)
+				}
+				if stored != value {
+					t.Errorf("%q stored as %v", value, stored)
+				}
+
+				// Both shapes a driver may hand back.
+				for _, src := range []any{value, []byte(value)} {
+					got, err := tt.decode(src)
+					if err != nil {
+						t.Errorf("%q (%T) does not decode: %v", value, src, err)
+					}
+					if got != value {
+						t.Errorf("%q (%T) decoded as %q", value, src, got)
+					}
+				}
+
+				if tt.parse != nil {
+					parsed, err := tt.parse(value)
+					if err != nil || parsed != value {
+						t.Errorf("Parse(%q) = %q, %v", value, parsed, err)
+					}
+				}
+			}
+
+			t.Run("an unknown value is refused everywhere", func(t *testing.T) {
+				if stored, err := tt.encode(tt.unknown); err == nil {
+					t.Errorf("encoded %q as %v", tt.unknown, stored)
+				}
+				if _, err := tt.decode(tt.unknown); err == nil {
+					t.Errorf("decoded %q", tt.unknown)
+				}
+				if tt.parse != nil {
+					if _, err := tt.parse(tt.unknown); err == nil {
+						t.Errorf("parsed %q", tt.unknown)
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestLinkDirection(t *testing.T) {
+	tests := []struct {
+		linkType shared.LinkType
+		want     bool
+	}{
+		{linkType: shared.LinkBlocks, want: true},
+		{linkType: shared.LinkDependsOn, want: true},
+		{linkType: shared.LinkRelated},
+		{linkType: shared.LinkConnectedTo},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.linkType), func(t *testing.T) {
+			if got := tt.linkType.Directed(); got != tt.want {
+				t.Errorf("Directed() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

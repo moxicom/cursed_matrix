@@ -87,12 +87,20 @@ export function matchesFilters(
   }
 
   if (deadline !== 'any') {
-    const hours =
-      task.deadlineAt === null ? null : (new Date(task.deadlineAt).getTime() - Date.now()) / 3_600_000;
-    if (deadline === 'none' && hours !== null) return false;
-    if (deadline === 'overdue' && (hours === null || hours >= 0)) return false;
-    if (deadline === 'today' && (hours === null || hours < 0 || hours > 24)) return false;
-    if (deadline === 'week' && (hours === null || hours < 0 || hours > 168)) return false;
+    const due = task.deadlineAt === null ? null : new Date(task.deadlineAt);
+    if (deadline === 'none' && due !== null) return false;
+    if (deadline === 'overdue' && (due === null || due.getTime() >= Date.now())) return false;
+
+    // Calendar days in the reader's own zone, which is how the server reads
+    // the same two windows: "today" is a date, not the next 24 hours.
+    if (deadline === 'today' || deadline === 'week') {
+      if (due === null) return false;
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + (deadline === 'today' ? 1 : 7));
+      if (due < start || due >= end) return false;
+    }
   }
 
   if (topology === 'linked' && context.linkCount === 0) return false;

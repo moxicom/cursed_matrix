@@ -7,7 +7,9 @@ import { PaywallModal } from '@/features/paywall/PaywallModal';
 import { SearchPalette } from '@/features/search/SearchPalette';
 import { useHasAccess, useSessionStore } from '@/features/session/session.store';
 import { TaskModal } from '@/features/task-modal/TaskModal';
+import { messageForCode } from '@/shared/api/messages';
 import { GITHUB_URL } from '@/shared/config/links';
+import { useT } from '@/shared/i18n';
 import { ROUTES, type AppSection } from '@/shared/config/navigation';
 import { Toast } from '@/shared/ui';
 import { AppHeader, AppShell, LandingHeader } from '@/widgets';
@@ -26,16 +28,18 @@ function sectionFromPath(pathname: string): AppSection {
  * overlays that can appear on top of any of them.
  */
 export function AppLayout() {
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const session = useSessionStore();
+  const user = useSessionStore((s) => s.user);
   // narrow selectors: this layout sits above every route, so subscribing to the
   // whole board store would re-render it on every keystroke in a task title
   const toast = useBoardStore((s) => s.toast);
   const dismissToast = useBoardStore((s) => s.dismissToast);
   const activeTaskCount = useBoardStore((s) => s.activeTaskCount());
+  const linkCount = useBoardStore((s) => s.links.length);
   const query = useFiltersStore((s) => s.query);
   const setQuery = useFiltersStore((s) => s.setQuery);
   const hasAccess = useHasAccess();
@@ -44,7 +48,9 @@ export function AppLayout() {
   const section = sectionFromPath(location.pathname);
   const isLanding = section === 'landing';
   /** The pricing page is reachable without a session — it has no app chrome then. */
-  const showChrome = !isLanding && (hasAccess || section !== 'upgrade');
+  // The app chrome names the signed-in account, so it needs one: without a
+  // user there is nothing to draw in the header.
+  const showChrome = !isLanding && user !== null && (hasAccess || section !== 'upgrade');
 
   const go = useCallback(
     (next: AppSection) => {
@@ -116,9 +122,9 @@ export function AppLayout() {
               onPricing={() => navigate(ROUTES.upgrade)}
             />
           </div>
-        ) : showChrome ? (
+        ) : showChrome && user ? (
           <AppHeader
-            user={session.user}
+            user={user}
             activeSection={section}
             activeTasks={activeTaskCount}
             query={query}
@@ -145,6 +151,8 @@ export function AppLayout() {
           <TaskModal taskId={taskId} onClose={closeTask} onOpenTask={openTask} />
           <PaywallModal
             open={ui.paywallOpen}
+            reason={ui.paywallReason}
+            linkCount={linkCount}
             activeTasks={activeTaskCount}
             githubUrl={GITHUB_URL}
             onClose={ui.closePaywall}
@@ -154,7 +162,19 @@ export function AppLayout() {
               navigate(ROUTES.upgrade);
             }}
           />
-          {toast !== null && <Toast code={toast.code} detail={toast.detail} />}
+          {toast !== null && (
+            <Toast
+              code={toast.code}
+              tone={toast.tone}
+              // A refusal explains itself; a success carries its own detail
+              // (the XP it paid, the achievement it unlocked).
+              detail={
+                toast.params === null
+                  ? toast.detail
+                  : messageForCode(toast.code, toast.params, t)
+              }
+            />
+          )}
         </>
       }
     >

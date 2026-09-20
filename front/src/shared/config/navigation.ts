@@ -7,7 +7,8 @@ export type AppSection =
   | 'leaderboard'
   | 'profile'
   | 'settings'
-  | 'upgrade';
+  | 'upgrade'
+  | 'signIn';
 
 export const ROUTES: Record<AppSection, string> = {
   landing: '/',
@@ -18,6 +19,7 @@ export const ROUTES: Record<AppSection, string> = {
   profile: '/profile',
   settings: '/settings',
   upgrade: '/pricing',
+  signIn: '/signin',
 };
 
 /** Main nav tabs, in header order. Labels come from the dictionary at render time. */

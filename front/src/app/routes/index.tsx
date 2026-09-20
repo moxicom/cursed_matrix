@@ -11,6 +11,7 @@ import { NotFoundPage } from '@/pages/not-found/NotFoundPage';
 import { PricingPage } from '@/pages/pricing/PricingPage';
 import { ProfilePage } from '@/pages/profile/ProfilePage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
+import { SignInPage } from '@/pages/signin/SignInPage';
 import { ROUTES } from '@/shared/config/navigation';
 import { internalPathOr } from '@/shared/lib/safe-path';
 
@@ -26,17 +27,30 @@ function useSearchParamTask() {
 
 export function LandingRoute() {
   const navigate = useNavigate();
-  const signIn = useSessionStore((s) => s.signIn);
+  const status = useSessionStore((s) => s.status);
 
   return (
     <LandingPage
-      onEnter={() => {
-        signIn();
-        navigate(ROUTES.board);
-      }}
+      // Someone already signed in goes to their board; everyone else is
+      // asked who they are, which is a real question now.
+      onEnter={() =>
+        navigate(status === 'authenticated' ? ROUTES.board : ROUTES.signIn)
+      }
       onPricing={() => navigate(ROUTES.upgrade)}
     />
   );
+}
+
+export function SignInRoute() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const from = internalPathOr(
+    (location.state as { from?: unknown } | null)?.from,
+    ROUTES.board,
+  );
+
+  return <SignInPage onDone={() => navigate(from, { replace: true })} />;
 }
 
 export function PricingRoute() {
@@ -56,9 +70,12 @@ export function PricingRoute() {
     <PricingPage
       capped={capped}
       onContinue={() => {
-        if (!session.authenticated) session.signIn();
         setCapped(false);
-        navigate(from);
+        // Signed out, the next step is saying who you are; signed in, the
+        // plan is bought and the user goes back where the gate caught them.
+        navigate(session.status === 'authenticated' ? from : ROUTES.signIn, {
+          state: { from },
+        });
       }}
     />
   );
@@ -66,9 +83,8 @@ export function PricingRoute() {
 
 export function BoardRoute() {
   const openTask = useSearchParamTask();
-  const openPaywall = useUiStore((s) => s.openPaywall);
 
-  return <BoardPage onOpenTask={openTask} onQuotaHit={openPaywall} />;
+  return <BoardPage onOpenTask={openTask} />;
 }
 
 export function GraphRoute() {
@@ -97,8 +113,7 @@ export function SettingsRoute() {
     <SettingsPage
       onOpenPlans={() => navigate(ROUTES.upgrade)}
       onSignOut={() => {
-        signOut();
-        navigate(ROUTES.landing);
+        void signOut().then(() => navigate(ROUTES.landing));
       }}
     />
   );
@@ -106,7 +121,11 @@ export function SettingsRoute() {
 
 export function NotFoundRoute() {
   const navigate = useNavigate();
-  const authenticated = useSessionStore((s) => s.authenticated);
+  const status = useSessionStore((s) => s.status);
 
-  return <NotFoundPage onHome={() => navigate(authenticated ? ROUTES.board : ROUTES.landing)} />;
+  return (
+    <NotFoundPage
+      onHome={() => navigate(status === 'authenticated' ? ROUTES.board : ROUTES.landing)}
+    />
+  );
 }

@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 
 import { BoardColumn } from './BoardColumn';
 import { useBoardStore } from '@/features/board/board.store';
-import { useSessionStore } from '@/features/session/session.store';
 import { TagFilter } from '@/features/filters/TagFilter';
 import {
   matchesFilters,
@@ -10,30 +9,35 @@ import {
   type DeadlineFilter,
   type StatusFilter,
 } from '@/features/filters/filters.store';
-import { FREE_TASK_CAP, QUADRANTS, TASK_COLORS } from '@/shared/config/domain';
+import { QUADRANTS, TASK_COLORS } from '@/shared/config/domain';
 import { useLang, useLocalized, useT } from '@/shared/i18n';
-import { mockTagStats } from '@/shared/mocks';
 import type { Quadrant, Task } from '@/shared/types/domain';
 import { Button, Chip, ColorSwatch, Select } from '@/shared/ui';
 import { BoardToolbar, BoardToolbarSection, BoardToolbarTail } from '@/widgets';
 
 export interface BoardPageProps {
   onOpenTask: (id: string) => void;
-  onQuotaHit: () => void;
 }
 
-export function BoardPage({ onOpenTask, onQuotaHit }: BoardPageProps) {
+export function BoardPage({ onOpenTask }: BoardPageProps) {
   const t = useT();
   const lang = useLang();
   const localized = useLocalized();
   // select state slices, not the whole store: actions keep a stable identity
+  // Selected as the stored array, mapped here: a selector that built the
+  // list would hand back a new one on every render, and a store that
+  // compares by reference would call that a change — for ever.
+  const tags = useBoardStore((s) => s.tags);
+  const tagStats = useMemo(
+    () => tags.map((tag) => ({ name: tag.name, count: tag.taskCount })),
+    [tags],
+  );
   const tasks = useBoardStore((s) => s.tasks);
+  const loaded = useBoardStore((s) => s.loaded);
   const links = useBoardStore((s) => s.links);
   const createTask = useBoardStore((s) => s.createTask);
   const moveTask = useBoardStore((s) => s.moveTask);
-  const activeTaskCount = useBoardStore((s) => s.activeTaskCount());
   const filters = useFiltersStore();
-  const plan = useSessionStore((s) => s.user.plan);
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ quadrant: Quadrant; index: number | null } | null>(
@@ -135,7 +139,7 @@ export function BoardPage({ onOpenTask, onQuotaHit }: BoardPageProps) {
         </BoardToolbarSection>
 
         <BoardToolbarSection label={t.tags} grow>
-          <TagFilter tags={mockTagStats} />
+          <TagFilter tags={tagStats} />
         </BoardToolbarSection>
 
         <BoardToolbarSection label={t.color}>
@@ -162,11 +166,13 @@ export function BoardPage({ onOpenTask, onQuotaHit }: BoardPageProps) {
           <span
             className={filters.status === 'completed' ? 'text-105 text-green' : 'text-105 text-txt-faint'}
           >
-            {filters.status === 'completed'
-              ? t.archiveMode
-              : `${visibleParents.length}${lang === 'RU' ? ' задач · ' : ' tasks · '}${visibleSubCount}${
-                  lang === 'RU' ? ' подзадач' : ' subtasks'
-                }`}
+            {!loaded
+              ? t.working
+              : filters.status === 'completed'
+                ? t.archiveMode
+                : `${visibleParents.length}${lang === 'RU' ? ' задач · ' : ' tasks · '}${visibleSubCount}${
+                    lang === 'RU' ? ' подзадач' : ' subtasks'
+                  }`}
           </span>
           <Button variant="danger" onClick={filters.reset}>
             {t.reset}
@@ -186,18 +192,15 @@ export function BoardPage({ onOpenTask, onQuotaHit }: BoardPageProps) {
               meta={meta}
               tasks={columnTasks}
               count={columnTasks.length}
+              loaded={loaded}
               subtasksByParent={subtasksByParent}
               linkCountById={linkCountById}
               draggingId={draggingId}
               dropIndex={dropTarget?.quadrant === meta.id ? dropTarget.index : null}
               onOpenTask={onOpenTask}
-              onAdd={() => {
-                if (plan === 'FREE' && activeTaskCount >= FREE_TASK_CAP) {
-                  onQuotaHit();
-                  return;
-                }
-                createTask(meta.id, lang === 'RU' ? 'Новая задача' : 'New task');
-              }}
+              // No quota check here: the plan's limit is the server's rule,
+              // and a refusal opens the paywall from the store.
+              onAdd={() => createTask(meta.id, lang === 'RU' ? 'Новая задача' : 'New task')}
               onDragStart={setDraggingId}
               onDragEnd={() => {
                 setDraggingId(null);

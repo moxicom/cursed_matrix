@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { LeaderboardHeader, LeaderboardRow } from '@/entities/leaderboard';
-import { useSessionStore } from '@/features/session/session.store';
+import { useUser } from '@/features/session/session.store';
 import { useLang, useT } from '@/shared/i18n';
-import { mockLeaderboard } from '@/shared/mocks';
+import * as activityApi from '@/shared/api/activity';
 import type { LeaderboardPeriod } from '@/shared/types/domain';
-import { Button, SegmentedControl } from '@/shared/ui';
+import { apiMessage } from '@/shared/api/messages';
+import { Button, LoadError, SegmentedControl } from '@/shared/ui';
 import { PageContainer } from '@/widgets';
 
 export interface LeaderboardPageProps {
@@ -15,10 +16,34 @@ export interface LeaderboardPageProps {
 export function LeaderboardPage({ onOpenSettings }: LeaderboardPageProps) {
   const t = useT();
   const lang = useLang();
-  const user = useSessionStore((s) => s.user);
+  const user = useUser();
   const [period, setPeriod] = useState<LeaderboardPeriod>('ALL_TIME');
+  const [ranking, setRanking] = useState<activityApi.Ranking | null>(null);
+  const [failure, setFailure] = useState<unknown>(null);
+  const [attempt, setAttempt] = useState(0);
 
-  const rows = mockLeaderboard(period, user.showInLeaderboard);
+  useEffect(() => {
+    // Re-read on every period: the weekly and monthly figures are sums over
+    // a window, not a slice of the all-time one.
+    let current = true;
+    void activityApi
+      .leaderboard(period)
+      .then((answer) => {
+        if (!current) return;
+        setRanking(answer);
+        setFailure(null);
+      })
+      .catch((error: unknown) => {
+        // An empty table would claim nobody is ranked, which is a different
+        // statement from not having been able to ask.
+        if (current) setFailure(error);
+      });
+    return () => {
+      current = false;
+    };
+  }, [period, attempt]);
+
+  const rows = ranking?.entries ?? [];
 
   return (
     <PageContainer width="page" stacked={false}>
@@ -41,12 +66,29 @@ export function LeaderboardPage({ onOpenSettings }: LeaderboardPageProps) {
           />
         </div>
 
+        {failure !== null && (
+          <LoadError
+            className="border-x-0 border-t-0"
+            message={apiMessage(failure, t)}
+            retryLabel={t.retry}
+            onRetry={() => setAttempt((n) => n + 1)}
+          />
+        )}
+
         <LeaderboardHeader />
         {rows.map((entry) => (
           <LeaderboardRow key={entry.userId} entry={entry} />
         ))}
 
         <div className="flex flex-wrap items-center gap-10 px-14 py-11">
+          {/* The server reports the standing even when the user is off the
+              page, and withholds the rank entirely when they are hidden —
+              publicly it does not exist. */}
+          {ranking?.me.visible && ranking.me.rank !== null ? (
+            <span className="text-95 text-txt">
+              #{ranking.me.rank} · {ranking.me.xp.toLocaleString('en-US').replace(/,/g, ' ')} XP
+            </span>
+          ) : null}
           <span className="text-95 text-txt-faint">
             {user.showInLeaderboard
               ? lang === 'RU'

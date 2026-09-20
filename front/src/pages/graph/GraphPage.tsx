@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useBoardStore } from '@/features/board/board.store';
+import * as activityApi from '@/shared/api/activity';
 import {
   matchesFilters,
   useFiltersStore,
@@ -13,7 +14,6 @@ import { QUADRANTS, QUADRANT_BY_ID, TASK_COLORS } from '@/shared/config/domain';
 import { useLang, useLocalized, useT } from '@/shared/i18n';
 import { deadlineInfo } from '@/shared/lib/deadline';
 import { effectiveQuadrant } from '@/shared/lib/progression';
-import { mockTagStats } from '@/shared/mocks';
 import type { Quadrant, Task } from '@/shared/types/domain';
 import { Button, Chip, ColorSwatch, Select } from '@/shared/ui';
 import { GraphSidebar, GraphSidebarHeader, GraphSidebarSection } from '@/widgets';
@@ -22,12 +22,36 @@ export interface GraphPageProps {
   onOpenTask: (id: string) => void;
 }
 
+/**
+ * Notes that the graph was looked at today.
+ *
+ * Recorded at most once per day server-side, and outside the heatmap: the
+ * only thing that asks is the exploration achievement, which counts the days
+ * a user went looking (CLAUDE.md §69).
+ */
+function useGraphVisit() {
+  useEffect(() => {
+    void activityApi.graphOpened();
+  }, []);
+}
+
 export function GraphPage({ onOpenTask }: GraphPageProps) {
   const t = useT();
   const lang = useLang();
   const localized = useLocalized();
+  // Selected as the stored array, mapped here: a selector that built the
+  // list would hand back a new one on every render, and a store that
+  // compares by reference would call that a change — for ever.
+  useGraphVisit();
+
+  const tags = useBoardStore((s) => s.tags);
+  const tagStats = useMemo(
+    () => tags.map((tag) => ({ name: tag.name, count: tag.taskCount })),
+    [tags],
+  );
   const tasks = useBoardStore((s) => s.tasks);
   const links = useBoardStore((s) => s.links);
+  const loaded = useBoardStore((s) => s.loaded);
   const taskById = useBoardStore((s) => s.taskById);
   const subtasksOf = useBoardStore((s) => s.subtasksOf);
   const filters = useFiltersStore();
@@ -135,9 +159,13 @@ export function GraphPage({ onOpenTask }: GraphPageProps) {
       <GraphSidebar>
         <GraphSidebarHeader
           title={t.netFilters}
-          stats={`${nodes.length}${lang === 'RU' ? ' узлов · ' : ' nodes · '}${edges.length}${
-            lang === 'RU' ? ' связей' : ' edges'
-          }`}
+          stats={
+            loaded
+              ? `${nodes.length}${lang === 'RU' ? ' узлов · ' : ' nodes · '}${edges.length}${
+                  lang === 'RU' ? ' связей' : ' edges'
+                }`
+              : t.working
+          }
         />
 
         <GraphSidebarSection label={t.state}>
@@ -181,7 +209,7 @@ export function GraphPage({ onOpenTask }: GraphPageProps) {
         </GraphSidebarSection>
 
         <GraphSidebarSection label={t.tags}>
-          <TagFilter tags={mockTagStats} layout="wrap" chipSize="xs" />
+          <TagFilter tags={tagStats} layout="wrap" chipSize="xs" />
         </GraphSidebarSection>
 
         <GraphSidebarSection label={t.color}>

@@ -1,23 +1,60 @@
+import { useEffect, useState } from 'react';
+
 import { EventLogRow } from '@/entities/activity';
 import { useBoardStore } from '@/features/board/board.store';
-import { useSessionStore } from '@/features/session/session.store';
+import { useSessionStore, useUser } from '@/features/session/session.store';
 import { useLang, useT } from '@/shared/i18n';
 import { levelProgress } from '@/shared/lib/progression';
-import { mockActivityTotals, mockEvents } from '@/shared/mocks';
-import { AsciiBar, Identicon, StatCard, Toggle } from '@/shared/ui';
+import * as activityApi from '@/shared/api/activity';
+import type { ActivityEvent } from '@/shared/types/domain';
+import { apiMessage } from '@/shared/api/messages';
+import { AsciiBar, Identicon, LoadError, StatCard, Toggle } from '@/shared/ui';
 import { PageContainer } from '@/widgets';
 
 export function ProfilePage() {
   const t = useT();
   const lang = useLang();
-  const user = useSessionStore((s) => s.user);
+  const user = useUser();
   const toggleVisibility = useSessionStore((s) => s.toggleLeaderboardVisibility);
   const links = useBoardStore((s) => s.links);
+
+  const [events, setEvents] = useState<ActivityEvent[]>([]);
+  const [stats, setStats] = useState<activityApi.ActivityStats | null>(null);
+  const [failure, setFailure] = useState<unknown>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let current = true;
+    // The most recent page only: the profile shows a log, not the archive.
+    void Promise.all([activityApi.events(undefined, 12), activityApi.stats()])
+      .then(([page, counters]) => {
+        if (!current) return;
+        setEvents(page.items);
+        setStats(counters);
+        setFailure(null);
+      })
+      .catch((error: unknown) => {
+        // The figures below fall back to what the session already knows, so
+        // without this the page would look merely quiet.
+        if (current) setFailure(error);
+      });
+    return () => {
+      current = false;
+    };
+  }, [attempt]);
 
   const progress = levelProgress(user.stats.lifetimeXp);
 
   return (
     <PageContainer width="page">
+      {failure !== null && (
+        <LoadError
+          message={apiMessage(failure, t)}
+          retryLabel={t.retry}
+          onRetry={() => setAttempt((n) => n + 1)}
+        />
+      )}
+
       <section className="flex flex-wrap items-center gap-18 border border-line bg-bg-panel px-18 py-16">
         <Identicon name={user.username} cell={13} />
 
@@ -42,13 +79,13 @@ export function ProfilePage() {
           <StatCard
             size="sm"
             label={lang === 'RU' ? 'ЗАВЕРШЕНО' : 'COMPLETED'}
-            value={mockActivityTotals.completed}
+            value={stats?.completedLastYear ?? 0}
             valueColor="#5fb37f"
           />
           <StatCard
             size="sm"
             label={lang === 'RU' ? 'СОЗДАНО' : 'CREATED'}
-            value={mockActivityTotals.created}
+            value={stats?.createdLastYear ?? 0}
           />
           <StatCard
             size="sm"
@@ -69,7 +106,7 @@ export function ProfilePage() {
         <div className="border-b border-line-subtle px-14 py-10 text-11 font-bold tracking-t9 text-txt">
           {t.recentLog}
         </div>
-        {mockEvents.map((event) => (
+        {events.map((event) => (
           <EventLogRow key={event.id} event={event} />
         ))}
       </section>
@@ -81,7 +118,7 @@ export function ProfilePage() {
         </div>
         <Toggle
           checked={user.showInLeaderboard}
-          onChange={toggleVisibility}
+          onChange={() => void toggleVisibility()}
           labelOn={t.on}
           labelOff={t.off}
         />

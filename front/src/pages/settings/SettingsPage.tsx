@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import { useBoardStore } from '@/features/board/board.store';
 import { usePreferencesStore } from '@/features/settings/preferences.store';
-import { useSessionStore } from '@/features/session/session.store';
+import { useSessionStore, useUser } from '@/features/session/session.store';
 import { FREE_TASK_CAP } from '@/shared/config/domain';
 import { useI18nStore, useLang, useT } from '@/shared/i18n';
 import { Button, Chip } from '@/shared/ui';
@@ -54,8 +54,9 @@ export function SettingsPage({ onOpenPlans, onSignOut }: SettingsPageProps) {
   const setLang = useI18nStore((s) => s.setLang);
   const prefs = usePreferencesStore();
   const session = useSessionStore();
+  const user = useUser();
   const flash = useBoardStore((s) => s.flash);
-  const activeTasks = useBoardStore((s) => s.tasks.filter((task) => task.status === 'ACTIVE').length);
+  const activeTasks = useBoardStore((s) => s.activeTaskCount());
 
   return (
     <PageContainer width="settings" stacked={false}>
@@ -94,11 +95,11 @@ export function SettingsPage({ onOpenPlans, onSignOut }: SettingsPageProps) {
       <SettingsGroup title={t.privacy}>
         <SettingsRow label="show_in_leaderboard" note={t.lbToggleNote}>
           <Chip
-            active={session.user.showInLeaderboard}
+            active={user.showInLeaderboard}
             size="md"
-            onClick={session.toggleLeaderboardVisibility}
+            onClick={() => void session.toggleLeaderboardVisibility()}
           >
-            {session.user.showInLeaderboard ? t.on : t.off}
+            {user.showInLeaderboard ? t.on : t.off}
           </Chip>
         </SettingsRow>
         <SettingsRow label={t.exportData} note={t.exportNote}>
@@ -127,16 +128,18 @@ export function SettingsPage({ onOpenPlans, onSignOut }: SettingsPageProps) {
       </SettingsGroup>
 
       <SettingsGroup title={t.account}>
-        <SettingsRow label={t.username} note={t.accountNote} value={session.user.username} />
-        <SettingsRow label={t.email} value={session.user.email} />
+        <SettingsRow label={t.username} note={t.accountNote} value={user.username} />
+        {/* Optional: the account is identified by its username, and an
+            address only arrives with an integration that needs one. */}
+        <SettingsRow label={t.email} value={user.email ?? '—'} />
         <SettingsRow label={t.planRow} note={t.planRowNote}>
           <Button
-            variant={session.user.plan === 'PRO' ? 'violet' : 'ghost'}
+            variant={user.plan === 'PRO' ? 'violet' : 'ghost'}
             size="md"
-            className={session.user.plan === 'PRO' ? '' : 'text-amber'}
+            className={user.plan === 'PRO' ? '' : 'text-amber'}
             onClick={onOpenPlans}
           >
-            {session.user.plan === 'PRO'
+            {user.plan === 'PRO'
               ? t.planProName
               : `${t.planFreeName} · ${activeTasks}/${FREE_TASK_CAP}`}
           </Button>

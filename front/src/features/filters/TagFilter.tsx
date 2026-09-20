@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFiltersStore } from './filters.store';
 import { useLang, useT } from '@/shared/i18n';
 import { cn } from '@/shared/lib/cn';
-import type { TagStat } from '@/shared/mocks';
+import type { TagStat } from '@/shared/types/domain';
 import { Chip, Popover } from '@/shared/ui';
 
 /** Matches the gap-4 utility on the chip row. */

@@ -309,6 +309,7 @@ func (a *API) renderUser(account *user.User) gen.User {
 		Timezone:          account.Settings.Timezone,
 		ShowInLeaderboard: account.Settings.ShowInLeaderboard,
 		Plan:              gen.Plan(account.Subscription.Plan),
+		PlanExpiresAt:     account.Subscription.ExpiresAt,
 		PlanExpired:       account.Subscription.Expired(a.clock.Now().UTC()),
 		CreatedAt:         account.CreatedAt,
 		Stats: gen.UserStats{

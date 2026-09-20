@@ -1,5 +1,7 @@
 import { PlanCard } from '@/entities/plan';
 import { useBoardStore } from '@/features/board/board.store';
+import { checkout } from '@/shared/api/billing';
+import { ApiError } from '@/shared/api/client';
 import { useSessionStore } from '@/features/session/session.store';
 import { GITHUB_URL } from '@/shared/config/links';
 import { usePrices } from '@/shared/config/pricing';
@@ -17,7 +19,19 @@ export function PricingPage({ capped = false, onContinue }: PricingPageProps) {
   const session = useSessionStore();
   const prices = usePrices();
   const flash = useBoardStore((s) => s.flash);
-  const isPro = session.user.plan === 'PRO';
+
+  const buy = async () => {
+    try {
+      await checkout();
+      await session.refreshAccount();
+      flash('SUBSCRIPTION_ACTIVE', `${t.planProName} · ${t.planProNote}`);
+      onContinue();
+    } catch (error) {
+      flash('BILLING_UNAVAILABLE', error instanceof ApiError ? error.code : t.errInternal);
+    }
+  };
+  // Public page: there may be no account yet.
+  const isPro = session.user?.plan === 'PRO';
 
   return (
     <PageContainer width="upgrade" stacked={false} innerClassName="pt-22">
@@ -50,9 +64,12 @@ export function PricingPage({ capped = false, onContinue }: PricingPageProps) {
           ctaVariant="violet"
           onCta={() => {
             if (isPro) return;
-            session.setPlan('PRO');
-            flash('SUBSCRIPTION_ACTIVE', `${t.planProName} · ${t.planProNote}`);
-            onContinue();
+            // Signed out, there is nobody to bill: say who you are first.
+            if (session.status !== 'authenticated') {
+              onContinue();
+              return;
+            }
+            void buy();
           }}
         />
         <PlanCard

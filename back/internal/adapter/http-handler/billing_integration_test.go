@@ -83,17 +83,30 @@ func TestCheckoutGrantsThePlanWhileBillingIsOff(t *testing.T) {
 	username := "buy_" + randomSuffix()
 	c := registerAs(t, handler, username)
 
-	t.Run("a new account is on a trial", func(t *testing.T) {
+	t.Run("a new account is on a trial that says when it ends", func(t *testing.T) {
 		response := c.do(t, http.MethodGet, "/me", "")
 		var me struct {
-			Plan        string `json:"plan"`
-			PlanExpired bool   `json:"planExpired"`
+			Plan          string  `json:"plan"`
+			PlanExpiresAt *string `json:"planExpiresAt"`
+			PlanExpired   bool    `json:"planExpired"`
 		}
 		if err := json.Unmarshal(response.Body.Bytes(), &me); err != nil {
 			t.Fatalf("me: %v", err)
 		}
 		if me.Plan != "FREE" || me.PlanExpired {
 			t.Errorf("plan = %q, expired = %v, want a live free trial", me.Plan, me.PlanExpired)
+		}
+		// Without the date the client can say the trial is live but not how
+		// long is left, which is the one thing the screen needs to show.
+		if me.PlanExpiresAt == nil {
+			t.Fatal("the trial does not say when it ends")
+		}
+		until, err := time.Parse(time.RFC3339, *me.PlanExpiresAt)
+		if err != nil {
+			t.Fatalf("planExpiresAt: %v", err)
+		}
+		if days := time.Until(until).Hours() / 24; days < 13 || days > 15 {
+			t.Errorf("trial runs %.1f days, want about fourteen", days)
 		}
 	})
 

@@ -3,23 +3,24 @@
 What is built, what is not, and what proves it. Every row points at the
 requirement in `CLAUDE.md` and at the code or test that backs the claim.
 
-Updated: 2026-09-20 (board, graph, search and activity complete; achievements, leaderboard and billing outstanding).
+Updated: 2026-09-20 (backend complete and connected; the frontend now reads and writes through the API, and the mock fixtures are deleted).
 
 ## Legend
 
 | Mark | Meaning |
 |---|---|
 | **done** | Implemented and exercised by a test or a running check |
-| **mock** | Works in the frontend against `front/src/shared/mocks`; no server behind it |
+| **partial** | Built, with a named gap stated in the same row |
 | **schema** | The database shape exists, but no endpoint or service uses it yet |
 | **—** | Not started |
 | **bug** | Implemented but demonstrably wrong; see *Known defects* |
 
-The frontend is a complete prototype on mocks. The backend now serves every
-task, subtask, tag and link operation the board needs, with XP, levels and
-both free-plan quotas behind them. A row reading *front: mock / back: schema*
-means "the screen works, the table exists, nothing connects them yet" — that
-pair is now confined to the progression and graph-read features.
+The two halves are joined. `front/src/shared/mocks` is deleted, and every
+screen reads and writes through `front/src/shared/api`, which is the only
+place in the client that talks to the server. Every rule that decides data —
+quotas, lengths, positions, XP, levels, streaks, achievements, ranking — is
+decided by the backend and merely displayed by the frontend; where the client
+holds a number of its own, the row below says so and says it is for display.
 
 ---
 
@@ -29,66 +30,66 @@ pair is now confined to the progression and graph-read features.
 
 | § | Requirement | Front | Back | Evidence |
 |---|---|---|---|---|
-| 2 | User entity | mock | done | served by `GET /me` and `PATCH /me`; `plan` is still hardcoded and `email` not writable |
-| 3 | Task entity | mock | done | full lifecycle through the API, every attribute of §3 served |
-| 4 | Four Eisenhower quadrants | mock | done | `quadrant_enum`, `shared.Quadrant`, enum parity test |
-| 5 | Board with four lists | mock | read done | `GET /tasks` through `board.Service`; every filter exercised live |
-| 6 | Creation inside a quadrant | mock | done | `POST /tasks`; the quadrant comes from the body, the position from the server |
-| 7 | Position, user ordering | mock | done | `task.Place` by neighbour, gap-based, renumbering the scope when a gap runs out |
-| 8 | Moving between quadrants | mock | done (back) | `POST /tasks/{id}/move`; the front still computes the position client-side, which the contract forbids |
-| 9 | Subtask, one level only | mock | done | `POST /tasks/{id}/subtasks`, trigger `tasks_one_level`, 422 proven through the router |
-| 10 | Parent relation | mock | done | `parent_task_id` + FK `tasks_parent_same_user` |
-| 11 | Subtask ordering | mock | partial | new subtasks append via `task.Place`; reordering within a parent has no endpoint (`/move` places in a quadrant) |
-| 12 | Independent subtask completion | mock | done (domain) | `task.Complete`, unit tests |
-| 13 | Completing a parent cascades | mock | done | one transaction, one `completedAt`, `PARENT_CASCADE` on each subtask; proven end to end |
-| 14 | Promote subtask | mock | done | `POST /tasks/{id}/promote`; the XP snapshot is proven untouched |
-| 15 | Completion | mock | done (domain) | `task.Complete` freezes the snapshot |
-| 16 | Archive = completed state | mock | done | CHECK `tasks_completion_snapshot` |
-| 17 | Deadline, states | mock | partial | set and cleared through `PATCH`, filtered by calendar day in the user's zone; the `APPROACHING` 48-hour state is computed only on the client |
-| 18 | Colour as metadata | mock | done | CHECK `tasks_color_known`, `shared.TaskColor` |
-| 19 | Tags, many-to-many | mock | done | full CRUD through the API, case-folding names, orphan labels pruned |
-| 20 | Task links | mock | done | `POST/PATCH/DELETE /links`, all four types, returned with the board |
-| 21 | Link rules (no self, no duplicate) | mock | done | `SELF_LINK` and `DUPLICATE_LINK` proven through the API, both directions of an undirected pair |
-| 22 | Parent relation is not a link | mock | done | separate table, separate edge type |
+| 2 | User entity | done | done | served by `GET /me` and `PATCH /me`; the plan and its expiry are real, `email` is still not writable |
+| 3 | Task entity | done | done | full lifecycle through the API, every attribute of §3 served |
+| 4 | Four Eisenhower quadrants | done | done | `quadrant_enum`, `shared.Quadrant`, enum parity test |
+| 5 | Board with four lists | done | read done | `GET /tasks` through `board.Service`; every filter exercised live |
+| 6 | Creation inside a quadrant | done | done | `POST /tasks`; the quadrant comes from the body, the position from the server |
+| 7 | Position, user ordering | done | done | `task.Place` by neighbour, gap-based, renumbering the scope when a gap runs out |
+| 8 | Moving between quadrants | done | done | `POST /tasks/{id}/move`; the client sends the neighbour it was dropped before and the server decides the position |
+| 9 | Subtask, one level only | done | done | `POST /tasks/{id}/subtasks`, trigger `tasks_one_level`, 422 proven through the router |
+| 10 | Parent relation | done | done | `parent_task_id` + FK `tasks_parent_same_user` |
+| 11 | Subtask ordering | done | partial | new subtasks append via `task.Place`; reordering within a parent has no endpoint (`/move` places in a quadrant) |
+| 12 | Independent subtask completion | done | done (domain) | `task.Complete`, unit tests |
+| 13 | Completing a parent cascades | done | done | one transaction, one `completedAt`, `PARENT_CASCADE` on each subtask; proven end to end |
+| 14 | Promote subtask | done | done | `POST /tasks/{id}/promote`; the XP snapshot is proven untouched |
+| 15 | Completion | done | done (domain) | `task.Complete` freezes the snapshot |
+| 16 | Archive = completed state | done | done | CHECK `tasks_completion_snapshot` |
+| 17 | Deadline, states | done | partial | set and cleared through `PATCH`, filtered by calendar day in the user's zone; the `APPROACHING` 48-hour state is computed only on the client |
+| 18 | Colour as metadata | done | done | CHECK `tasks_color_known`, `shared.TaskColor` |
+| 19 | Tags, many-to-many | done | done | full CRUD through the API, case-folding names, orphan labels pruned |
+| 20 | Task links | done | done | `POST/PATCH/DELETE /links`, all four types, returned with the board |
+| 21 | Link rules (no self, no duplicate) | done | done | `SELF_LINK` and `DUPLICATE_LINK` proven through the API, both directions of an undirected pair |
+| 22 | Parent relation is not a link | done | done | separate table, separate edge type |
 
 ### Graph, search, filters
 
 | § | Requirement | Front | Back | Evidence |
 |---|---|---|---|---|
-| 23–26 | Graph view, nodes, physics, interaction | mock | done (data) | `GET /graph`; physics and interaction stay on the client, which is where they belong |
-| 27 | Graph filters | mock | done | the same seven filters as the board, applied before the response |
-| 28 | Global search | mock | done | `GET /search` over title, description and tags, archive included; wildcards escaped, proven live |
-| 29 | Combinable filters | mock | done | `GET /tasks` with all nine parameters at once, integration-tested |
+| 23–26 | Graph view, nodes, physics, interaction | done | done (data) | `GET /graph`; physics and interaction stay on the client, which is where they belong |
+| 27 | Graph filters | done | done | the same seven filters as the board, applied before the response |
+| 28 | Global search | done | done | `GET /search` over title, description and tags, archive included; the palette shows the server's own match snippet, proven live on a Cyrillic term |
+| 29 | Combinable filters | done | done | `GET /tasks` with all nine parameters at once, integration-tested |
 
 ### Gamification
 
 | § | Requirement | Front | Back | Evidence |
 |---|---|---|---|---|
-| 30–31 | XP, XP by quadrant | mock | done | paid on completion; 50 + 18 + 18 for a cascade proven through the API |
-| 32 | XP snapshot | mock | done | snapshot columns + CHECK; round-trip asserted in the integration test |
+| 30–31 | XP, XP by quadrant | done | done | paid on completion; 50 + 18 + 18 for a cascade proven through the API |
+| 32 | XP snapshot | done | done | snapshot columns + CHECK; round-trip asserted in the integration test |
 | 33 | XP transaction | — | done | every grant and withdrawal recorded; `grant_seq` allows an honest re-completion after a reopen |
-| 34–35 | Level, level up | bug | done | recomputed from lifetime XP on every change; `levelUp` reported on the response. The frontend still shows two different levels |
-| 36–38 | Daily streak, state, timezone | mock | done | one statement per visit, gated by the cache; the day is the user's own, taken from their timezone in SQL |
-| 39–41 | Achievements, catalogue, unlock | mock | done | evaluated inside the transaction that earned them; unlocking twice is impossible |
-| 42–44 | Activity, heatmap, event types | mock | done | eight event types written inside the transactions that cause them; heatmap, feed and stats all served |
-| 45–50 | Leaderboard, periods, metric, privacy | mock | done | WEEK/MONTH from the ledger in UTC, ALL_TIME from lifetime XP; opting out removes the rank entirely |
-| 51 | Profile statistics | mock | done | every counter on `GET /me` moves with the work that causes it |
+| 34–35 | Level, level up | done | done | recomputed from lifetime XP on every change; `levelUp` rides on the completion response and the toast names it |
+| 36–38 | Daily streak, state, timezone | done | done | one statement per visit, gated by the cache; the day is the user's own, taken from their timezone in SQL |
+| 39–41 | Achievements, catalogue, unlock | done | done | evaluated inside the transaction that earned them; unlocking twice is impossible |
+| 42–44 | Activity, heatmap, event types | done | done | eight event types written inside the transactions that cause them; heatmap, feed and stats all served |
+| 45–50 | Leaderboard, periods, metric, privacy | done | done | WEEK/MONTH from the ledger in UTC, ALL_TIME from lifetime XP; opting out removes the rank entirely |
+| 51 | Profile statistics | done | done | every counter on `GET /me` moves with the work that causes it |
 
 ### Platform
 
 | § | Requirement | Front | Back | Evidence |
 |---|---|---|---|---|
-| 52 | Localization EN/RU | done | n/a | 159 keys in both dictionaries, parity checked |
-| 53 | Notifications | — | schema | `notifications` table |
-| 54–60 | Six modules and their scope | mock | — | all six pages exist |
-| 61 | 20 business rules | partly | mostly done | rules 1–9 are enforced by the schema; 10–20 need the service layer |
+| 52 | Localization EN/RU | done | n/a | both dictionaries at parity; server refusals arrive as a code plus parameters and become a sentence in `shared/api/messages.ts` |
+| 53 | Notifications | — | deferred | Table, enum and `docs/API.md` §13 all exist; nothing writes or reads them. Deferred on purpose — §53 says "may" and asks only that the architecture allow it later. See §4b |
+| 54–60 | Six modules and their scope | done | done | all six read from the API; Activity, Leaderboard and Profile state a failed read instead of rendering zeroes |
+| 61 | 20 business rules | n/a | done | 1–9 in the schema, 10–20 in the service layer; each is exercised by a test or a live check |
 | 62 | Data model | n/a | done | 11 tables plus the outbox, 13 migrations |
-| 64 | Plans, access gate | mock | done (back) | both quotas enforced under the account lock; a lapsed plan answers 402 on every application route while the account itself stays reachable |
+| 64 | Plans, access gate | done | done | both quotas enforced under the account lock and proven live at 35 tasks and 25 links; the client makes no quota decision of its own — a 402 opens the paywall, which quotes the limit the server named |
 | 65 | Exact XP and level values | done | done | 50/35/20/10, ×0.35, `45·(n−1)²`, tests on both sides |
-| 66 | Reopen and soft delete | mock | done | both live, each with its own compensating ledger entry (`TASK_REOPENED`, `TASK_DELETED`) |
+| 66 | Reopen and soft delete | done | done | both live, each with its own compensating ledger entry (`TASK_REOPENED`, `TASK_DELETED`) |
 | 67 | Landing, pricing, 404, settings | done | n/a | routes exist and render; the server now answers export and account deletion |
 | 68 | Input limits | done | done | 100/2000/24 in the UI and as CHECK constraints |
-| 69 | `GRAPH_OPENED` | bug | done (back) | `POST /activity/graph-opened` records it; the front still never calls it |
+| 69 | `GRAPH_OPENED` | done | done | `POST /activity/graph-opened`, called when the graph mounts |
 
 ---
 
@@ -158,17 +159,27 @@ Operational endpoints that do exist: `GET /healthz`, `GET /readyz`,
 
 ## 4. Known defects
 
-Found by reviewing the frontend against the requirements; none are fixed.
+The seven defects recorded here at the last pass were all in the frontend, and
+all but one are closed. What each one was, and what closed it:
 
-| Where | Defect | Requirement |
+| Where | Defect | Now |
 |---|---|---|
-| `shared/config/domain.ts:198` | `FREE_LINK_CAP = 25` is declared and used nowhere on the front; the server now enforces it | §64 |
-| `pages/graph/GraphPage.tsx` | `GRAPH_OPENED` is never emitted, so `CARTOGRAPHER` rests on a signal nothing produces | §69 |
-| `mocks/user.mock.ts` vs `ActivityPage.tsx:67` | 7420 XP is level 13 by the formula; the mock stores 12, and both numbers are on screen at once | §34 |
-| `board.store.ts:259` | `deleteTask` removes rows outright; the contract says soft delete with a compensating transaction | §66 |
-| `filters.store.ts:96` | `deadline: today` means "within 24 hours", not the user's calendar day | §38 |
-| `types/domain.ts:85` | the `Tag` interface is dead code; the app uses `{name, count}` while the API returns `{id, name, taskCount}` | API §5 |
-| `docs/SPEC.md` §3.3 | says `color` is a hex string; the contract and both implementations use the seven-value enum | §18 |
+| `shared/config/domain.ts` | `FREE_LINK_CAP = 25` declared and used nowhere | deleted; the paywall reads the limit out of the refusal |
+| `pages/graph/GraphPage.tsx` | `GRAPH_OPENED` never emitted | emitted when the graph mounts |
+| `mocks/user.mock.ts` vs `ActivityPage.tsx` | two different levels on screen at once | the mocks are deleted; the level comes from `GET /me` |
+| `board.store.ts` | `deleteTask` removed rows outright | `DELETE /tasks/{id}`, which is a soft delete with a compensating ledger entry |
+| `filters.store.ts` | `deadline: today` meant "within 24 hours" | a calendar day in the reader's own zone, which is how the server reads it |
+| `types/domain.ts` | the `Tag` interface was dead code | the board uses `tasksApi.Tag` (`{id, name, taskCount}`), which is what the API returns |
+| `docs/SPEC.md` §3.3 | says `color` is a hex string | **open** — the contract and both implementations use the seven-value enum; the specification is the thing that is wrong |
+
+### Where the client still holds a number
+
+Both are for display, and neither decides anything:
+
+| Where | Number | Why it is not a rule |
+|---|---|---|
+| `FREE_TASK_CAP = 35` | the `12/35` counter in the header, settings and the paywall | the server refuses what exceeds the quota and names the limit in the refusal; that named limit is what the paywall shows once anything has been refused |
+| `TITLE_MAX_LENGTH`, `TAG_MAX_LENGTH`, `DESCRIPTION_MAX_LENGTH` | the counter beside a field and the red border at the limit | the server validates the same three lengths and answers `VALIDATION_FAILED` with `field` and `max`, proven live at 101, 2001 and 25 characters |
 
 ---
 
@@ -188,6 +199,30 @@ Found by reviewing the frontend against the requirements; none are fixed.
 | Billing has an off switch | `billing.enabled: false` grants a purchase outright for `granted_period`, so the gate lifting, the quotas going away and the plan showing on the account can all be used before a provider is chosen. Switched on with no provider, a purchase is refused with 503 rather than accepted. |
 | A new account gets a trial | `billing.trial_period` sets `plan_expires_at` at registration. Zero reproduces the old behaviour — no expiry — and accounts made before this are not retroactively given a deadline. |
 | `deletedAt` on `Task` | Added for the export, which includes deleted tasks: a list carrying them without saying which would be worse than leaving them out. Always absent on the board. |
+
+## 4b. Deferred on purpose
+
+**Notifications (§53).** Not started, by decision rather than oversight. The
+`notifications` table, its five-value enum and the two endpoints in
+`docs/API.md` §13 are in place, so adding them later touches nothing that
+exists.
+
+Three of the five types — `ACHIEVEMENT_UNLOCKED`, `LEVEL_UP`,
+`STREAK_EXTENDED` — happen inside transactions that already run and already
+write an activity event, so they are one insert beside it. The other two,
+`DEADLINE_APPROACHING` and `TASK_OVERDUE`, need something nobody triggers: a
+periodic pass over deadlines inside the 48-hour window (§65) and past it,
+idempotent so a re-run adds no duplicates. There is no scheduler or worker in
+the backend yet, so that one is a new moving part, not an endpoint.
+
+Still open from `docs/API.md` §18.8: whether delivery is internal only, or
+email and push as well. Email needs an address, which is optional here — the
+same wall account deletion ran into.
+
+**The `APPROACHING` deadline state (§17).** Computed on the client from
+`deadlineAt` and the 48-hour threshold. The server stores the instant and
+filters by calendar day; it has no reason to store a state that is a function
+of the current time.
 
 ## 5. Open decisions blocking work
 

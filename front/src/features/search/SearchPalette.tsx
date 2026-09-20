@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { useBoardStore } from '@/features/board/board.store';
+import * as tasksApi from '@/shared/api/tasks';
+import { apiMessage } from '@/shared/api/messages';
 import { QUADRANT_BY_ID } from '@/shared/config/domain';
 import { useLang, useT } from '@/shared/i18n';
-import { Modal } from '@/shared/ui';
+import { LoadError, Modal } from '@/shared/ui';
 
 export interface SearchPaletteProps {
   open: boolean;
@@ -13,28 +14,60 @@ export interface SearchPaletteProps {
   onOpenTask: (id: string) => void;
 }
 
-/** Ctrl+K palette. Searches title, description and tags across active and archived tasks. */
+/** How long the field waits before asking, so typing is not a request each. */
+const ASK_AFTER_MS = 180;
+
+interface Answer {
+  q: string;
+  hits: tasksApi.SearchHit[];
+  failure: unknown;
+}
+
+/**
+ * Ctrl+K palette.
+ *
+ * The asking is the server's: the board holds one working set and a large
+ * archive does not fit in it, so a search over what is loaded would quietly
+ * answer for part of the account.
+ */
 export function SearchPalette({ open, query, onQueryChange, onClose, onOpenTask }: SearchPaletteProps) {
   const t = useT();
   const lang = useLang();
-  const tasks = useBoardStore((s) => s.tasks);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Kept with the term it answers, so a result never appears under a query it
+  // was not the answer to.
+  const [answer, setAnswer] = useState<Answer | null>(null);
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
 
-  const q = query.trim().toLowerCase();
-  const results =
-    q === ''
-      ? []
-      : tasks
-          .filter((task) =>
-            `${task.title} ${task.description} ${task.tags.map((tag) => `#${tag}`).join(' ')}`
-              .toLowerCase()
-              .includes(q),
-          )
-          .slice(0, 14);
+  const q = query.trim();
+
+  useEffect(() => {
+    if (!open || q === '') return undefined;
+
+    // Aborted rather than ignored: a request whose answer is already stale is
+    // work the server need not finish.
+    const abort = new AbortController();
+    const timer = setTimeout(() => {
+      void tasksApi
+        .search(q, 14, abort.signal)
+        .then((hits) => setAnswer({ q, hits, failure: null }))
+        .catch((error: unknown) => {
+          if (!abort.signal.aborted) setAnswer({ q, hits: [], failure: error });
+        });
+    }, ASK_AFTER_MS);
+
+    return () => {
+      clearTimeout(timer);
+      abort.abort();
+    };
+  }, [open, q]);
+
+  const current = answer?.q === q ? answer : null;
+  const results = current?.hits ?? [];
+  const failure = current?.failure ?? null;
 
   return (
     <Modal
@@ -83,23 +116,25 @@ export function SearchPalette({ open, query, onQueryChange, onClose, onOpenTask 
           ? lang === 'RU'
             ? 'начните вводить запрос · title, description, tags'
             : 'start typing · title, description, tags'
-          : `${results.length}${
-              lang === 'RU'
-                ? ' совпадений · title, description, tags'
-                : ' matches · title, description, tags'
-            }`}
+          : current === null
+            ? t.working
+            : `${results.length}${
+                lang === 'RU'
+                  ? ' совпадений · title, description, tags'
+                  : ' matches · title, description, tags'
+              }`}
       </div>
 
+      {failure !== null && <LoadError className="border-x-0 border-t-0" message={apiMessage(failure, t)} />}
+
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {results.map((task) => {
-          const quadrant = task.quadrant;
-          const meta = quadrant === null ? null : QUADRANT_BY_ID[quadrant];
-          const hitTag = task.tags.find((tag) => `#${tag}`.includes(q));
+        {results.map((hit) => {
+          const meta = hit.quadrant === null ? null : QUADRANT_BY_ID[hit.quadrant];
           return (
             <button
-              key={task.id}
+              key={hit.id}
               type="button"
-              onClick={() => onOpenTask(task.id)}
+              onClick={() => onOpenTask(hit.id)}
               className="block w-full border-0 border-b border-b-line-faint bg-transparent px-13 py-9 text-left transition-colors hover:bg-bg-hover"
             >
               <div className="flex items-center gap-9">
@@ -110,27 +145,27 @@ export function SearchPalette({ open, query, onQueryChange, onClose, onOpenTask 
                   {meta?.code ?? 'SUB'}
                 </span>
                 <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-11 text-txt">
-                  {task.title}
+                  {hit.title}
                 </span>
                 <span
                   className={
-                    task.status === 'COMPLETED' ? 'text-9 text-green' : 'text-9 text-txt-dim'
+                    hit.status === 'COMPLETED' ? 'text-9 text-green' : 'text-9 text-txt-dim'
                   }
                 >
-                  [{task.status === 'COMPLETED' ? t.completed : task.parentTaskId ? 'SUB' : t.active}]
+                  [{hit.status === 'COMPLETED' ? t.completed : hit.isSubtask ? 'SUB' : t.active}]
                 </span>
-                <span className="text-9 text-txt-ghost">{task.id.toUpperCase()}</span>
+                <span className="text-9 text-txt-ghost">{hit.id.toUpperCase()}</span>
               </div>
+              {/* The server cut this around the term it matched, so it is
+                  shown as it came rather than searched again here. */}
               <div className="mt-4 overflow-hidden text-ellipsis whitespace-nowrap text-95 text-txt-tag">
-                {hitTag !== undefined
-                  ? `#${hitTag}`
-                  : (task.description === '' ? task.title : task.description).slice(0, 96)}
+                {hit.matchedText}
               </div>
             </button>
           );
         })}
 
-        {q !== '' && results.length === 0 && (
+        {q !== '' && failure === null && results.length === 0 && (
           <div className="px-13 py-26 text-center text-10 tracking-t6 text-txt-faint">
             {t.noResults}
           </div>

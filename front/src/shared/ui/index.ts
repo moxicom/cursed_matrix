@@ -10,6 +10,7 @@ export { IconButton, type IconButtonProps, type IconButtonSize, type IconButtonT
 export { Identicon, type IdenticonProps } from './Identicon';
 export { Input, type InputProps, type InputVariant } from './Input';
 export { KeyHint, type KeyHintProps } from './KeyHint';
+export { LoadError, type LoadErrorProps } from './LoadError';
 export {
   Modal,
   ModalBody,

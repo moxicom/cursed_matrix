@@ -82,18 +82,12 @@ export function isCompleted(task: Task): task is CompletedTask {
   return task.status === 'COMPLETED' && task.completedAt !== null;
 }
 
-export interface Tag {
-  id: string;
-  userId: string;
-  name: string;
-}
-
 export interface TaskLink {
   id: string;
-  userId: string;
   sourceTaskId: string;
   targetTaskId: string;
   type: LinkType;
+  createdAt: string;
 }
 
 export interface UserStats {
@@ -111,12 +105,15 @@ export interface UserStats {
 export interface User {
   id: string;
   username: string;
-  email: string;
+  /** Optional: the account is identified by its username. */
+  email: string | null;
   avatarUrl: string | null;
   language: Language;
   timezone: string;
   showInLeaderboard: boolean;
   plan: PlanId;
+  /** Null on a plan that does not expire. */
+  planExpiresAt: string | null;
   /** Trial that has run out — every action bounces to pricing. */
   planExpired: boolean;
   createdAt: string;
@@ -151,8 +148,13 @@ export interface ActivityEvent {
   occurredAt: string;
   /** Calendar day in the user's timezone — what the heatmap buckets by. */
   localDate: string;
-  detail: string;
-  xp: number | null;
+  taskId: string | null;
+  taskTitle: string | null;
+  /**
+   * Parameters, never a rendered sentence: the row is written here, in
+   * whichever language is selected.
+   */
+  detail: Record<string, unknown>;
 }
 
 export interface ActivityDay {
@@ -167,8 +169,14 @@ export type AchievementCategory = 'TASKS' | 'XP' | 'LEVEL' | 'STREAK' | 'LINKS' 
 export interface Achievement {
   code: string;
   category: AchievementCategory;
-  description: { en: string; ru: string };
   threshold: number;
   progress: number;
+  rewardXp: number;
   unlockedAt: string | null;
+}
+
+/** A label with how many live tasks carry it, counted by the server. */
+export interface TagStat {
+  name: string;
+  count: number;
 }

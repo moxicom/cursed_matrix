@@ -193,9 +193,12 @@ export const LINK_TYPES: readonly LinkType[] = ["RELATED", "BLOCKS", "DEPENDS_ON
 /** Subtasks award 35% of their parent quadrant's XP. */
 export const SUBTASK_XP_MULTIPLIER = 0.35;
 
-/** Free plan quotas. Hitting either one opens the paywall. */
+/**
+ * Shown, not enforced. The quota is the server's: it refuses what exceeds it
+ * and names the limit in the refusal, which is what the paywall quotes. This
+ * is only the number beside the counter before anything has been refused.
+ */
 export const FREE_TASK_CAP = 35;
-export const FREE_LINK_CAP = 25;
 
 /** Deadline within this many hours renders as "approaching". */
 export const DEADLINE_APPROACHING_HOURS = 48;

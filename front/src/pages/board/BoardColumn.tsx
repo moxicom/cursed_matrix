@@ -16,6 +16,8 @@ export interface BoardColumnProps {
   tasks: readonly Task[];
   /** Total count shown in the header, before search narrowing. */
   count: number;
+  /** False until the board has arrived: an empty column is not yet a fact. */
+  loaded: boolean;
   /** Derived once per data change by the page, not re-scanned per row. */
   subtasksByParent: Map<string, Task[]>;
   linkCountById: Map<string, number>;
@@ -35,6 +37,7 @@ export function BoardColumn({
   meta,
   tasks,
   count,
+  loaded,
   subtasksByParent,
   linkCountById,
   draggingId,
@@ -90,7 +93,7 @@ export function BoardColumn({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-8 pb-40">
-        {tasks.length === 0 && (
+        {loaded && tasks.length === 0 && (
           <EmptyState
             art={EMPTY_ART}
             message={localized(meta.empty)}

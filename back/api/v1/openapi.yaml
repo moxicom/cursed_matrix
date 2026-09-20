@@ -1510,6 +1510,15 @@ components:
         timezone: { type: string }
         showInLeaderboard: { type: boolean }
         plan: { $ref: "#/components/schemas/Plan" }
+        planExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When the current plan runs out. Null on one that does not — a
+            free account created before trials existed, or a self-hosted
+            install. The client needs it to say how long is left, which
+            `planExpired` alone cannot.
         planExpired:
           type: boolean
           description: A trial that has run out. Every section but pricing is closed.

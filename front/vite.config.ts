@@ -17,5 +17,15 @@ export default defineConfig({
       '@/shared': r('./src/shared'),
     },
   },
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    // The cookies are HttpOnly and same-origin, so the dev server has to
+    // carry /api itself rather than the app talking to another origin.
+    proxy: {
+      '/api': {
+        target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8080',
+        changeOrigin: false,
+      },
+    },
+  },
 });

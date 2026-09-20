@@ -1,4 +1,5 @@
-import { useLocalized } from '@/shared/i18n';
+import { achievementDescription } from '@/shared/config/achievements';
+import { useLang } from '@/shared/i18n';
 import { asciiBar } from '@/shared/lib/ascii';
 import { cn } from '@/shared/lib/cn';
 import type { Achievement } from '@/shared/types/domain';
@@ -8,7 +9,7 @@ export interface AchievementCardProps {
 }
 
 export function AchievementCard({ achievement }: AchievementCardProps) {
-  const localized = useLocalized();
+  const lang = useLang();
   const unlocked = achievement.unlockedAt !== null;
   const ratio = Math.min(1, achievement.progress / achievement.threshold);
 
@@ -36,7 +37,7 @@ export function AchievementCard({ achievement }: AchievementCardProps) {
         </span>
       </div>
       <div className="mt-6 text-95 leading-[1.45] text-txt-dim">
-        {localized(achievement.description)}
+        {achievementDescription(achievement.code, lang)}
       </div>
       <div className="mt-7 flex items-center gap-8">
         <span

@@ -11,6 +11,7 @@ import {
   NotFoundRoute,
   PricingRoute,
   ProfileRoute,
+  SignInRoute,
   SettingsRoute,
 } from './routes';
 import { UiKitPage } from '@/pages/uikit/UiKitPage';
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       // public
       { path: ROUTES.landing, element: <LandingRoute /> },
       { path: ROUTES.upgrade, element: <PricingRoute /> },
+      { path: ROUTES.signIn, element: <SignInRoute /> },
 
       // everything below needs an active subscription
       {

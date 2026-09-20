@@ -12,6 +12,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	gen "github.com/moxicom/cursed_matrix/back/internal/adapter/http-handler/gen"
+	"github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/graph"
@@ -28,10 +29,12 @@ type API struct {
 	board      *board.Service
 	graph      *graph.Service
 	profile    *profile.Service
+	awards     *achievement.Service
 	cookies    *CookieWriter
 	refreshTTL time.Duration
 	limiter    port.RateLimiter
 	limits     RateLimits
+	clock      shared.Clock
 }
 
 // NewAPI wires the handlers to the use cases.
@@ -40,12 +43,14 @@ func NewAPI(
 	boards *board.Service,
 	graphs *graph.Service,
 	profiles *profile.Service,
+	awards *achievement.Service,
 	cookies *CookieWriter,
 	refreshTTL time.Duration,
 	limiter port.RateLimiter,
 	limits RateLimits,
+	clock shared.Clock,
 ) *API {
-	return &API{service, boards, graphs, profiles, cookies, refreshTTL, limiter, limits}
+	return &API{service, boards, graphs, profiles, awards, cookies, refreshTTL, limiter, limits, clock}
 }
 
 // Register creates an account and signs it in.
@@ -179,7 +184,7 @@ func (a *API) GetMe(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, err)
 		return
 	}
-	WriteJSON(w, r, http.StatusOK, renderUser(account))
+	WriteJSON(w, r, http.StatusOK, a.renderUser(account))
 }
 
 // UpdateSettings changes the preferences that belong to the account.
@@ -206,7 +211,7 @@ func (a *API) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, err)
 		return
 	}
-	WriteJSON(w, r, http.StatusOK, renderUser(account))
+	WriteJSON(w, r, http.StatusOK, a.renderUser(account))
 }
 
 func (a *API) respondWithSession(w http.ResponseWriter, r *http.Request, session *auth.Session, status int) {
@@ -214,7 +219,7 @@ func (a *API) respondWithSession(w http.ResponseWriter, r *http.Request, session
 		WriteError(w, r, err)
 		return
 	}
-	WriteJSON(w, r, status, renderUser(session.User))
+	WriteJSON(w, r, status, a.renderUser(session.User))
 }
 
 // maxBodyBytes bounds an unauthenticated request. Without it a single caller
@@ -293,15 +298,15 @@ func emailValue(email *openapi_types.Email) *string {
 	return &value
 }
 
-func renderUser(account *user.User) gen.User {
+func (a *API) renderUser(account *user.User) gen.User {
 	rendered := gen.User{
 		Id:                uuid.UUID(account.ID),
 		Username:          account.Username,
 		Language:          gen.Language(account.Settings.Language),
 		Timezone:          account.Settings.Timezone,
 		ShowInLeaderboard: account.Settings.ShowInLeaderboard,
-		Plan:              gen.Plan(shared.PlanFree),
-		PlanExpired:       false,
+		Plan:              gen.Plan(account.Subscription.Plan),
+		PlanExpired:       account.Subscription.Expired(a.clock.Now().UTC()),
 		CreatedAt:         account.CreatedAt,
 		Stats: gen.UserStats{
 			LifetimeXp:           account.Stats.LifetimeXP,

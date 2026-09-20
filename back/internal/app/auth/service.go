@@ -271,7 +271,7 @@ type SettingsChange struct {
 }
 
 func (s *Service) issue(ctx context.Context, account *user.User) (*Session, error) {
-	access, expiry, err := s.tokens.Issue(account.ID, shared.PlanFree)
+	access, expiry, err := s.tokens.Issue(account.ID, account.Subscription)
 	if err != nil {
 		return nil, shared.WrapError(err, shared.CodeInternal, nil)
 	}

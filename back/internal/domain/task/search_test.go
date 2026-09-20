@@ -151,3 +151,88 @@ func utf8ValidString(s string) bool {
 	}
 	return true
 }
+
+// TestSnippetSurvivesCaseFoldingThatChangesLength is why the search counts
+// runes rather than folding the whole string and slicing by byte offset.
+//
+// The lower case of İ is two runes, so an offset taken in the folded text runs
+// ahead of the original by one rune per such character. The window would still
+// usually contain the term, which is why this asserts where the term sits in
+// the snippet rather than merely that it is there.
+func TestSnippetSurvivesCaseFoldingThatChangesLength(t *testing.T) {
+	tests := []struct {
+		name    string
+		lead    string
+		term    string
+		want    string
+		wantPad int
+	}{
+		{
+			name:    "no case-folding surprises",
+			lead:    strings.Repeat("a", 100),
+			term:    "needle",
+			want:    "NEEDLE",
+			wantPad: task.SnippetRadius,
+		},
+		{
+			// Two characters whose lower case is longer: the old offset would
+			// have started the window two runes late.
+			name:    "characters whose lower case is longer",
+			lead:    "İİ" + strings.Repeat("a", 100),
+			term:    "needle",
+			want:    "NEEDLE",
+			wantPad: task.SnippetRadius,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text := tt.lead + tt.want + strings.Repeat("b", 100)
+
+			got := task.Snippet(text, tt.term)
+			at := strings.Index(got, tt.want)
+			if at < 0 {
+				t.Fatalf("= %q, want it to contain %q", got, tt.want)
+			}
+
+			// The ellipsis is one rune of the lead-in the window did not ask
+			// for, so the padding is measured after it.
+			before := []rune(got[:at])
+			if len(before) > 0 && before[0] == '…' {
+				before = before[1:]
+			}
+			if len(before) != tt.wantPad {
+				t.Errorf("%d runes before the term, want %d (%q)", len(before), tt.wantPad, got)
+			}
+			for _, r := range got {
+				if r == '\uFFFD' {
+					t.Fatalf("= %q, which has a broken character in it", got)
+				}
+			}
+		})
+	}
+}
+
+func TestDescribeMatchFoldsCaseWithoutReslicing(t *testing.T) {
+	tests := []struct {
+		name      string
+		title     string
+		term      string
+		wantField task.Match
+	}{
+		{name: "İ in the title", title: "İstanbul trip", term: "istanbul", wantField: task.MatchTitle},
+		{name: "upper cyrillic", title: "ОТЧЁТ за квартал", term: "отчёт", wantField: task.MatchTitle},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			field, text := task.DescribeMatch(tt.title, "", nil, tt.term)
+			if field != tt.wantField {
+				t.Errorf("field = %s, want %s", field, tt.wantField)
+			}
+			if text != tt.title {
+				t.Errorf("text = %q, want the title", text)
+			}
+		})
+	}
+}

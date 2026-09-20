@@ -30,6 +30,10 @@ tags:
     description: The user's own labels.
   - name: links
     description: The network drawn over the tasks.
+  - name: leaderboard
+    description: The public ranking.
+  - name: achievements
+    description: What the user has earned.
   - name: search
     description: The command palette.
   - name: graph
@@ -602,6 +606,62 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /leaderboard:
+    get:
+      tags: [leaderboard]
+      summary: The public ranking
+      operationId: leaderboard
+      description: |
+        Only users who chose to appear are counted, so someone hidden occupies
+        no rank and pushes nobody down. Weekly and monthly figures are sums of
+        XP transactions inside the period, computed in UTC so that two people's
+        weeks are the same week. Ranks are dense and ties are broken by who
+        reached the total first, so the order is stable between requests.
+
+        `me` comes back even when the asking user is off the page. When they
+        are hidden, `visible` is false and the rank is null — publicly it does
+        not exist.
+      parameters:
+        - { name: period, in: query, schema: { $ref: "#/components/schemas/LeaderboardPeriod" } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: One page of the ranking.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries, me]
+                properties:
+                  entries: { type: array, items: { $ref: "#/components/schemas/LeaderboardEntry" } }
+                  me: { $ref: "#/components/schemas/LeaderboardStanding" }
+                  nextOffset: { type: integer, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /achievements:
+    get:
+      tags: [achievements]
+      summary: The catalogue and the user's standing
+      operationId: listAchievements
+      description: |
+        Names and descriptions are not returned, only the code: the client
+        localises it, so the server never has to know which language the user
+        reads. Progress is reported for every entry, earned or not, because
+        the screen sorts by how close the user is.
+      responses:
+        "200":
+          description: Every achievement there is.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Achievement" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /graph:
     get:
       tags: [graph]
@@ -666,6 +726,51 @@ paths:
                     properties:
                       created: { type: integer }
                       completed: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /activity/events:
+    get:
+      tags: [activity]
+      summary: What the user did
+      operationId: activityEvents
+      description: |
+        Newest first, paged by a cursor rather than an offset: events keep
+        arriving while someone reads, and counting from the start would show
+        one twice or skip one. `type` is a code and `detail` carries
+        parameters, not a sentence, so the client renders the row in either
+        language.
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: One page of the history.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ActivityEvent" } }
+                  nextCursor: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /activity/stats:
+    get:
+      tags: [activity]
+      summary: The figures above the heatmap
+      operationId: activityStats
+      description: |
+        Created and completed over the same 365 days the heatmap covers, the
+        two streaks, lifetime XP with its level, and how many tasks are open
+        against how many are finished.
+      responses:
+        "200":
+          description: The counters.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActivityStats" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /activity/graph-opened:
@@ -915,6 +1020,47 @@ components:
       type: string
       enum: [ASC, DESC]
 
+    LeaderboardPeriod:
+      type: string
+      enum: [WEEK, MONTH, ALL_TIME]
+
+    LeaderboardEntry:
+      type: object
+      required: [rank, userId, username, xp, level, currentStreak, isCurrentUser]
+      properties:
+        rank: { type: integer }
+        userId: { type: string, format: uuid }
+        username: { type: string }
+        avatarUrl: { type: string, nullable: true }
+        xp: { type: integer, format: int64 }
+        level: { type: integer, format: int32 }
+        currentStreak: { type: integer, format: int32 }
+        isCurrentUser: { type: boolean }
+
+    LeaderboardStanding:
+      type: object
+      required: [visible, xp]
+      properties:
+        visible:
+          type: boolean
+          description: False when the user chose not to appear; the rank is then null.
+        rank: { type: integer, nullable: true }
+        xp: { type: integer, format: int64 }
+
+    Achievement:
+      type: object
+      required: [code, category, threshold, progress, rewardXp]
+      properties:
+        code: { type: string }
+        category: { type: string, enum: [TASKS, XP, LEVEL, STREAK, LINKS, EXPLORATION] }
+        threshold: { type: integer, format: int64 }
+        progress:
+          type: integer
+          format: int64
+          description: Never past the threshold, so the ratio the screen sorts by cannot exceed one.
+        rewardXp: { type: integer, format: int32 }
+        unlockedAt: { type: string, format: date-time, nullable: true }
+
     SearchHit:
       type: object
       required: [id, title, isSubtask, status, matchedField, matchedText]
@@ -970,6 +1116,44 @@ components:
           allOf: [{ $ref: "#/components/schemas/LinkType" }]
           nullable: true
           description: Absent on a parent relation, which has no type.
+
+    ActivityEvent:
+      type: object
+      required: [id, type, occurredAt, localDate, detail]
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          type: string
+          description: A code the client localises, never a rendered sentence.
+        occurredAt: { type: string, format: date-time }
+        localDate: { type: string, format: date }
+        taskId: { type: string, format: uuid, nullable: true }
+        taskTitle: { type: string, nullable: true }
+        detail:
+          type: object
+          additionalProperties: true
+          description: Parameters for the client's message template.
+
+    ActivityStats:
+      type: object
+      required:
+        - createdLastYear
+        - completedLastYear
+        - currentStreak
+        - longestStreak
+        - lifetimeXp
+        - level
+        - activeTasks
+        - archivedTasks
+      properties:
+        createdLastYear: { type: integer, format: int64 }
+        completedLastYear: { type: integer, format: int64 }
+        currentStreak: { type: integer, format: int32 }
+        longestStreak: { type: integer, format: int32 }
+        lifetimeXp: { type: integer, format: int64 }
+        level: { type: integer, format: int32 }
+        activeTasks: { type: integer, format: int64 }
+        archivedTasks: { type: integer, format: int64 }
 
     ActivityDay:
       type: object

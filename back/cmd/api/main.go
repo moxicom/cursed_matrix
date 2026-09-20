@@ -20,6 +20,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/postgres"
 	redisadapter "github.com/moxicom/cursed_matrix/back/internal/adapter/redis"
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/token"
+	"github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/graph"
@@ -97,6 +98,12 @@ func run() error {
 			&shared.SystemClock{},
 			cfg.Auth.RefreshTTL,
 		)
+		awards := achievement.NewService(
+			postgres.NewAchievementRepository(pool),
+			postgres.NewUserRepository(pool),
+			postgres.NewActivityRepository(pool),
+			&shared.SystemClock{},
+		)
 		boards := board.NewService(board.Deps{
 			Tasks:  postgres.NewTaskRepository(pool),
 			Users:  postgres.NewUserRepository(pool),
@@ -105,6 +112,7 @@ func run() error {
 			Tx:     postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
 			Ledger: postgres.NewXPLedger(pool),
 			Events: postgres.NewActivityRepository(pool),
+			Awards: awards,
 			XP:     progression.DefaultConfig(),
 			Clock:  &shared.SystemClock{},
 			Cache:  redisCache,
@@ -123,6 +131,7 @@ func run() error {
 			postgres.NewTaskRepository(pool),
 			postgres.NewUserRepository(pool),
 			postgres.NewActivityRepository(pool),
+			awards,
 			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
 			&shared.SystemClock{},
 		)
@@ -131,12 +140,14 @@ func run() error {
 			postgres.NewActivityRepository(pool),
 			redisCache,
 			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
+			awards,
+			postgres.NewLeaderboardRepository(pool),
 			&shared.SystemClock{},
 		)
 		api = httphandler.Routes(
-			httphandler.NewAPI(service, boards, graphs, profiles, httphandler.NewCookieWriter(!cfg.Development()),
-				cfg.Auth.RefreshTTL, limiter, limits),
-			tokens, limiter, limits, profiles, utils.ForComponent(log, "streak"),
+			httphandler.NewAPI(service, boards, graphs, profiles, awards, httphandler.NewCookieWriter(!cfg.Development()),
+				cfg.Auth.RefreshTTL, limiter, limits, &shared.SystemClock{}),
+			tokens, limiter, limits, profiles, &shared.SystemClock{}, utils.ForComponent(log, "streak"),
 		)
 	} else {
 		log.Warn("api disabled: the refresh store needs Redis")

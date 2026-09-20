@@ -8,8 +8,10 @@ import (
 
 	"github.com/google/uuid"
 
+	appachievement "github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
@@ -200,6 +202,14 @@ func (e *stubEvents) Heatmap(context.Context, uuid.UUID, time.Time, time.Time) (
 	return nil, nil
 }
 
+func (e *stubEvents) Events(context.Context, uuid.UUID, *activity.Cursor, int) ([]activity.Entry, error) {
+	return nil, nil
+}
+
+func (e *stubEvents) Stats(context.Context, uuid.UUID, time.Time) (activity.Stats, error) {
+	return activity.Stats{}, nil
+}
+
 type stubLinks struct {
 	links    []link.Link
 	unlinked []uuid.UUID
@@ -231,6 +241,26 @@ func (l *stubLinks) Count(context.Context, uuid.UUID) (int, error) { return len(
 func (l *stubLinks) RemoveForTasks(_ context.Context, _ uuid.UUID, taskIDs []uuid.UUID) error {
 	l.unlinked = append(l.unlinked, taskIDs...)
 	return nil
+}
+
+// stubAwards is an empty catalogue: these tests are about the work, not about
+// what it earns, and an empty catalogue unlocks nothing.
+type stubAwards struct{}
+
+func (*stubAwards) Catalogue(context.Context) ([]achievement.Achievement, error) {
+	return nil, nil
+}
+
+func (*stubAwards) Metrics(context.Context, uuid.UUID) (achievement.Metrics, error) {
+	return achievement.Metrics{}, nil
+}
+
+func (*stubAwards) Unlocked(context.Context, uuid.UUID) ([]achievement.Unlock, error) {
+	return nil, nil
+}
+
+func (*stubAwards) Unlock(context.Context, uuid.UUID, uuid.UUID, time.Time) (bool, error) {
+	return false, nil
 }
 
 type stubTx struct{}
@@ -425,7 +455,8 @@ func TestServiceList(t *testing.T) {
 			service := board.NewService(board.Deps{
 				Tasks: tasks, Users: users, Cache: nil, Tags: &stubTags{}, Links: &stubLinks{},
 				Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
-				XP: progression.DefaultConfig(), Clock: &fixedClock{at: now},
+				Awards: appachievement.NewService(&stubAwards{}, users, &stubEvents{}, &fixedClock{at: now}),
+				XP:     progression.DefaultConfig(), Clock: &fixedClock{at: now},
 			})
 			_, err := service.List(context.Background(), userID, tt.query)
 
@@ -493,13 +524,15 @@ func TestServiceCachesThePreferences(t *testing.T) {
 				service = board.NewService(board.Deps{
 					Tasks: tasks, Users: users, Cache: cached, Tags: &stubTags{}, Links: &stubLinks{},
 					Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
-					XP: progression.DefaultConfig(), Clock: &fixedClock{at: now},
+					Awards: appachievement.NewService(&stubAwards{}, users, &stubEvents{}, &fixedClock{at: now}),
+					XP:     progression.DefaultConfig(), Clock: &fixedClock{at: now},
 				})
 			} else {
 				service = board.NewService(board.Deps{
 					Tasks: tasks, Users: users, Cache: nil, Tags: &stubTags{}, Links: &stubLinks{},
 					Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
-					XP: progression.DefaultConfig(), Clock: &fixedClock{at: now},
+					Awards: appachievement.NewService(&stubAwards{}, users, &stubEvents{}, &fixedClock{at: now}),
+					XP:     progression.DefaultConfig(), Clock: &fixedClock{at: now},
 				})
 			}
 
@@ -557,7 +590,8 @@ func TestServiceReportsTruncation(t *testing.T) {
 			service := board.NewService(board.Deps{
 				Tasks: tasks, Users: users, Cache: nil, Tags: &stubTags{}, Links: &stubLinks{},
 				Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
-				XP: progression.DefaultConfig(), Clock: &fixedClock{at: now},
+				Awards: appachievement.NewService(&stubAwards{}, users, &stubEvents{}, &fixedClock{at: now}),
+				XP:     progression.DefaultConfig(), Clock: &fixedClock{at: now},
 			})
 
 			result, err := service.List(context.Background(), userID, board.Query{})

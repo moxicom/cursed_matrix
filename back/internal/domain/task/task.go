@@ -4,6 +4,7 @@ package task
 import (
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -251,10 +252,16 @@ type Hit struct {
 	MatchedText  string
 }
 
-// Snippet cuts the part of a description around the term, on whole runes.
+// Snippet cuts the part of a description around the term.
+//
+// The search and the cut both count runes. Folding case first and then slicing
+// by byte offset would be wrong for any character whose lower case is a
+// different length — İ becomes two runes — and the slice could land inside a
+// character, which renders as a replacement glyph.
 func Snippet(description, term string) string {
 	runes := []rune(description)
-	at := strings.Index(strings.ToLower(description), strings.ToLower(term))
+	at := indexFold(runes, []rune(term))
+
 	if at < 0 {
 		if len(runes) <= 2*SnippetRadius {
 			return description
@@ -262,8 +269,7 @@ func Snippet(description, term string) string {
 		return string(runes[:2*SnippetRadius]) + "…"
 	}
 
-	// Index is in bytes; the cut has to be in runes or it can split one.
-	start := max(utf8.RuneCountInString(description[:at])-SnippetRadius, 0)
+	start := max(at-SnippetRadius, 0)
 	end := min(start+2*SnippetRadius, len(runes))
 
 	out := string(runes[start:end])
@@ -276,18 +282,43 @@ func Snippet(description, term string) string {
 	return out
 }
 
+// indexFold finds the term in the text, ignoring case, and answers in runes.
+func indexFold(text, term []rune) int {
+	if len(term) == 0 || len(term) > len(text) {
+		return -1
+	}
+
+	for at := 0; at+len(term) <= len(text); at++ {
+		matched := true
+		for i, want := range term {
+			if unicode.ToLower(text[at+i]) != unicode.ToLower(want) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return at
+		}
+	}
+	return -1
+}
+
+// containsFold reports a case-insensitive match without building a second
+// string to search in.
+func containsFold(text, term string) bool {
+	return indexFold([]rune(text), []rune(term)) >= 0
+}
+
 // DescribeMatch says which field answered and what to show under the title.
 //
 // The title wins over the description and the description over a tag: that is
 // the order the user reads the row in, so it is the order the explanation
 // should follow.
 func DescribeMatch(title, description string, tagName *string, term string) (Match, string) {
-	folded := strings.ToLower(term)
-
-	if strings.Contains(strings.ToLower(title), folded) {
+	if containsFold(title, term) {
 		return MatchTitle, title
 	}
-	if description != "" && strings.Contains(strings.ToLower(description), folded) {
+	if description != "" && containsFold(description, term) {
 		return MatchDescription, Snippet(description, term)
 	}
 	if tagName != nil {

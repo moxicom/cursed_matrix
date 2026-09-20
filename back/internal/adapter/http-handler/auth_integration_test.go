@@ -21,6 +21,7 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/postgres"
 	redisadapter "github.com/moxicom/cursed_matrix/back/internal/adapter/redis"
 	"github.com/moxicom/cursed_matrix/back/internal/adapter/token"
+	"github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/app/graph"
@@ -85,6 +86,12 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 		&shared.SystemClock{},
 		24*time.Hour,
 	)
+	awards := achievement.NewService(
+		postgres.NewAchievementRepository(pool),
+		postgres.NewUserRepository(pool),
+		postgres.NewActivityRepository(pool),
+		&shared.SystemClock{},
+	)
 	boards := board.NewService(board.Deps{
 		Tasks:  postgres.NewTaskRepository(pool),
 		Users:  postgres.NewUserRepository(pool),
@@ -93,6 +100,7 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 		Tx:     postgres.NewTxManager(pool, quiet),
 		Ledger: postgres.NewXPLedger(pool),
 		Events: postgres.NewActivityRepository(pool),
+		Awards: awards,
 		XP:     progression.DefaultConfig(),
 		Clock:  &shared.SystemClock{},
 		Cache:  cached,
@@ -102,6 +110,7 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 		postgres.NewTaskRepository(pool),
 		postgres.NewUserRepository(pool),
 		postgres.NewActivityRepository(pool),
+		awards,
 		postgres.NewTxManager(pool, quiet),
 		&shared.SystemClock{},
 	)
@@ -111,11 +120,13 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 		postgres.NewActivityRepository(pool),
 		cached,
 		postgres.NewTxManager(pool, quiet),
+		awards,
+		postgres.NewLeaderboardRepository(pool),
 		&shared.SystemClock{},
 	)
 	return httphandler.Routes(
-		httphandler.NewAPI(service, boards, graphs, profiles, httphandler.NewCookieWriter(false), 24*time.Hour, limiter, limits),
-		tokens, limiter, limits, profiles, quiet,
+		httphandler.NewAPI(service, boards, graphs, profiles, awards, httphandler.NewCookieWriter(false), 24*time.Hour, limiter, limits, &shared.SystemClock{}),
+		tokens, limiter, limits, profiles, &shared.SystemClock{}, quiet,
 	)
 }
 

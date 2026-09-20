@@ -134,6 +134,9 @@ type userRow struct {
 	LastLoginAt  *time.Time
 	DeletedAt    *time.Time
 
+	Plan          string
+	PlanExpiresAt *time.Time
+
 	Language             *string
 	Timezone             *string
 	ShowInLeaderboard    *bool
@@ -153,6 +156,8 @@ type userRow struct {
 }
 
 func (r *userRow) toDomain() (user.User, error) {
+	subscription := user.Subscription{Plan: shared.Plan(r.Plan), ExpiresAt: r.PlanExpiresAt}
+
 	language := shared.LanguageEN
 	if r.Language != nil {
 		parsed, err := shared.ParseLanguage(*r.Language)
@@ -194,6 +199,7 @@ func (r *userRow) toDomain() (user.User, error) {
 		DeletedAt:    r.DeletedAt,
 		Settings:     settings,
 		Stats:        stats,
+		Subscription: subscription,
 	}, nil
 }
 

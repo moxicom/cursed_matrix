@@ -179,10 +179,17 @@ func (s *Service) Update(ctx context.Context, userID, taskID uuid.UUID, patch Pa
 }
 
 // withinQuota refuses a creation that would take the account past its plan.
+//
+// The plan is read from the row the caller already holds a lock on, not from
+// the token: a token is up to fifteen minutes old, and a user who has just
+// paid should not be told to pay again.
 func (s *Service) withinQuota(ctx context.Context, userID uuid.UUID) error {
-	// Every account is on the free plan until billing exists; when it does,
-	// the plan comes from the account rather than from here.
-	limit := user.ActiveTaskLimit(shared.PlanFree)
+	account, err := s.users.ByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	limit := user.ActiveTaskLimit(account.Subscription.Plan)
 	if limit == user.Unlimited {
 		return nil
 	}

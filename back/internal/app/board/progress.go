@@ -26,6 +26,7 @@ type Progress struct {
 	Tasks     []task.Task
 	XPAwarded int32
 	LevelUp   *LevelChange
+	Unlocked  []string
 }
 
 // Complete marks a task done, cascades into its active subtasks and records
@@ -87,7 +88,17 @@ func (s *Service) Complete(ctx context.Context, userID, taskID uuid.UUID) (*Prog
 		if err := s.events.RecordMany(ctx, events); err != nil {
 			return err
 		}
-		return s.applyProgress(ctx, userID, delta, result)
+		if err := s.applyProgress(ctx, userID, delta, result); err != nil {
+			return err
+		}
+		// Inside the same transaction as the work that earned it: an award for
+		// a completion that then rolled back would be an award for nothing.
+		unlocked, err := s.awards.Evaluate(ctx, userID)
+		if err != nil {
+			return err
+		}
+		result.Unlocked = unlocked
+		return nil
 	})
 	if err != nil {
 		return nil, err

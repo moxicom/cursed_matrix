@@ -69,10 +69,10 @@ pair is now confined to the progression and graph-read features.
 | 33 | XP transaction | — | done | every grant and withdrawal recorded; `grant_seq` allows an honest re-completion after a reopen |
 | 34–35 | Level, level up | bug | done | recomputed from lifetime XP on every change; `levelUp` reported on the response. The frontend still shows two different levels |
 | 36–38 | Daily streak, state, timezone | mock | done | one statement per visit, gated by the cache; the day is the user's own, taken from their timezone in SQL |
-| 39–41 | Achievements, catalogue, unlock | mock | schema | 8 codes seeded by migration; no evaluator |
-| 42–44 | Activity, heatmap, event types | mock | done (writes) | seven event types written inside the transactions that cause them; heatmap served, `/events` not yet |
-| 45–50 | Leaderboard, periods, metric, privacy | mock | schema | index `xp_transactions_user_time_idx`; `show_in_leaderboard` defaults to off |
-| 51 | Profile statistics | mock | partial | XP, level, streaks, created/completed and links all move; achievements do not |
+| 39–41 | Achievements, catalogue, unlock | mock | done | evaluated inside the transaction that earned them; unlocking twice is impossible |
+| 42–44 | Activity, heatmap, event types | mock | done | eight event types written inside the transactions that cause them; heatmap, feed and stats all served |
+| 45–50 | Leaderboard, periods, metric, privacy | mock | done | WEEK/MONTH from the ledger in UTC, ALL_TIME from lifetime XP; opting out removes the rank entirely |
+| 51 | Profile statistics | mock | done | every counter on `GET /me` moves with the work that causes it |
 
 ### Platform
 
@@ -83,7 +83,7 @@ pair is now confined to the progression and graph-read features.
 | 54–60 | Six modules and their scope | mock | — | all six pages exist |
 | 61 | 20 business rules | partly | mostly done | rules 1–9 are enforced by the schema; 10–20 need the service layer |
 | 62 | Data model | n/a | done | 11 tables plus the outbox, 13 migrations |
-| 64 | Plans, access gate | mock | partial | both quotas — 35 active tasks, 25 links — are enforced under the account lock and tested end to end; the access gate is not, and `plan` is still hardcoded `FREE` |
+| 64 | Plans, access gate | mock | done (back) | both quotas enforced under the account lock; a lapsed plan answers 402 on every application route while the account itself stays reachable |
 | 65 | Exact XP and level values | done | done | 50/35/20/10, ×0.35, `45·(n−1)²`, tests on both sides |
 | 66 | Reopen and soft delete | mock | done | both live, each with its own compensating ledger entry (`TASK_REOPENED`, `TASK_DELETED`) |
 | 67 | Landing, pricing, 404, settings | done | n/a | routes exist and render |
@@ -101,7 +101,7 @@ achievements, the leaderboard — plus billing.
 | Endpoint | Status |
 |---|---|
 | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/logout-all` | **done** — HttpOnly cookies, CSRF header, per-address and per-account rate limits |
-| `GET /me`, `PATCH /me` | **done** — `plan` still hardcoded `FREE`, `email` not writable |
+| `GET /me`, `PATCH /me` | **done** — the real plan and its expiry; `email` still not writable |
 | `POST /me/export`, `DELETE /me` | — |
 | `GET /tasks` | **done** — nine filters, tags, subtasks and the whole link network; capped at 500 with a `truncated` flag |
 | `POST /tasks` | **done** — server-assigned position, free-plan quota enforced (402) |
@@ -122,9 +122,10 @@ achievements, the leaderboard — plus billing.
 | `GET /graph` | **done** — server-side filters, effective quadrant, link and subtask counts, two kinds of edge |
 | `GET /search` | **done** — title, description and tags across the archive; the server says why each row matched |
 | `GET /activity/heatmap` | **done** — 365 padded days ending today in the user's timezone |
-| `GET /activity/events`, `/activity/stats` | — |
-| `GET /achievements` | — |
-| `GET /leaderboard` | — |
+| `GET /activity/events` | **done** — cursor-paged history, codes and parameters, never a rendered sentence |
+| `GET /activity/stats` | **done** — the eight figures above the heatmap, over the same year |
+| `GET /achievements` | **done** — whole catalogue with progress; codes only, the client localises them |
+| `GET /leaderboard` | **done** — three periods, dense ranks, hidden users occupy none, `me` returned off-page |
 | `GET /plans`, `POST /billing/checkout`, `POST /billing/webhook` | — |
 
 Operational endpoints that do exist: `GET /healthz`, `GET /readyz`,
@@ -181,12 +182,13 @@ Found by reviewing the frontend against the requirements; none are fixed.
 
 | Decision | Blocks |
 |---|---|
-| `plan` is hardcoded `FREE` in the JWT and in `GET /me`; `user.User` has no subscription field, though `user.Subscription` exists | the access gate and the free-plan quotas |
 | `UpdateEmail` exists in the postgres adapter, is on no port and is called by nothing, while the contract declares `email` on `PATCH /me` | settings |
 | Whether `api` and `migrate` merge into one binary | image size (−13 MB) |
 | Payment provider and market (`SPEC` §27.2) | billing |
 
-Settled since the last revision: the access token lives in an `HttpOnly`
+Settled since the last revision: the plan comes from the `users` row the
+schema already had, so the token carries the subscription and the quotas count
+against the account's own plan; the access token lives in an `HttpOnly`
 cookie (`docs/API.md` §1.4, rewritten); the contract is API-first —
 `back/api/v1/openapi.yaml` generates the server interface; and `GET /tasks`
 returns the link network with its tasks, as `docs/API.md` specifies.

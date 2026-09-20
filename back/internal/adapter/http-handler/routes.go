@@ -24,6 +24,7 @@ func Routes(
 	limiter port.RateLimiter,
 	limits RateLimits,
 	profiles *profile.Service,
+	clock shared.Clock,
 	log *slog.Logger,
 ) http.Handler {
 	router := chi.NewRouter()
@@ -51,35 +52,53 @@ func Routes(
 		// After authentication, so it knows whose day it is, and before the
 		// handlers, so any visit counts and not only a board read.
 		session.Use(TrackStreak(profiles, log))
+
+		// The account itself is always reachable: someone whose plan lapsed
+		// still has to be able to see it, change their settings and pay.
 		session.Post("/auth/logout-all", api.LogoutAll)
 		session.Get("/me", api.GetMe)
 		session.Patch("/me", api.UpdateSettings)
 
-		// Only the board carries the read ceiling. On the whole group it would
-		// mean a client stuck in a loop also loses "sign out everywhere" —
-		// throttling the one endpoint that stops the loop.
-		session.With(LimitReads(limiter, limits)).Get("/tasks", bind(api).ListTasks)
-		session.Post("/tasks", api.CreateTask)
-		session.Patch("/tasks/{taskId}", bind(api).UpdateTask)
-		session.Delete("/tasks/{taskId}", bind(api).DeleteTask)
-		session.Post("/tasks/{taskId}/subtasks", bind(api).CreateSubtask)
-		session.Post("/tasks/{taskId}/complete", bind(api).CompleteTask)
-		session.Post("/tasks/{taskId}/reopen", bind(api).ReopenTask)
-		session.Post("/tasks/{taskId}/move", bind(api).MoveTask)
-		session.Post("/tasks/{taskId}/promote", bind(api).PromoteTask)
+		// Everything below is the application itself, and an account whose
+		// paid time ran out cannot reach it. chi fixes a group's middleware
+		// before its routes, so the gate needs a group of its own.
+		session.Group(func(app chi.Router) {
+			app.Use(RequireSubscription(clock))
 
-		session.Get("/tags", api.ListTags)
-		session.Post("/tasks/{taskId}/tags", bind(api).AttachTag)
-		session.Delete("/tasks/{taskId}/tags/{tagId}", bind(api).DetachTag)
+			// Only the board carries the read ceiling. On the whole group it would
+			// mean a client stuck in a loop also loses "sign out everywhere" —
+			// throttling the one endpoint that stops the loop.
+			app.With(LimitReads(limiter, limits)).Get("/tasks", bind(api).ListTasks)
+			app.Post("/tasks", api.CreateTask)
+			app.Patch("/tasks/{taskId}", bind(api).UpdateTask)
+			app.Delete("/tasks/{taskId}", bind(api).DeleteTask)
+			app.Post("/tasks/{taskId}/subtasks", bind(api).CreateSubtask)
+			app.Post("/tasks/{taskId}/complete", bind(api).CompleteTask)
+			app.Post("/tasks/{taskId}/reopen", bind(api).ReopenTask)
+			app.Post("/tasks/{taskId}/move", bind(api).MoveTask)
+			app.Post("/tasks/{taskId}/promote", bind(api).PromoteTask)
 
-		session.Get("/graph", bind(api).GetGraph)
-		session.Get("/search", bind(api).Search)
-		session.Get("/activity/heatmap", api.ActivityHeatmap)
-		session.Post("/activity/graph-opened", api.GraphOpened)
+			app.Get("/tags", api.ListTags)
+			app.Post("/tasks/{taskId}/tags", bind(api).AttachTag)
+			app.Delete("/tasks/{taskId}/tags/{tagId}", bind(api).DetachTag)
 
-		session.Post("/links", api.CreateLink)
-		session.Patch("/links/{linkId}", bind(api).UpdateLink)
-		session.Delete("/links/{linkId}", bind(api).DeleteLink)
+			app.Get("/achievements", api.ListAchievements)
+			app.Get("/leaderboard", bind(api).Leaderboard)
+			app.With(LimitReads(limiter, limits)).Get("/graph", bind(api).GetGraph)
+			// Search and the graph are unbounded work per call, like the
+			// board: two ILIKE scans with a tag subquery per row, and a
+			// snapshot of the whole network. The contract asks for search to
+			// be throttled by name.
+			app.With(LimitReads(limiter, limits)).Get("/search", bind(api).Search)
+			app.Get("/activity/heatmap", api.ActivityHeatmap)
+			app.Get("/activity/events", bind(api).ActivityEvents)
+			app.Get("/activity/stats", api.ActivityStats)
+			app.Post("/activity/graph-opened", api.GraphOpened)
+
+			app.Post("/links", api.CreateLink)
+			app.Patch("/links/{linkId}", bind(api).UpdateLink)
+			app.Delete("/links/{linkId}", bind(api).DeleteLink)
+		})
 	})
 
 	return router

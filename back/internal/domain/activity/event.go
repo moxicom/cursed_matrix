@@ -80,3 +80,39 @@ type Day struct {
 // Total is what the square's colour is chosen from; the breakdown is for the
 // detail view.
 func (d *Day) Total() int { return d.Created + d.Completed }
+
+// Entry is one row of the history the activity screen lists.
+//
+// TaskTitle travels with it because the row names the task, and asking for it
+// separately would be a query per row.
+type Entry struct {
+	ID         uuid.UUID
+	Type       shared.ActivityEventType
+	OccurredAt time.Time
+	LocalDate  time.Time
+	TaskID     *uuid.UUID
+	TaskTitle  *string
+	Metadata   map[string]any
+}
+
+// Cursor is a place in the history.
+//
+// It names the row it stops at rather than counting from the start: rows keep
+// arriving while a user reads, and an offset would show the same event twice
+// or skip one.
+type Cursor struct {
+	OccurredAt time.Time
+	ID         uuid.UUID
+}
+
+// Stats are the figures the activity screen puts above the heatmap.
+type Stats struct {
+	CreatedLastYear   int64
+	CompletedLastYear int64
+	CurrentStreak     int32
+	LongestStreak     int32
+	LifetimeXP        int64
+	Level             int32
+	ActiveTasks       int64
+	ArchivedTasks     int64
+}

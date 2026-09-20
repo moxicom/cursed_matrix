@@ -11,11 +11,21 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
 	"github.com/moxicom/cursed_matrix/back/internal/app/profile"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
 
 type contextKey string
 
-const userKey contextKey = "userID"
+const (
+	userKey         contextKey = "userID"
+	subscriptionKey contextKey = "subscription"
+)
+
+// SubscriptionFrom returns what the token says the account is entitled to.
+func SubscriptionFrom(ctx context.Context) (user.Subscription, bool) {
+	subscription, ok := ctx.Value(subscriptionKey).(user.Subscription)
+	return subscription, ok
+}
 
 // UserFrom returns the account the request is authenticated as.
 func UserFrom(ctx context.Context) (uuid.UUID, bool) {
@@ -35,12 +45,15 @@ func Authenticate(tokens port.TokenIssuer) func(http.Handler) http.Handler {
 				return
 			}
 
-			userID, _, err := tokens.Verify(raw)
+			userID, subscription, err := tokens.Verify(raw)
 			if err != nil {
 				WriteError(w, r, err)
 				return
 			}
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey, userID)))
+
+			ctx := context.WithValue(r.Context(), userKey, userID)
+			ctx = context.WithValue(ctx, subscriptionKey, subscription)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
@@ -79,6 +92,26 @@ func TrackStreak(profiles *profile.Service, log *slog.Logger) func(http.Handler)
 				if _, err := profiles.TouchDay(r.Context(), userID); err != nil {
 					log.WarnContext(r.Context(), "streak not counted", "err", err, "userId", userID)
 				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequireSubscription refuses the application to an account whose plan has
+// lapsed.
+//
+// The free plan does not lapse — it has limits instead — so this only stops
+// someone whose paid time ran out. Nothing they own is touched: the answer
+// says to pay, and everything is waiting when they do.
+func RequireSubscription(clock shared.Clock) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			subscription, ok := SubscriptionFrom(r.Context())
+			if ok && subscription.Expired(clock.Now().UTC()) {
+				WriteError(w, r, shared.NewError(shared.CodeSubscriptionRequired,
+					map[string]any{"plan": string(subscription.Plan)}))
+				return
 			}
 			next.ServeHTTP(w, r)
 		})

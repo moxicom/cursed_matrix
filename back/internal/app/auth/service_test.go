@@ -67,16 +67,16 @@ func (*stubRefresh) RevokeAll(context.Context, uuid.UUID) error                 
 
 type stubTokens struct{}
 
-func (*stubTokens) Issue(uuid.UUID, shared.Plan) (string, time.Time, error) {
+func (*stubTokens) Issue(uuid.UUID, user.Subscription) (string, time.Time, error) {
 	return "token", time.Now().Add(time.Minute), nil
 }
 
-func (*stubTokens) Verify(string) (uuid.UUID, shared.Plan, error) {
-	return uuid.Nil, shared.PlanFree, nil
+func (*stubTokens) Verify(string) (uuid.UUID, user.Subscription, error) {
+	return uuid.Nil, user.Subscription{Plan: shared.PlanFree}, nil
 }
 
-func (*stubTokens) VerifyExpired(string) (uuid.UUID, shared.Plan, error) {
-	return uuid.Nil, shared.PlanFree, nil
+func (*stubTokens) VerifyExpired(string) (uuid.UUID, user.Subscription, error) {
+	return uuid.Nil, user.Subscription{Plan: shared.PlanFree}, nil
 }
 func (*stubTokens) TTL() time.Duration { return time.Minute }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
@@ -19,6 +20,7 @@ type Service struct {
 	tasks  port.TaskRepository
 	users  port.UserRepository
 	events port.ActivityRepository
+	awards *achievement.Service
 	tx     port.TxManager
 	clock  shared.Clock
 }
@@ -28,10 +30,19 @@ func NewService(
 	tasks port.TaskRepository,
 	users port.UserRepository,
 	events port.ActivityRepository,
+	awards *achievement.Service,
 	tx port.TxManager,
 	clock shared.Clock,
 ) *Service {
-	return &Service{links: links, tasks: tasks, users: users, events: events, tx: tx, clock: clock}
+	return &Service{
+		links:  links,
+		tasks:  tasks,
+		users:  users,
+		events: events,
+		awards: awards,
+		tx:     tx,
+		clock:  clock,
+	}
 }
 
 // Links returns every edge the user has drawn.
@@ -95,6 +106,9 @@ func (s *Service) Create(
 		if _, err := s.users.ApplyStats(ctx, userID, user.StatsDelta{LinksCreated: 1}); err != nil {
 			return err
 		}
+		if _, err := s.awards.Evaluate(ctx, userID); err != nil {
+			return err
+		}
 
 		created = made
 		return nil
@@ -141,9 +155,12 @@ func (s *Service) Delete(ctx context.Context, userID, linkID uuid.UUID) error {
 }
 
 func (s *Service) withinQuota(ctx context.Context, userID uuid.UUID) error {
-	// Every account is on the free plan until billing exists; when it does,
-	// the plan comes from the account rather than from here.
-	limit := user.TaskLinkLimit(shared.PlanFree)
+	account, err := s.users.ByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	limit := user.TaskLinkLimit(account.Subscription.Plan)
 	if limit == user.Unlimited {
 		return nil
 	}

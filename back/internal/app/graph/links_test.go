@@ -7,7 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
+	appachievement "github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/graph"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
@@ -139,6 +141,34 @@ func (e *stubEvents) Heatmap(context.Context, uuid.UUID, time.Time, time.Time) (
 	return nil, nil
 }
 
+func (e *stubEvents) Events(context.Context, uuid.UUID, *activity.Cursor, int) ([]activity.Entry, error) {
+	return nil, nil
+}
+
+func (e *stubEvents) Stats(context.Context, uuid.UUID, time.Time) (activity.Stats, error) {
+	return activity.Stats{}, nil
+}
+
+// stubAwards is an empty catalogue: these tests are about the work, not about
+// what it earns, and an empty catalogue unlocks nothing.
+type stubAwards struct{}
+
+func (*stubAwards) Catalogue(context.Context) ([]achievement.Achievement, error) {
+	return nil, nil
+}
+
+func (*stubAwards) Metrics(context.Context, uuid.UUID) (achievement.Metrics, error) {
+	return achievement.Metrics{}, nil
+}
+
+func (*stubAwards) Unlocked(context.Context, uuid.UUID) ([]achievement.Unlock, error) {
+	return nil, nil
+}
+
+func (*stubAwards) Unlock(context.Context, uuid.UUID, uuid.UUID, time.Time) (bool, error) {
+	return false, nil
+}
+
 type stubTx struct{}
 
 func (*stubTx) Do(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
@@ -214,8 +244,9 @@ func TestCreateLink(t *testing.T) {
 			links := &stubLinks{links: make([]link.Link, tt.held)}
 			users := &stubUsers{}
 			events := &stubEvents{}
-			service := graph.NewService(links, tasks, users, events, &stubTx{},
-				&fixedClock{at: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)})
+			clock := &fixedClock{at: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)}
+			awards := appachievement.NewService(&stubAwards{}, users, events, clock)
+			service := graph.NewService(links, tasks, users, events, awards, &stubTx{}, clock)
 
 			created, err := service.Create(context.Background(), userID, tt.source, tt.target, tt.linkType)
 

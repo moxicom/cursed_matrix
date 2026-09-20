@@ -40,6 +40,8 @@ func (r *UserRepository) findBy(ctx context.Context, where sq.Sqlizer) (*user.Us
 			"u.created_at",
 			"u.last_login_at",
 			"u.deleted_at",
+			"u.plan::text",
+			"u.plan_expires_at",
 			"s.language::text",
 			"s.timezone",
 			"s.show_in_leaderboard",
@@ -77,6 +79,8 @@ func (r *UserRepository) findBy(ctx context.Context, where sq.Sqlizer) (*user.Us
 		&row.CreatedAt,
 		&row.LastLoginAt,
 		&row.DeletedAt,
+		&row.Plan,
+		&row.PlanExpiresAt,
 		&row.Language,
 		&row.Timezone,
 		&row.ShowInLeaderboard,
@@ -127,6 +131,7 @@ func (r *UserRepository) ApplyStats(
 		Set("tasks_completed", sq.Expr("tasks_completed + ?", delta.TasksCompleted)).
 		Set("subtasks_completed", sq.Expr("subtasks_completed + ?", delta.SubtasksCompleted)).
 		Set("links_created", sq.Expr("links_created + ?", delta.LinksCreated)).
+		Set("achievements_unlocked", sq.Expr("achievements_unlocked + ?", delta.AchievementsUnlocked)).
 		Where(sq.Eq{"user_id": id}).
 		Suffix(`RETURNING lifetime_xp, level, current_streak, longest_streak,
 			last_streak_date, tasks_created, tasks_completed, subtasks_completed,

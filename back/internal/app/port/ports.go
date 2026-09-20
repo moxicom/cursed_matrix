@@ -12,7 +12,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/leaderboard"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/link"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
@@ -88,6 +90,24 @@ type ActivityRepository interface {
 	// day; a repeat writes nothing and is not an error.
 	RecordDaily(ctx context.Context, event *activity.Event) error
 	Heatmap(ctx context.Context, userID uuid.UUID, from, to time.Time) ([]activity.Day, error)
+	Events(ctx context.Context, userID uuid.UUID, after *activity.Cursor, limit int) ([]activity.Entry, error)
+	Stats(ctx context.Context, userID uuid.UUID, from time.Time) (activity.Stats, error)
+}
+
+type AchievementRepository interface {
+	Catalogue(ctx context.Context) ([]achievement.Achievement, error)
+	Metrics(ctx context.Context, userID uuid.UUID) (achievement.Metrics, error)
+	Unlocked(ctx context.Context, userID uuid.UUID) ([]achievement.Unlock, error)
+	// Unlock reports whether the row was new: two requests can earn the same
+	// achievement at once, and only one of them should announce it.
+	Unlock(ctx context.Context, userID, achievementID uuid.UUID, at time.Time) (bool, error)
+}
+
+// LeaderboardRepository reads the public ranking. Only users who chose to
+// appear are counted, so a hidden user occupies no rank.
+type LeaderboardRepository interface {
+	Page(ctx context.Context, from *time.Time, limit, offset int) ([]leaderboard.Entry, error)
+	Standing(ctx context.Context, userID uuid.UUID, from *time.Time) (leaderboard.Standing, error)
 }
 
 // XPLedger is the append-only record of every XP movement.
@@ -102,10 +122,15 @@ type Cache interface {
 	Invalidate(ctx context.Context, scope cache.Scope) error
 }
 
+// TokenIssuer signs and checks access tokens.
+//
+// The token carries the subscription, not just the plan, so that a lapsed one
+// is refused without a query per request. It is up to one token lifetime
+// stale, which is the same window everything else about a token is.
 type TokenIssuer interface {
-	Issue(userID uuid.UUID, plan shared.Plan) (token string, expiry time.Time, err error)
-	Verify(raw string) (uuid.UUID, shared.Plan, error)
-	VerifyExpired(raw string) (uuid.UUID, shared.Plan, error)
+	Issue(userID uuid.UUID, subscription user.Subscription) (token string, expiry time.Time, err error)
+	Verify(raw string) (uuid.UUID, user.Subscription, error)
+	VerifyExpired(raw string) (uuid.UUID, user.Subscription, error)
 	TTL() time.Duration
 }
 

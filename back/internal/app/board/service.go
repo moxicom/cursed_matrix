@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
 	"github.com/moxicom/cursed_matrix/back/internal/app/preferences"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
@@ -24,6 +25,7 @@ type Service struct {
 	tx     port.TxManager
 	ledger port.XPLedger
 	events port.ActivityRepository
+	awards *achievement.Service
 	xp     progression.Config
 	clock  shared.Clock
 	prefs  *preferences.Reader
@@ -39,6 +41,7 @@ type Deps struct {
 	Tx     port.TxManager
 	Ledger port.XPLedger
 	Events port.ActivityRepository
+	Awards *achievement.Service
 	XP     progression.Config
 	Clock  shared.Clock
 
@@ -57,6 +60,7 @@ func NewService(deps Deps) *Service {
 		tx:     deps.Tx,
 		ledger: deps.Ledger,
 		events: deps.Events,
+		awards: deps.Awards,
 		xp:     deps.XP,
 		clock:  deps.Clock,
 		prefs:  preferences.NewReader(deps.Users, deps.Cache),

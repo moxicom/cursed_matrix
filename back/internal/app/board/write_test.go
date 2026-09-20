@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	appachievement "github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/board"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/progression"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
@@ -19,6 +20,8 @@ func newWriteService(tasks *stubTasks) *board.Service {
 	return board.NewService(board.Deps{
 		Tasks: tasks, Users: users, Tags: &stubTags{}, Links: &stubLinks{},
 		Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
+		Awards: appachievement.NewService(&stubAwards{}, users, &stubEvents{},
+			&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)}),
 		XP:    progression.DefaultConfig(),
 		Clock: &fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)},
 	})
@@ -195,6 +198,8 @@ func TestCreateCountsUnderALock(t *testing.T) {
 	service := board.NewService(board.Deps{
 		Tasks: tasks, Users: users, Tags: &stubTags{}, Links: &stubLinks{},
 		Tx: &stubTx{}, Ledger: &stubLedger{}, Events: &stubEvents{},
+		Awards: appachievement.NewService(&stubAwards{}, users, &stubEvents{},
+			&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)}),
 		XP:    progression.DefaultConfig(),
 		Clock: &fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)},
 	})
@@ -362,6 +367,8 @@ func TestDeleteCountsEveryCompletedTask(t *testing.T) {
 			service := board.NewService(board.Deps{
 				Tasks: tasks, Users: users, Tags: &stubTags{}, Links: &stubLinks{},
 				Tx: &stubTx{}, Ledger: ledger, Events: &stubEvents{},
+				Awards: appachievement.NewService(&stubAwards{}, users, &stubEvents{},
+					&fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)}),
 				XP:    progression.DefaultConfig(),
 				Clock: &fixedClock{at: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)},
 			})

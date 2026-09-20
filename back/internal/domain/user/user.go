@@ -21,8 +21,9 @@ type User struct {
 	LastLoginAt  *time.Time
 	DeletedAt    *time.Time
 
-	Settings Settings
-	Stats    Stats
+	Settings     Settings
+	Stats        Stats
+	Subscription Subscription
 }
 
 // Settings are the account preferences, as opposed to per-device ones.

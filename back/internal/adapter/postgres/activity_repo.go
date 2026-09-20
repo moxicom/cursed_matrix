@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -145,4 +146,95 @@ func (r *ActivityRepository) Heatmap(
 		return nil, mapError(err, shared.CodeInternal)
 	}
 	return days, nil
+}
+
+// Events lists the user's history, newest first.
+//
+// The page stops at the cursor's row rather than at an offset: events keep
+// arriving while someone reads, and counting from the start would show one
+// twice or skip one entirely.
+func (r *ActivityRepository) Events(
+	ctx context.Context,
+	userID uuid.UUID,
+	after *activity.Cursor,
+	limit int,
+) ([]activity.Entry, error) {
+	query := builder.
+		Select("e.id", "e.type::text", "e.occurred_at", "e.local_date", "e.task_id", "t.title", "e.metadata").
+		From("activity_events e").
+		LeftJoin("tasks t ON t.id = e.task_id").
+		Where(sq.Eq{"e.user_id": userID}).
+		OrderBy("e.occurred_at DESC", "e.id DESC").
+		Limit(uint64(limit))
+
+	if after != nil {
+		query = query.Where("(e.occurred_at, e.id) < (?, ?)", after.OccurredAt, after.ID)
+	}
+
+	statement, args, err := query.ToSql()
+	if err != nil {
+		return nil, shared.WrapError(err, shared.CodeInternal, nil)
+	}
+
+	rows, err := r.db.querier(ctx).Query(ctx, statement, args...)
+	if err != nil {
+		return nil, mapError(err, shared.CodeInternal)
+	}
+	defer rows.Close()
+
+	var entries []activity.Entry
+	for rows.Next() {
+		var (
+			entry     activity.Entry
+			eventType string
+			metadata  []byte
+		)
+		if err := rows.Scan(&entry.ID, &eventType, &entry.OccurredAt, &entry.LocalDate,
+			&entry.TaskID, &entry.TaskTitle, &metadata); err != nil {
+			return nil, mapError(err, shared.CodeInternal)
+		}
+
+		entry.Type = shared.ActivityEventType(eventType)
+		if err := json.Unmarshal(metadata, &entry.Metadata); err != nil {
+			return nil, shared.WrapError(err, shared.CodeInternal, nil)
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapError(err, shared.CodeInternal)
+	}
+	return entries, nil
+}
+
+// Stats are the figures above the heatmap, read in one go.
+func (r *ActivityRepository) Stats(
+	ctx context.Context,
+	userID uuid.UUID,
+	from time.Time,
+) (activity.Stats, error) {
+	const query = `SELECT
+			(SELECT COUNT(*) FROM activity_events e
+				WHERE e.user_id = $1 AND e.local_date >= $2 AND e.type::text = ANY($3)),
+			(SELECT COUNT(*) FROM activity_events e
+				WHERE e.user_id = $1 AND e.local_date >= $2 AND e.type::text = ANY($4)),
+			st.current_streak, st.longest_streak, st.lifetime_xp, st.level,
+			(SELECT COUNT(*) FROM tasks t
+				WHERE t.user_id = $1 AND t.deleted_at IS NULL AND t.status = 'ACTIVE'),
+			(SELECT COUNT(*) FROM tasks t
+				WHERE t.user_id = $1 AND t.deleted_at IS NULL AND t.status = 'COMPLETED')
+		FROM user_stats st
+		WHERE st.user_id = $1`
+
+	var stats activity.Stats
+	err := r.db.querier(ctx).QueryRow(ctx, query, userID, from,
+		activity.CreationTypes(), activity.CompletionTypes()).Scan(
+		&stats.CreatedLastYear, &stats.CompletedLastYear,
+		&stats.CurrentStreak, &stats.LongestStreak,
+		&stats.LifetimeXP, &stats.Level,
+		&stats.ActiveTasks, &stats.ArchivedTasks,
+	)
+	if err != nil {
+		return activity.Stats{}, mapError(err, shared.CodeUserNotFound)
+	}
+	return stats, nil
 }

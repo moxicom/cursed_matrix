@@ -7,9 +7,12 @@ import (
 
 	"github.com/google/uuid"
 
+	appachievement "github.com/moxicom/cursed_matrix/back/internal/app/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
 	"github.com/moxicom/cursed_matrix/back/internal/app/profile"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/leaderboard"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
@@ -64,6 +67,14 @@ func (e *stubEvents) Heatmap(context.Context, uuid.UUID, time.Time, time.Time) (
 	return nil, nil
 }
 
+func (e *stubEvents) Events(context.Context, uuid.UUID, *activity.Cursor, int) ([]activity.Entry, error) {
+	return nil, nil
+}
+
+func (e *stubEvents) Stats(context.Context, uuid.UUID, time.Time) (activity.Stats, error) {
+	return activity.Stats{}, nil
+}
+
 // stubCache holds whatever it is given, because the reader caches settings
 // through the same port the day gate uses.
 type stubCache struct{ stored map[string]any }
@@ -100,6 +111,36 @@ func cacheKey(key cache.Key) string {
 		out += "/" + arg
 	}
 	return out
+}
+
+// stubAwards is an empty catalogue: these tests are about the streak, and an
+// empty catalogue unlocks nothing.
+type stubAwards struct{}
+
+func (*stubAwards) Catalogue(context.Context) ([]achievement.Achievement, error) {
+	return nil, nil
+}
+
+func (*stubAwards) Metrics(context.Context, uuid.UUID) (achievement.Metrics, error) {
+	return achievement.Metrics{}, nil
+}
+
+func (*stubAwards) Unlocked(context.Context, uuid.UUID) ([]achievement.Unlock, error) {
+	return nil, nil
+}
+
+func (*stubAwards) Unlock(context.Context, uuid.UUID, uuid.UUID, time.Time) (bool, error) {
+	return false, nil
+}
+
+type stubRanking struct{}
+
+func (*stubRanking) Page(context.Context, *time.Time, int, int) ([]leaderboard.Entry, error) {
+	return nil, nil
+}
+
+func (*stubRanking) Standing(context.Context, uuid.UUID, *time.Time) (leaderboard.Standing, error) {
+	return leaderboard.Standing{}, nil
 }
 
 type stubTx struct{}
@@ -179,7 +220,7 @@ func TestTouchDayCountsEachDayOnce(t *testing.T) {
 				change:   user.StreakChange{Extended: true, Current: 1, Longest: 1},
 			}
 			clock := &movingClock{}
-			service := profile.NewService(users, &stubEvents{}, &stubCache{}, &stubTx{}, clock)
+			service := profile.NewService(users, &stubEvents{}, &stubCache{}, &stubTx{}, awardsFor(users, clock), &stubRanking{}, clock)
 
 			for _, at := range tt.visits {
 				clock.at = at
@@ -202,7 +243,7 @@ func TestTouchDayWithoutACache(t *testing.T) {
 	}
 	events := &stubEvents{}
 	clock := &movingClock{at: time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC)}
-	service := profile.NewService(users, events, nil, &stubTx{}, clock)
+	service := profile.NewService(users, events, nil, &stubTx{}, awardsFor(users, clock), &stubRanking{}, clock)
 
 	// No cache means every visit asks; the statement itself is what keeps the
 	// day from being counted twice.
@@ -241,7 +282,7 @@ func TestTouchDayRecordsOnlyRealExtensions(t *testing.T) {
 			users := &stubUsers{settings: user.Settings{Timezone: "UTC"}, change: tt.change}
 			events := &stubEvents{}
 			clock := &movingClock{at: time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC)}
-			service := profile.NewService(users, events, &stubCache{}, &stubTx{}, clock)
+			service := profile.NewService(users, events, &stubCache{}, &stubTx{}, awardsFor(users, clock), &stubRanking{}, clock)
 
 			change, err := service.TouchDay(context.Background(), uuid.New())
 			if err != nil {
@@ -289,7 +330,7 @@ func TestHeatmapIsAFullYearEndingToday(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubUsers{settings: user.Settings{Timezone: tt.timezone}}
-			service := profile.NewService(users, &stubEvents{}, nil, &stubTx{}, &movingClock{at: tt.now})
+			service := profile.NewService(users, &stubEvents{}, nil, &stubTx{}, awardsFor(users, &movingClock{at: tt.now}), &stubRanking{}, &movingClock{at: tt.now})
 
 			days, err := service.Heatmap(context.Background(), uuid.New())
 			if err != nil {
@@ -306,4 +347,8 @@ func TestHeatmapIsAFullYearEndingToday(t *testing.T) {
 			}
 		})
 	}
+}
+
+func awardsFor(users *stubUsers, clock shared.Clock) *appachievement.Service {
+	return appachievement.NewService(&stubAwards{}, users, &stubEvents{}, clock)
 }

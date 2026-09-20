@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
+	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
 )
@@ -21,7 +22,8 @@ import (
 type Claims struct {
 	jwt.RegisteredClaims
 
-	Plan shared.Plan `json:"plan"`
+	Plan      shared.Plan `json:"plan"`
+	PlanUntil *int64      `json:"planUntil,omitempty"`
 }
 
 // TokenIssuer signs and verifies access tokens.
@@ -37,17 +39,23 @@ func NewJWTIssuer(secret string, ttl time.Duration, clock shared.Clock) *JWTIssu
 }
 
 // Issue signs an access token for the account.
-func (t *JWTIssuer) Issue(userID uuid.UUID, plan shared.Plan) (string, time.Time, error) {
+func (t *JWTIssuer) Issue(userID uuid.UUID, subscription user.Subscription) (string, time.Time, error) {
 	now := t.clock.Now()
 	expiry := now.Add(t.ttl)
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+	claims := Claims{
 		Subject:   userID.String(),
 		IssuedAt:  jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(expiry),
 		ID:        uuid.NewString(),
-		Plan:      plan,
-	})
+		Plan:      subscription.Plan,
+	}
+	if subscription.ExpiresAt != nil {
+		until := subscription.ExpiresAt.Unix()
+		claims.PlanUntil = &until
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	signed, err := token.SignedString(t.secret)
 	if err != nil {
@@ -59,7 +67,7 @@ func (t *JWTIssuer) Issue(userID uuid.UUID, plan shared.Plan) (string, time.Time
 // Verify checks the signature and the expiry, and returns what the token
 // asserts. Every failure answers the same code: a client cannot be told whether
 // its token was forged, expired or truncated.
-func (t *JWTIssuer) Verify(raw string) (uuid.UUID, shared.Plan, error) {
+func (t *JWTIssuer) Verify(raw string) (uuid.UUID, user.Subscription, error) {
 	claims := &Claims{}
 
 	_, err := jwt.ParseWithClaims(raw, claims, func(token *jwt.Token) (any, error) {
@@ -69,34 +77,38 @@ func (t *JWTIssuer) Verify(raw string) (uuid.UUID, shared.Plan, error) {
 		return t.secret, nil
 	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil {
-		return uuid.Nil, "", shared.WrapError(err, shared.CodeSessionExpired, nil)
+		return uuid.Nil, user.Subscription{}, shared.WrapError(err, shared.CodeSessionExpired, nil)
 	}
+	return subscriptionOf(claims)
+}
 
+func subscriptionOf(claims *Claims) (uuid.UUID, user.Subscription, error) {
 	userID, err := uuid.Parse(claims.Subject)
 	if err != nil {
-		return uuid.Nil, "", shared.NewError(shared.CodeSessionExpired, nil)
+		return uuid.Nil, user.Subscription{}, shared.NewError(shared.CodeSessionExpired, nil)
 	}
-	return userID, claims.Plan, nil
+
+	subscription := user.Subscription{Plan: claims.Plan}
+	if claims.PlanUntil != nil {
+		until := time.Unix(*claims.PlanUntil, 0).UTC()
+		subscription.ExpiresAt = &until
+	}
+	return userID, subscription, nil
 }
 
 // VerifyExpired checks the signature but tolerates expiry, which is what the
 // refresh endpoint needs: the token it is handed is expected to be stale, and
 // the refresh cookie is the credential that matters there.
-func (t *JWTIssuer) VerifyExpired(raw string) (uuid.UUID, shared.Plan, error) {
+func (t *JWTIssuer) VerifyExpired(raw string) (uuid.UUID, user.Subscription, error) {
 	claims := &Claims{}
 
 	_, err := jwt.ParseWithClaims(raw, claims, func(token *jwt.Token) (any, error) {
 		return t.secret, nil
 	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithoutClaimsValidation())
 	if err != nil {
-		return uuid.Nil, "", shared.WrapError(err, shared.CodeSessionExpired, nil)
+		return uuid.Nil, user.Subscription{}, shared.WrapError(err, shared.CodeSessionExpired, nil)
 	}
-
-	userID, err := uuid.Parse(claims.Subject)
-	if err != nil {
-		return uuid.Nil, "", shared.NewError(shared.CodeSessionExpired, nil)
-	}
-	return userID, claims.Plan, nil
+	return subscriptionOf(claims)
 }
 
 // TTL is how long an issued token stays valid, which is also the window in

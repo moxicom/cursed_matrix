@@ -372,12 +372,14 @@ func renderProgress(result *board.Progress) gen.Progress {
 	rendered := gen.Progress{
 		Tasks:     make([]gen.Task, 0, len(result.Tasks)),
 		XpAwarded: result.XPAwarded,
-		// The evaluator does not exist yet, and the field is declared
-		// non-nullable: an empty list is the honest answer, null is not.
-		UnlockedAchievements: []string{},
+		// Declared non-nullable: nothing unlocked is an empty list, not null.
+		UnlockedAchievements: result.Unlocked,
 	}
 	for i := range result.Tasks {
 		rendered.Tasks = append(rendered.Tasks, renderTask(&result.Tasks[i]))
+	}
+	if rendered.UnlockedAchievements == nil {
+		rendered.UnlockedAchievements = []string{}
 	}
 	if result.LevelUp != nil {
 		rendered.LevelUp = &struct {

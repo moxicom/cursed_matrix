@@ -133,7 +133,7 @@ export function AppLayout() {
               // opening is sticky: clearing the field must not close the palette
               if (value.trim() !== '') ui.openSearch();
             }}
-            onSearchFocus={ui.openSearch}
+            onSearchOpen={ui.openSearch}
             onSearchClear={ui.closeSearch}
             onNavigate={go}
           />

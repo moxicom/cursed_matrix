@@ -16,7 +16,7 @@ export interface AppHeaderProps {
   activeTasks: number;
   query: string;
   onQueryChange: (value: string) => void;
-  onSearchFocus?: () => void;
+  onSearchOpen?: () => void;
   onSearchClear?: () => void;
   onNavigate: (section: AppSection) => void;
 }
@@ -28,7 +28,7 @@ export function AppHeader({
   activeTasks,
   query,
   onQueryChange,
-  onSearchFocus,
+  onSearchOpen,
   onSearchClear,
   onNavigate,
 }: AppHeaderProps) {
@@ -55,7 +55,7 @@ export function AppHeader({
       <HeaderSearch
         value={query}
         onChange={onQueryChange}
-        {...(onSearchFocus ? { onFocus: onSearchFocus } : {})}
+        {...(onSearchOpen ? { onOpen: onSearchOpen } : {})}
         {...(onSearchClear ? { onClear: onSearchClear } : {})}
       />
 

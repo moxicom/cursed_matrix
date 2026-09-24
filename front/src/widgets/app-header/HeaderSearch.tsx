@@ -5,11 +5,13 @@ import { KeyHint } from '@/shared/ui';
 export interface HeaderSearchProps {
   value: string;
   onChange: (value: string) => void;
-  onFocus?: () => void;
+  /** Opens the palette. Called on a click, not on focus: the palette hands
+   *  focus back to this field when it closes, and that must not reopen it. */
+  onOpen?: () => void;
   onClear?: () => void;
 }
 
-export function HeaderSearch({ value, onChange, onFocus, onClear }: HeaderSearchProps) {
+export function HeaderSearch({ value, onChange, onOpen, onClear }: HeaderSearchProps) {
   const t = useT();
 
   return (
@@ -19,7 +21,7 @@ export function HeaderSearch({ value, onChange, onFocus, onClear }: HeaderSearch
         <input
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          onFocus={onFocus}
+          onClick={onOpen}
           aria-label={t.searchPh}
           placeholder={t.searchPh}
           className="min-w-0 flex-1 border-0 bg-transparent text-115 text-txt outline-none"

@@ -1,80 +1,35 @@
-# nginx site config for the built SPA.
-#
-# Two rules from docs/SPEC.md §0 and docs/API.md §16 are implemented here:
-#   * history routing needs an index.html fallback for any unknown path, or a
-#     direct hit on /board answers 404;
-#   * the API is served from the same origin in production, which is what keeps
-#     the session cookie first-party (API.md §1.4).
+# nginx site config for the built SPA: history fallback + same-origin /api proxy.
 
-# Cache policy as a map rather than per-location `expires`/`add_header`.
-#
-# This is not style. nginx's add_header is *replaced*, not merged, by any
-# add_header at a deeper level: one `add_header Cache-Control` inside a location
-# silently drops every security header inherited from the server block. Keeping
-# the value in a map lets all add_header directives live at server level, where
-# nothing overrides them.
+# Cache-Control via a map so every add_header stays at server level:
+# an add_header inside a location would drop all inherited headers.
 map $uri $cursed_cache_control {
-    # The entry document must never be cached, or a deploy is invisible to a
-    # client holding a stale index.html that points at deleted bundles.
     default        "no-cache, must-revalidate";
-    # Vite fingerprints everything under /assets, so those are immutable.
     ~^/assets/     "public, max-age=31536000, immutable";
-    # Empty means nginx adds no header at all, which is what the API needs:
-    # server-level add_header is inherited by the proxy location too, and a
-    # second Cache-Control there would override whatever the backend set on its
-    # own response. Caching of API responses is the backend's decision.
     ~^/api(/|$)    "";
 }
 
-# Access log for the API, with the two numbers that separate "the server was
-# slow" from "everything else was slow": how long the whole exchange took, and
-# how long of that was spent waiting for the backend. A request that is 3 ms
-# upstream and 500 ms total was not the backend's doing.
 log_format cursed_api '$remote_addr $request_method $uri$is_args$args '
                       'status=$status bytes=$body_bytes_sent '
                       'request_time=$request_time upstream_time=$upstream_response_time '
                       'id=$upstream_http_x_request_id';
 
-# HSTS, but only once there is TLS to promise.
-#
-# This container serves plain HTTP; the certificate lives in whatever
-# terminates TLS in front of it. Sending the header unconditionally would tell
-# a browser to refuse plain HTTP even on a development host reached over it,
-# and an empty value makes nginx omit the header entirely — so it appears the
-# moment a terminator forwards X-Forwarded-Proto: https, and not before.
+# HSTS only once a TLS terminator forwards X-Forwarded-Proto: https.
 map $http_x_forwarded_proto $cursed_hsts {
     default "";
     https   "max-age=31536000; includeSubDomains";
 }
 
-# --- rate and connection limits --------------------------------------
-#
-# The backend counts attempts too, and more precisely — per account as well as
-# per address. This layer exists because that counting costs a request: a
-# flood that nginx refuses never reaches Go, never touches Redis and never
-# allocates 64 MiB for an argon2 hash. The edge stops volume; the application
-# stops the attacks volume alone cannot describe.
-#
-# Keys are the client address as nginx sees it on its own connection, so a
-# forged X-Forwarded-For cannot spread a flood across imaginary addresses.
-
-# An empty key is not counted, which is how one location carries two ceilings:
-# the strict one applies only to the credential endpoints.
+# --- rate limits: the edge stops volume, the backend counts per account ------
+# Empty key = not counted, so the strict zone only applies to credential endpoints.
 map $uri $cursed_auth_key {
     default                                   "";
     ~^/api/v1/auth/(register|login|refresh)$  $binary_remote_addr;
 }
 
-# 20 r/s sustained is far above a person browsing — the board opens with a
-# handful of parallel reads — and far below what a loop produces.
 limit_req_zone  $binary_remote_addr  zone=cursed_api:10m   rate=20r/s;
-# 20 a minute across register, login and refresh. Guessing is bounded by the
-# account counter in the backend; this bounds the cost of being guessed at.
 limit_req_zone  $cursed_auth_key     zone=cursed_auth:10m  rate=20r/m;
 limit_conn_zone $binary_remote_addr  zone=cursed_conn:10m;
 
-# The same status the application's own limiter answers with, so a client sees
-# one behaviour whichever layer refused it.
 limit_req_status  429;
 limit_conn_status 429;
 
@@ -85,18 +40,10 @@ server {
     root  /usr/share/nginx/html;
     index index.html;
 
-    # Docker's embedded DNS. Needed because the backend is resolved per request
-    # (see the /api location) rather than at startup.
+    # Docker DNS; the backend is resolved per request, see /api/.
     resolver 127.0.0.11 valid=10s ipv6=off;
 
-    # Nothing here takes an upload. Every request body is a small JSON
-    # document, and the backend reads at most 16 KiB of one; a cap here means
-    # a larger body is refused before nginx has buffered it.
     client_max_body_size 1m;
-
-    # One address, at most this many connections held open at once. Slowloris
-    # is already answered by read_header_timeout in Go, but a connection that
-    # never finishes still occupies a worker until then.
     limit_conn cursed_conn 48;
 
     server_tokens off;
@@ -109,14 +56,7 @@ server {
     gzip_types        text/plain text/css application/javascript application/json
                       image/svg+xml application/manifest+json;
 
-    # --- headers ---------------------------------------------------------
-    # Every add_header in this file is here, at server level, for the reason
-    # given above the map. Adding one inside a location means repeating all of
-    # them there too.
-    #
-    # font-src/style-src allow Google Fonts because index.html loads JetBrains
-    # Mono from the CDN. Self-hosting the font would let both drop to 'self'
-    # and remove a third-party request from every cold load.
+    # Google Fonts allowed because index.html loads JetBrains Mono from the CDN.
     add_header X-Content-Type-Options  "nosniff"     always;
     add_header X-Frame-Options         "DENY"        always;
     add_header Referrer-Policy         "same-origin" always;
@@ -125,38 +65,24 @@ server {
     add_header Cache-Control           $cursed_cache_control always;
     add_header Strict-Transport-Security $cursed_hsts always;
 
-    # --- liveness --------------------------------------------------------
-    # Answered by nginx alone, so the container stays healthy while the API is
-    # down. Never proxied. `default_type` rather than `add_header Content-Type`,
-    # again so the security headers above are not replaced here.
+    # Answered by nginx itself, so the container stays healthy while the API is down.
     location = /healthz {
         access_log   off;
         default_type text/plain;
         return 200 "ok\n";
     }
 
-    # --- API -------------------------------------------------------------
-    # `/api` with no trailing slash matches neither `location /api/` nor any
-    # asset, so without this it would fall through to the SPA fallback and
-    # answer 200 with index.html. There is no API root — the base path is
-    # /api/v1 — so the honest answer is 404.
+    # No API root; without this /api would fall through to index.html.
     location = /api {
         return 404;
     }
 
-    # The host is held in a variable on purpose: with a literal name nginx
-    # resolves it at startup and refuses to boot while back/ does not exist.
-    # This way the frontend comes up regardless and /api answers 502 until the
-    # backend is running.
+    # Host in a variable: nginx then boots even while the backend is down.
     location /api/ {
-        # Both ceilings apply; the auth one counts nothing outside the
-        # credential endpoints, because its key is empty there.
         limit_req zone=cursed_api  burst=40 nodelay;
         limit_req zone=cursed_auth burst=10 nodelay;
 
-        # Well above the 16 KiB the backend will read, so the refusal a client
-        # sees for an oversized body is the application's, with a code in it —
-        # not a bare 413 from the proxy.
+        # Above the 16 KiB the backend reads, so the oversized-body error is the app's.
         client_max_body_size 64k;
 
         access_log /var/log/nginx/access.log cursed_api;
@@ -176,15 +102,12 @@ server {
         proxy_read_timeout    30s;
     }
 
-    # --- static assets ---------------------------------------------------
-    # A fingerprinted file that is missing is a deploy error, not a route:
-    # answer 404 instead of handing back index.html.
+    # A missing fingerprinted file is a deploy error, not a route.
     location /assets/ {
         access_log off;
         try_files  $uri =404;
     }
 
-    # --- SPA fallback ----------------------------------------------------
     location / {
         try_files $uri $uri/ /index.html;
     }

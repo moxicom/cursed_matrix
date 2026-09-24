@@ -1,16 +1,6 @@
-# cursed_matrix — local and single-host stack.
-#
-#   docker compose up -d --build         the whole application
-#   docker compose run --rm migrate up   apply pending migrations
-#
-# Everything the application needs starts with a plain `up`. The migration
-# runner is the one exception: it is a one-shot, so it sits behind a profile
-# and is invoked by name. docs/DEPLOY.md is the procedure.
-#
-# Published ports bind to 127.0.0.1 on purpose. Postgres, Redis, Prometheus and
-# the exporters must not be reachable from the network on a host that also
-# serves the app; only the frontend port is meant to be exposed, and in
-# production it belongs behind a TLS terminator.
+# docker compose up -d --build       the application
+# docker compose run --rm migrate up  migrations (one-shot, behind a profile)
+# See docs/DEPLOY.md. Everything but FRONT_PORT is published on 127.0.0.1.
 
 name: cursed-matrix
 
@@ -25,20 +15,16 @@ x-logging: &logging
       max-file: "3"
 
 services:
-  # ---------------------------------------------------------------- frontend
   front:
     <<: [*restart, *logging]
     build:
       context: ./front
       dockerfile: Dockerfile
-    image: cursed-matrix/front:${IMAGE_TAG:-dev}
+    image: ${IMAGE_REPO:-cursed-matrix}/front:${IMAGE_TAG:-dev}
     environment:
       BACKEND_HOST: back
       BACKEND_PORT: "8080"
     ports:
-      # FRONT_PORT may carry an interface as well as a number — set it to
-      # 127.0.0.1:8080 on a host where a TLS terminator is the only thing that
-      # should reach this container.
       - "${FRONT_PORT:-8080}:8080"
     networks: [edge]
     healthcheck:
@@ -48,54 +34,39 @@ services:
       retries: 3
       start_period: 5s
 
-  # ----------------------------------------------------------------- backend
   back:
     <<: [*restart, *logging]
     build:
       context: ./back
       dockerfile: Dockerfile
-    image: cursed-matrix/back:${IMAGE_TAG:-dev}
+      args:
+        GO_BUILD_LOWMEM: ${GO_BUILD_LOWMEM:-}
+    image: ${IMAGE_REPO:-cursed-matrix}/back:${IMAGE_TAG:-dev}
     environment:
-      # Structure and tuning live in the mounted YAML; only the secrets it names
-      # are passed in, so a credential change never means a rebuild.
       CONFIG_PATH: /etc/cursed-matrix/config.yaml
-      # Which deployment this is, not how it is tuned. It decides whether the
-      # session cookie carries Secure, so a server serving HTTPS must set
-      # APP_ENV=production in .env — anything else is treated as development.
+      # Only exactly "production" gives the session cookies the Secure flag.
       APP_ENV: ${APP_ENV:-development}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
     volumes:
-      # Mounted, not baked: editing the file and restarting is enough.
       - ./back/config/config.yaml:/etc/cursed-matrix/config.yaml:ro
     networks: [edge, data]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-    # No healthcheck block: the image carries its own HEALTHCHECK, which probes
-    # the service with the binary itself rather than with a packaged wget.
-    #
-    # Longer than http.shutdown_timeout in back/config/config.yaml: Docker must
-    # not SIGKILL the process while it is still draining within its own budget.
+    # Healthcheck comes from the image. Grace > http.shutdown_timeout in config.yaml.
     stop_grace_period: 25s
 
-  # --------------------------------------------------------------- migrations
-  #
-  # The same image as the backend, with its other binary as the entrypoint. It
-  # is a one-shot, so it has no restart policy and is never "up":
-  #
-  #   docker compose run --rm migrate up
-  #   docker compose run --rm migrate status
-  #
-  # A server needs no Go toolchain for this, which the Makefile targets assume.
   migrate:
     <<: *logging
     profiles: ["migrate"]
     build:
       context: ./back
       dockerfile: Dockerfile
-    image: cursed-matrix/back:${IMAGE_TAG:-dev}
+      args:
+        GO_BUILD_LOWMEM: ${GO_BUILD_LOWMEM:-}
+    image: ${IMAGE_REPO:-cursed-matrix}/back:${IMAGE_TAG:-dev}
     entrypoint: ["/usr/local/bin/migrate"]
     environment:
       CONFIG_PATH: /etc/cursed-matrix/config.yaml
@@ -107,7 +78,6 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
 
-  # ---------------------------------------------------------------- postgres
   postgres:
     <<: [*restart, *logging]
     image: postgres:16-alpine
@@ -115,13 +85,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-cursed}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-cursed_matrix}
-      # Initdb args, applied only when the volume is empty. C.UTF-8 collation
-      # keeps index ordering stable across platforms and image upgrades.
       POSTGRES_INITDB_ARGS: "--data-checksums --locale=C.UTF-8 --encoding=UTF8"
       TZ: UTC
     command:
-      # pg_stat_statements is what makes slow-query work possible later; it has
-      # to be preloaded at start, it cannot be switched on afterwards.
       - "postgres"
       - "-c"
       - "shared_preload_libraries=pg_stat_statements"
@@ -131,8 +97,6 @@ services:
       - "pg_stat_statements.track=all"
       - "-c"
       - "timezone=UTC"
-      # Log anything slower than 200ms. SPEC §22 leans on partial indexes; this
-      # is how you find out they are not being used.
       - "-c"
       - "log_min_duration_statement=200"
     volumes:
@@ -142,15 +106,12 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     networks: [data]
     healthcheck:
-      # -d and -U matter: without them pg_isready reports the template database
-      # ready before the application database exists.
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cursed} -d ${POSTGRES_DB:-cursed_matrix}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
 
-  # ------------------------------------------------------------------- redis
   redis:
     <<: [*restart, *logging]
     image: redis:7-alpine
@@ -158,16 +119,13 @@ services:
       - "redis-server"
       - "--requirepass"
       - "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"
-      # appendonly: sessions and rate-limit counters survive a restart. Losing
-      # them logs everyone out, which is survivable but pointless.
       - "--appendonly"
       - "yes"
       - "--appendfsync"
       - "everysec"
       - "--maxmemory"
       - "${REDIS_MAXMEMORY:-256mb}"
-      # noeviction, not allkeys-lru: sessions must not be evicted silently under
-      # memory pressure. A write error is louder than a user logged out at random.
+      # noeviction: sessions must fail loudly, not vanish under memory pressure.
       - "--maxmemory-policy"
       - "noeviction"
     volumes:
@@ -184,21 +142,7 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
 
-  # -------------------------------------------------------------- monitoring
-  #
-  # Opt-in, because it costs more memory than the product it watches: roughly
-  # 420 MB against 130 MB for Postgres, Redis, the API and nginx together. On
-  # a host with room, COMPOSE_PROFILES=monitoring in .env turns all four on for
-  # every command without a flag anywhere; on a small server, leave it out.
-  #
-  # This is the opposite case from the backend, which used to hide behind a
-  # profile and should not have: that one is the application, and a profile
-  # made a plain `up` quietly skip it. These four are genuinely optional.
-  # VictoriaMetrics in single-node mode: one binary that both scrapes and
-  # stores, with a Prometheus-compatible query API. For a stack this size it
-  # replaces Prometheus at a fraction of the memory and disk, and the scrape
-  # config it reads is Prometheus' own format (infra/victoria-metrics/).
-  # What it does not bring is rule evaluation — see infra/README.md.
+  # --- monitoring: opt-in via COMPOSE_PROFILES=monitoring, ~420 MB ----------
   victoriametrics:
     <<: [*restart, *logging]
     profiles: ["monitoring"]
@@ -208,10 +152,7 @@ services:
       - "-retentionPeriod=${VM_RETENTION:-15d}"
       - "-httpListenAddr=:8428"
       - "-promscrape.config=/etc/victoria-metrics/scrape.yml"
-      # Re-read the scrape config on SIGHUP instead of a restart.
       - "-promscrape.configCheckInterval=30s"
-      # Keeps VM from taking the whole host under a query burst. On a box that
-      # also runs Postgres and the app, the default is too generous.
       - "-memory.allowedPercent=${VM_MEMORY_PERCENT:-40}"
     volumes:
       - ./infra/victoria-metrics/scrape.yml:/etc/victoria-metrics/scrape.yml:ro
@@ -233,8 +174,6 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
-      # Nobody signs up for a single-operator Grafana, and anonymous access
-      # would expose the database internals to anyone who reaches the port.
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
@@ -262,8 +201,6 @@ services:
     environment:
       DATA_SOURCE_NAME: postgres://${POSTGRES_USER:-cursed}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cursed_matrix}?sslmode=disable
       PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
-      # Auto-discovery otherwise connects to every database in the cluster,
-      # including the templates and the one the integration tests create.
       PG_EXPORTER_EXCLUDE_DATABASES: "template0,template1,postgres,cursed_matrix_test"
     networks: [data]
     depends_on:
@@ -280,11 +217,7 @@ services:
     depends_on:
       redis: { condition: service_healthy }
 
-# ---------------------------------------------------------------------------
-# Networks are split so the segments cannot reach each other by accident:
-# the frontend never touches Postgres, and the exporters never sit on the edge.
-# The backend is the only service on both.
-# ---------------------------------------------------------------------------
+# front never reaches data; exporters never reach edge; back is on both.
 networks:
   edge:
   data:

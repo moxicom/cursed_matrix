@@ -15,12 +15,17 @@ Compose plugin.
   |---|---|
   | Postgres, Redis, the API, nginx | **130 MB** |
   | VictoriaMetrics, Grafana, two exporters | **420 MB** |
-  | the Go compiler, while building | **up to 700 MB** |
+  | the frontend build (tsc, vite) | **256 MB** |
+  | the Go compiler, while building | **768 MB**, or 512 MB with `GO_BUILD_LOWMEM=1` |
 
+  The build figures are the smallest hard memory cap each build survives
+  (two CPUs, no swap); `docker compose build` runs both at once, so add them.
   The application is small; the monitoring costs three times what it watches,
   and the compiler costs more than either. A 1 GB server runs the application
   comfortably, runs it and the monitoring badly, and cannot build it at all
-  while serving. See "Building on a small server".
+  while serving. See "Building on a small server" — and better, do not build
+  on a server at all: "On a 1 GB server" pulls images the repository's GitHub
+  Actions workflow has already built.
 
 Check before anything else:
 
@@ -220,7 +225,29 @@ free -m
 
 An exit code of 137 says the same thing.
 
-Four ways out, cheapest first:
+Five ways out, cheapest first. They combine:
+
+**Build one image at a time.** `docker compose build` builds the frontend
+and the backend concurrently, so their peaks add up. Two commands instead
+of one:
+
+```sh
+docker compose build back
+docker compose build front
+```
+
+**Build the backend in its low-memory mode.** In `.env`:
+
+```ini
+GO_BUILD_LOWMEM=1
+```
+
+It compiles one package at a time and caps the compiler's heap. Measured
+from a cold cache on two CPUs: the default build is killed under a 512 MB
+cap and needs 768; this mode passes at 512 and fails at 448, at about half
+again the wall-clock. `-p 1` on its own does nothing for the peak — that is
+set by the largest package and the link — the heap cap is what moves it.
+512 MB is still the floor, so on a host with 700 MB this alone is not enough.
 
 **Give the host swap.** A build is exactly what swap is for — slow is fine,
 dead is not. 4 GB is plenty:
@@ -231,16 +258,11 @@ sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-**Not by building one package at a time.** `go build -p 1` is the obvious
-lever and it does not work: measured from a cold cache, the peak went from
-680 MB to 738 MB and the build took three times as long. The peak is set by
-the largest single package, not by how many compile at once.
-
 **Stop the stack while building.** Nothing needs to serve during a build:
 
 ```sh
 docker compose down
-docker compose build
+docker compose build back && docker compose build front
 docker compose up -d
 ```
 
@@ -255,9 +277,45 @@ runs Postgres, Redis, the API and nginx and nothing else — 130 MB instead of
 
 ### On a 1 GB server
 
-Do not build there. 130 MB to run and 700 MB to compile do not fit in the same
-gigabyte, and swap turns the build from impossible into merely very slow.
-Build where there is room and ship the image:
+Do not build there. 130 MB to run and 512 MB to compile, at best, do not fit
+in the same gigabyte, and swap turns the build from impossible into merely
+very slow. The repository builds the images for you instead:
+`.github/workflows/images.yml` runs on every push to `main` and on every
+`v*` tag, and pushes
+
+```
+ghcr.io/moxicom/cursed_matrix/back
+ghcr.io/moxicom/cursed_matrix/front
+```
+
+tagged `latest` (main), `sha-<commit>` and the git tag. The package is public
+as long as the repository is, so the server needs no `docker login`. Point
+the server's `.env` at it:
+
+```ini
+IMAGE_REPO=ghcr.io/moxicom/cursed_matrix
+IMAGE_TAG=latest           # or sha-<commit>, or a v* tag, to pin
+COMPOSE_PROFILES=          # no monitoring
+REDIS_MAXMEMORY=64mb       # 256mb is a quarter of the host
+```
+
+and never call `build` there:
+
+```sh
+docker compose pull back front
+docker compose run --rm migrate up
+docker compose up -d --no-build       # or: make deploy, which is these three
+```
+
+`--no-build` matters: with an image name that cannot be pulled, a plain `up`
+would fall back to building, which is the thing being avoided.
+
+The workflow builds `linux/amd64`. An arm64 server needs `PLATFORMS` in the
+workflow set to `linux/amd64,linux/arm64`; the frontend stage then runs under
+emulation and the job takes several times longer.
+
+Without GitHub Actions — a private fork, or no network between the server
+and ghcr.io — build on your own machine and ship the images by hand:
 
 ```sh
 # on your own machine, in the repository
@@ -265,21 +323,18 @@ IMAGE_TAG=prod docker compose build back front
 docker save cursed-matrix/back:prod cursed-matrix/front:prod \
   | gzip | ssh server 'gunzip | docker load'
 
-# on the server
+# on the server, with IMAGE_TAG=prod in .env
 docker compose up -d --no-build
 ```
 
-Then, in the server's `.env`:
-
-```ini
-COMPOSE_PROFILES=          # no monitoring
-REDIS_MAXMEMORY=64mb       # 256mb is a quarter of the host
-IMAGE_TAG=prod             # the tag you shipped
-```
+`docker compose build` on a laptop produces the laptop's architecture. An
+arm64 laptop shipping to an amd64 server builds with
+`DOCKER_DEFAULT_PLATFORM=linux/amd64` in front of the command; the Go stage
+cross-compiles natively, the Node stage runs under emulation.
 
 If you would rather build on the server anyway, the only thing that works is
-swap: 4 GB of it, with the stack stopped first. The build will take minutes
-rather than seconds, and it will finish.
+swap: 4 GB of it, the stack stopped first, `GO_BUILD_LOWMEM=1`, and one image
+at a time. The build will take minutes rather than seconds, and it will finish.
 
 ## 3. Build, migrate, start
 
@@ -313,11 +368,21 @@ exercises the database, Redis, the cookie scheme and the XP ledger in one go.
 
 ## 5. Updating
 
+On a server that builds:
+
 ```sh
 git pull
-docker compose build
+docker compose build back && docker compose build front
 docker compose run --rm migrate up
 docker compose up -d
+```
+
+On a server that pulls (`IMAGE_REPO` set to the registry), after the images
+workflow has finished for the commit you want:
+
+```sh
+git pull                              # compose files and config, not code
+make deploy                           # pull, migrate, up -d --no-build
 ```
 
 `restart: unless-stopped` brings everything back after a reboot on its own.
@@ -359,6 +424,6 @@ internals and Grafana's admin password is the only thing in front of them.
 |---|---|
 | Rotating `JWT_SECRET` | signs everyone out immediately; every access token in flight stops verifying |
 | Rotating `POSTGRES_PASSWORD` | the running Postgres keeps the old one — it is applied only when the data volume is created. Change it with `ALTER ROLE`, then update `.env` |
-| `IMAGE_TAG` | only names the local image. It is not a registry tag and nothing pulls it |
+| `IMAGE_REPO`, `IMAGE_TAG` | together name the image. With the default `IMAGE_REPO` they name what `docker compose build` produces here and nothing pulls them; set to the registry, they name what `docker compose pull` fetches |
 | Billing | `billing.enabled: false` in `back/config/config.yaml` means buying a plan grants it outright for `granted_period`. Nobody is charged, and nothing takes card details |
 | Free-plan quotas and every input limit | enforced by the API, not the page. See `docs/STATUS.md` §6 |

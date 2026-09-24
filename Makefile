@@ -1,13 +1,9 @@
-# cursed_matrix — task runner for the compose stack.
-# `make` on its own lists the targets.
+# cursed_matrix — task runner. `make` lists the targets.
 
 COMPOSE     := docker compose
 DEV_COMPOSE := docker compose -f docker-compose.yml -f docker-compose.dev.yml
 
-# Load .env and hand every value to the recipe shells. Compose reads .env on
-# its own, but make does not, so without this the probes below fall back to the
-# built-in defaults and report a healthy stack as down whenever a port was
-# changed. The leading - keeps `make init` working before .env exists.
+# make does not read .env on its own; the leading - keeps `make init` working before it exists.
 -include .env
 export
 
@@ -15,7 +11,7 @@ POSTGRES_USER ?= cursed
 POSTGRES_DB   ?= cursed_matrix
 
 .DEFAULT_GOAL := help
-.PHONY: help init up migrate dev down stop restart build rebuild ps logs \
+.PHONY: help init up migrate dev down stop restart build rebuild pull deploy ps logs \
         logs-front health psql redis-cli pg-dump metrics grafana dev-reset \
         front-shell clean nuke back-build back-test back-test-integration \
         secrets back-lint back-tidy back-migrate-up back-migrate-down back-migrate-status \
@@ -28,10 +24,7 @@ help: ## Show this help
 init: ## Create .env from the template (does not overwrite an existing one)
 	@test -f .env && echo ".env already exists — leaving it alone" || { \
 	  cp .env.example .env; \
-	  echo ".env created. Fill in the four empty secrets:"; \
-	  echo "  openssl rand -hex 32"; \
-	  echo "(hex, not base64: these go into postgres:// and redis:// URLs,"; \
-	  echo " where a / or + from base64 breaks the URL parse)"; }
+	  echo ".env created. Fill in the secrets: make secrets"; }
 
 secrets: ## Generate any secret in .env that is still empty
 	@test -f .env || { echo "no .env — run 'make init' first" >&2; exit 1; }
@@ -44,11 +37,7 @@ secrets: ## Generate any secret in .env that is still empty
 	    echo "  $$name generated"; \
 	  fi; \
 	done
-	@echo "Checking that compose can read them:"
-	@# With the names cleared from the environment: this Makefile exports what
-	@# it read from .env at startup, which was empty, and compose prefers an
-	@# environment variable over the file. The same trap catches anyone whose
-	@# shell exports one of these names — see `printenv REDIS_PASSWORD`.
+	@# env -u: the values this Makefile exported at startup were empty and would win over .env.
 	@env -u POSTGRES_PASSWORD -u REDIS_PASSWORD -u JWT_SECRET -u GRAFANA_ADMIN_PASSWORD \
 	  $(COMPOSE) config --quiet && echo "  .env is complete"
 
@@ -78,6 +67,14 @@ build: ## Build images without starting anything
 
 rebuild: ## Rebuild ignoring the layer cache
 	$(COMPOSE) build --no-cache
+
+pull: ## Pull the application images from IMAGE_REPO
+	$(COMPOSE) pull back front
+
+deploy: ## Update a server that does not build: pull, migrate, restart
+	$(COMPOSE) pull back front
+	$(COMPOSE) run --rm migrate up
+	$(COMPOSE) up -d --no-build
 
 ps: ## Show service status and health
 	$(COMPOSE) ps
@@ -122,12 +119,7 @@ grafana: ## Open Grafana in a browser
 front-shell: ## Shell inside the running frontend container
 	$(COMPOSE) exec front sh
 
-# ---------------------------------------------------------------- backend
-#
-# The backend's own toolchain. Migrations and tests run from the host against
-# the containerised database, which is why they build the DSN from .env rather
-# than reading the one compose hands to the container (that one says "postgres",
-# a hostname that only resolves inside the compose network).
+# --- backend: runs from the host against the containerised database ------------
 
 BACK_DSN := postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@127.0.0.1:$(or $(POSTGRES_PORT),5432)/$(POSTGRES_DB)?sslmode=disable
 TEST_DB  := $(POSTGRES_DB)_test
@@ -180,7 +172,7 @@ back-migrate-create: ## Create a migration: make back-migrate-create NAME=add_so
 	  printf -- '-- +goose Up\n\n-- +goose Down\n' > $$f; \
 	  echo "created: $$f"
 
-back-shell: ## Shell in a debug build of the backend image (the runtime image is scratch and has none)
+back-shell: ## Shell in a debug build of the backend image (the runtime image is scratch)
 	@docker build --target debug -t cursed-matrix/back:debug ./back >/dev/null
 	docker run --rm -it --entrypoint sh cursed-matrix/back:debug
 

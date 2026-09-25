@@ -13,8 +13,8 @@ export interface PriceSet {
  * round number. The backend will return the charged amount and currency later.
  */
 export const PRICES: Record<Language, PriceSet> = {
-  EN: { free: '$0', pro: '$6' },
-  RU: { free: '0 ₽', pro: '590 ₽' },
+  EN: { free: '$0', pro: '$2.39' },
+  RU: { free: '0 ₽', pro: '199 ₽' },
 };
 
 export function usePrices(): PriceSet {

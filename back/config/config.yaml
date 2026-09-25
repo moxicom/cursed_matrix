@@ -71,7 +71,7 @@ billing:
   prices:
     - language: EN
       currency: USD
-      amount: 500
+      amount: 239
     - language: RU
       currency: RUB
-      amount: 49000
+      amount: 19900

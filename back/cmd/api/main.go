@@ -32,9 +32,6 @@ import (
 	"github.com/moxicom/cursed_matrix/back/pkg/utils"
 )
 
-// version is stamped at build time with -ldflags "-X main.version=...".
-var version = "dev"
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "api:", err)
@@ -47,7 +44,7 @@ func run() error {
 	probe := flag.Bool("healthcheck", false, "probe the running server and exit")
 	flag.Parse()
 
-	if *probe {
+	if probe != nil && *probe {
 		return healthcheck(config.ConfigPath(*configPath))
 	}
 
@@ -55,9 +52,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
 	log := utils.NewLogger(utils.LoggerOptions{Env: cfg.Env, Verbose: cfg.Development()})
-	// The process default is a fallback for code that never sees a request
-	// context; components below are handed their own tagged logger.
 	slog.SetDefault(log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -91,7 +87,7 @@ func run() error {
 	if redisCache != nil {
 		tokens := token.NewJWTIssuer(cfg.AuthSecret(), cfg.Auth.AccessTTL, &shared.SystemClock{})
 		sessions := redisadapter.NewRefreshStore(redisCache.Client())
-		service := auth.NewService(
+		authSvc := auth.NewService(
 			postgres.NewUserRepository(pool),
 			sessions,
 			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
@@ -101,13 +97,13 @@ func run() error {
 			cfg.Auth.RefreshTTL,
 			cfg.Billing.TrialPeriod,
 		)
-		awards := achievement.NewService(
+		achievementSvc := achievement.NewService(
 			postgres.NewAchievementRepository(pool),
 			postgres.NewUserRepository(pool),
 			postgres.NewActivityRepository(pool),
 			&shared.SystemClock{},
 		)
-		boards := board.NewService(board.Deps{
+		boardSvc := board.NewService(board.Deps{
 			Tasks:  postgres.NewTaskRepository(pool),
 			Users:  postgres.NewUserRepository(pool),
 			Tags:   postgres.NewTagRepository(pool),
@@ -115,7 +111,7 @@ func run() error {
 			Tx:     postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
 			Ledger: postgres.NewXPLedger(pool),
 			Events: postgres.NewActivityRepository(pool),
-			Awards: awards,
+			Awards: achievementSvc,
 			XP:     progression.DefaultConfig(),
 			Clock:  &shared.SystemClock{},
 			Cache:  redisCache,
@@ -128,7 +124,7 @@ func run() error {
 				Amount:   price.Amount,
 			})
 		}
-		plans := billing.NewService(
+		billingSvc := billing.NewService(
 			postgres.NewUserRepository(pool),
 			redisCache,
 			billing.Config{
@@ -138,7 +134,7 @@ func run() error {
 			},
 			&shared.SystemClock{},
 		)
-		limiter := redisadapter.NewRateLimiter(redisCache.Client(), utils.ForComponent(log, "ratelimit"))
+		limiter := redisadapter.NewRateLimiter(redisCache.Client(), utils.ForComponent(log, "rate_limit"))
 		limits := httphandler.RateLimits{
 			AddressAttempts:  cfg.Auth.RateLimit.AddressAttempts,
 			AddressWindow:    cfg.Auth.RateLimit.AddressWindow,
@@ -156,11 +152,11 @@ func run() error {
 			postgres.NewTaskRepository(pool),
 			postgres.NewUserRepository(pool),
 			postgres.NewActivityRepository(pool),
-			awards,
+			achievementSvc,
 			postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
 			&shared.SystemClock{},
 		)
-		profiles := profile.NewService(profile.Deps{
+		profileSvc := profile.NewService(profile.Deps{
 			Users:        postgres.NewUserRepository(pool),
 			Events:       postgres.NewActivityRepository(pool),
 			Tx:           postgres.NewTxManager(pool, utils.ForComponent(log, "postgres")),
@@ -169,15 +165,15 @@ func run() error {
 			Links:        postgres.NewLinkRepository(pool),
 			Tags:         postgres.NewTagRepository(pool),
 			Achievements: postgres.NewAchievementRepository(pool),
-			Awards:       awards,
+			Awards:       achievementSvc,
 			Clock:        &shared.SystemClock{},
 			Cache:        redisCache,
 		})
 
 		api = httphandler.Routes(
-			httphandler.NewAPI(service, boards, graphs, profiles, awards, plans, httphandler.NewCookieWriter(!cfg.Development()),
+			httphandler.NewAPI(authSvc, boardSvc, graphs, profileSvc, achievementSvc, billingSvc, httphandler.NewCookieWriter(!cfg.Development()),
 				cfg.Auth.RefreshTTL, limiter, limits, &shared.SystemClock{}),
-			tokens, sessions, limiter, limits, profiles, &shared.SystemClock{}, utils.ForComponent(log, "streak"),
+			tokens, sessions, limiter, limits, profileSvc, &shared.SystemClock{}, utils.ForComponent(log, "streak"),
 		)
 	} else {
 		log.Warn("api disabled: the refresh store needs Redis")
@@ -191,7 +187,7 @@ func run() error {
 	serving := make(chan error, 1)
 	go func() { serving <- server.Serve() }()
 
-	log.Info("starting", "version", version, "config", cfg)
+	log.Info("starting")
 
 	var serveErr error
 	select {

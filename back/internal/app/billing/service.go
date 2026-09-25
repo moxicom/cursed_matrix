@@ -13,15 +13,12 @@ import (
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
 
-// Price is what one market pays, in the currency's minor units so nothing is
-// ever held as a float.
 type Price struct {
 	Language shared.Language
 	Currency string
 	Amount   int64
 }
 
-// Offer is a plan as the pricing page shows it.
 type Offer struct {
 	Plan            shared.Plan
 	Prices          []Price
@@ -31,9 +28,6 @@ type Offer struct {
 
 // Config is what the operator decided.
 type Config struct {
-	// Enabled false means no provider is wired and none is pretended: buying
-	// grants the plan outright, so the product works end to end before a
-	// payment provider is chosen.
 	Enabled bool
 
 	GrantedPeriod time.Duration
@@ -51,14 +45,8 @@ func NewService(users port.UserRepository, cached port.Cache, config Config, clo
 	return &Service{users: users, cache: cached, config: config, clock: clock}
 }
 
-// Enabled reports whether a purchase goes to a provider. The pricing page
-// shows it so the client knows whether to expect a redirect or an answer.
 func (s *Service) Enabled() bool { return s.config.Enabled }
 
-// Offers is the pricing page.
-//
-// The free plan's limits come from the same place the quotas read them, so the
-// page cannot promise a number the server does not enforce.
 func (s *Service) Offers() []Offer {
 	return []Offer{
 		{
@@ -102,10 +90,6 @@ func (s *Service) Checkout(ctx context.Context, userID uuid.UUID) (user.Subscrip
 		return user.Subscription{}, err
 	}
 
-	// The plan rides in the access token, so the old one would keep saying
-	// FREE until it expired. Retiring the account's cached preferences is not
-	// enough; the client has to fetch a new token, which is what the response
-	// tells it to do.
 	s.forget(ctx, userID)
 	return granted, nil
 }

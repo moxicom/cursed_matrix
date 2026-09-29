@@ -78,10 +78,29 @@ type RedisConfig struct {
 }
 
 type AuthConfig struct {
-	SecretKey  string          `yaml:"secret_key" validate:"required"`
-	AccessTTL  time.Duration   `yaml:"access_ttl" validate:"required,gt=0"`
-	RefreshTTL time.Duration   `yaml:"refresh_ttl" validate:"required,gt=0,gtfield=AccessTTL"`
-	RateLimit  RateLimitConfig `yaml:"rate_limit" validate:"required"`
+	SecretKey    string             `yaml:"secret_key" validate:"required"`
+	AccessTTL    time.Duration      `yaml:"access_ttl" validate:"required,gt=0"`
+	RefreshTTL   time.Duration      `yaml:"refresh_ttl" validate:"required,gt=0,gtfield=AccessTTL"`
+	RateLimit    RateLimitConfig    `yaml:"rate_limit" validate:"required"`
+	PasswordHash PasswordHashConfig `yaml:"password_hash"`
+}
+
+// PasswordHashConfig tunes argon2id and the queue in front of it. Every field
+// has a default, so the section may be left out entirely.
+//
+// The memory is what makes a leaked database expensive to brute-force on a
+// GPU, and it is also what one sign-in costs this process: the peak is
+// max_concurrent × memory_mib. max_memory_mib is the ceiling accepted from a
+// stored hash — hashes carry their own parameters, so memory_mib can be lowered
+// later without touching anyone's password, as long as this stays at or above
+// what the live hashes were issued with.
+type PasswordHashConfig struct {
+	MemoryMiB     uint32        `yaml:"memory_mib" validate:"gte=8"`
+	Time          uint32        `yaml:"time" validate:"gte=1"`
+	Threads       uint8         `yaml:"threads" validate:"gte=1"`
+	MaxMemoryMiB  uint32        `yaml:"max_memory_mib" validate:"gtefield=MemoryMiB"`
+	MaxConcurrent int           `yaml:"max_concurrent" validate:"gte=1"`
+	WaitBudget    time.Duration `yaml:"wait_budget" validate:"gt=0"`
 }
 
 // RateLimitConfig bounds what one caller may ask for. Each ceiling answers an
@@ -211,6 +230,31 @@ func (c *Config) applyDefaults() {
 	if c.Database.SSLMode == "" {
 		c.Database.SSLMode = "disable"
 	}
+	c.Auth.PasswordHash.applyDefaults()
+}
+
+// applyDefaults fills what the file left out. The values mirror
+// utils.DefaultPasswordHashParams; they are spelled here rather than imported
+// so the config package stays free of the packages it configures.
+func (p *PasswordHashConfig) applyDefaults() {
+	if p.MemoryMiB == 0 {
+		p.MemoryMiB = 32
+	}
+	if p.Time == 0 {
+		p.Time = 2
+	}
+	if p.Threads == 0 {
+		p.Threads = 1
+	}
+	if p.MaxMemoryMiB == 0 {
+		p.MaxMemoryMiB = max(64, p.MemoryMiB)
+	}
+	if p.MaxConcurrent == 0 {
+		p.MaxConcurrent = 2
+	}
+	if p.WaitBudget == 0 {
+		p.WaitBudget = 2 * time.Second
+	}
 }
 
 func (c *Config) resolveSecrets(required secretRequirement) error {
@@ -325,5 +369,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.Int("database.maxConns", int(c.Database.MaxConns)),
 		slog.String("redis.host", c.Redis.Host),
 		slog.Bool("database.migrateOnBoot", c.Database.MigrateOnBoot),
+		slog.Int("auth.passwordHash.memoryMiB", int(c.Auth.PasswordHash.MemoryMiB)),
+		slog.Int("auth.passwordHash.maxConcurrent", c.Auth.PasswordHash.MaxConcurrent),
 	)
 }

@@ -43,6 +43,13 @@ auth:
   secret_key: TEST_AUTH_SECRET
   access_ttl: 15m
   refresh_ttl: 720h
+  password_hash:
+    memory_mib: 24
+    time: 3
+    threads: 2
+    max_memory_mib: 64
+    max_concurrent: 3
+    wait_budget: 1s
   rate_limit:
     address_attempts: 20
     address_window: 5m
@@ -110,12 +117,57 @@ func TestLoadReadsStructureAndResolvesSecrets(t *testing.T) {
 		{name: "attempts per address", got: cfg.Auth.RateLimit.AddressAttempts, want: 20},
 		{name: "attempts per account", got: cfg.Auth.RateLimit.AccountAttempts, want: 5},
 		{name: "account window", got: cfg.Auth.RateLimit.AccountWindow, want: 15 * time.Minute},
+		{name: "hash memory", got: cfg.Auth.PasswordHash.MemoryMiB, want: uint32(24)},
+		{name: "hash passes", got: cfg.Auth.PasswordHash.Time, want: uint32(3)},
+		{name: "hash lanes", got: cfg.Auth.PasswordHash.Threads, want: uint8(2)},
+		{name: "hash ceiling", got: cfg.Auth.PasswordHash.MaxMemoryMiB, want: uint32(64)},
+		{name: "concurrent hashes", got: cfg.Auth.PasswordHash.MaxConcurrent, want: 3},
+		{name: "hash wait budget", got: cfg.Auth.PasswordHash.WaitBudget, want: time.Second},
 		{
 			name: "database url", got: cfg.DatabaseURL(),
 			want: "postgres://cursed:pg-secret@postgres:5432/cursed_matrix?sslmode=require",
 		},
 		{name: "redis url", got: cfg.RedisURL(), want: "redis://:redis-secret@redis:6379/3"},
 		{name: "auth secret", got: cfg.AuthSecret(), want: "auth-secret"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Errorf("%s = %v, want %v", tc.name, tc.got, tc.want)
+			}
+		})
+	}
+}
+
+// The section is optional: a file written before it existed must load with
+// the same values the code used to hard-wire.
+func TestPasswordHashDefaultsWhenSectionAbsent(t *testing.T) {
+	setSecrets(t)
+	body := strings.Replace(sampleConfig, `  password_hash:
+    memory_mib: 24
+    time: 3
+    threads: 2
+    max_memory_mib: 64
+    max_concurrent: 3
+    wait_budget: 1s
+`, "", 1)
+	cfg, err := config.Load(writeConfig(t, body))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		got  any
+		want any
+	}{
+		{name: "memory", got: cfg.Auth.PasswordHash.MemoryMiB, want: uint32(32)},
+		{name: "passes", got: cfg.Auth.PasswordHash.Time, want: uint32(2)},
+		{name: "lanes", got: cfg.Auth.PasswordHash.Threads, want: uint8(1)},
+		{name: "ceiling", got: cfg.Auth.PasswordHash.MaxMemoryMiB, want: uint32(64)},
+		{name: "concurrent", got: cfg.Auth.PasswordHash.MaxConcurrent, want: 2},
+		{name: "wait budget", got: cfg.Auth.PasswordHash.WaitBudget, want: 2 * time.Second},
 	}
 
 	for _, tc := range tests {
@@ -157,6 +209,18 @@ func TestLoadRejectsBrokenConfigurations(t *testing.T) {
 			name:     "no attempt ceiling",
 			body:     strings.Replace(sampleConfig, "account_attempts: 5", "account_attempts: 0", 1),
 			wantWord: "auth.rate_limit.account_attempts",
+		},
+		{
+			name:     "hash memory below the argon2 floor",
+			body:     strings.Replace(sampleConfig, "memory_mib: 24", "memory_mib: 4", 1),
+			wantWord: "auth.password_hash.memory_mib",
+		},
+		{
+			// A ceiling below what is being issued would reject every hash the
+			// server itself just produced.
+			name:     "hash ceiling below what is issued",
+			body:     strings.Replace(sampleConfig, "max_memory_mib: 64", "max_memory_mib: 16", 1),
+			wantWord: "auth.password_hash.max_memory_mib must be at least memory_mib",
 		},
 		{
 			name:     "a price with no currency",

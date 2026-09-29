@@ -8,7 +8,7 @@ import (
 )
 
 // The slot count is what stands between a burst of sign-ins and this process
-// asking the machine for 64 MiB per caller at once. A limiter that handed out
+// asking the machine for 32 MiB per caller at once. A limiter that handed out
 // more than it has, or never took one back, would be invisible until the day it
 // mattered.
 func TestHashLimiter(t *testing.T) {

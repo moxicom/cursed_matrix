@@ -58,9 +58,9 @@ make back-fmt               # go fix + gofumpt, run before committing
 ## Run on a small VPS
 
 Tested target: 1 CPU, 1 GB RAM, 20 GB disk, KVM. The running stack takes
-about 130 MB. The build does not fit next to it, so the server pulls images
-that GitHub Actions (`.github/workflows/images.yml`) has already built and
-pushed to `ghcr.io/moxicom/cursed_matrix/{back,front}` on every push to `main`.
+about 130 MB. The build does not fit next to it (the Go compiler alone wants
+512-768 MB), so the images are built on your own machine and shipped to the
+server over SSH. The server never compiles anything.
 
 ### 1. Swap
 
@@ -75,7 +75,10 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swap.conf && sudo sysctl -p /etc/sysctl.d/99-swap.conf
 ```
 
-### 2. Configure
+### 2. Configure the server
+
+The server needs the compose files and the config, not the source. Clone the
+repository anyway: it is the simplest way to keep them in sync.
 
 ```sh
 git clone <remote> cursed_matrix && cd cursed_matrix
@@ -85,8 +88,8 @@ make init && make secrets
 Then in `.env`:
 
 ```ini
-IMAGE_REPO=ghcr.io/moxicom/cursed_matrix
-IMAGE_TAG=latest           # or sha-<commit>, or a v* tag
+IMAGE_REPO=cursed-matrix   # the default: names the images you will load, nothing is pulled
+IMAGE_TAG=prod
 APP_ENV=production         # anything else issues cookies without Secure
 FRONT_PORT=127.0.0.1:8080  # only the TLS terminator reaches the container
 COMPOSE_PROFILES=          # no monitoring: it costs 3x the application
@@ -99,16 +102,37 @@ FRONT_MEM_LIMIT=32m
 BACK_GOMEMLIMIT=192MiB     # Go GC tightens here, before the cap kills it
 ```
 
-### 3. Deploy
+### 3. Build locally, ship over SSH
+
+On your machine, in the repository:
 
 ```sh
-make deploy     # pull back+front, migrate, up -d --no-build
+# Build for the server's architecture. Almost every VPS is amd64; on an
+# Apple Silicon or other arm64 laptop this line is required, otherwise you
+# ship arm64 images the server cannot run. Go cross-compiles natively; the
+# Node stage runs under emulation and takes a few minutes.
+export DOCKER_DEFAULT_PLATFORM=linux/amd64
+
+IMAGE_TAG=prod docker compose build back front
+
+docker save cursed-matrix/back:prod cursed-matrix/front:prod \
+  | gzip | ssh user@server 'gunzip | docker load'
 ```
 
-Never run `docker compose build` or a plain `up` there: with an image that
-cannot be pulled, `up` falls back to building. Updates are `git pull` (compose
-files and config only) followed by `make deploy` once the images workflow has
-finished for that commit.
+`docker load` on the server needs no memory to speak of; it unpacks layers to
+disk.
+
+On the server, with `IMAGE_TAG=prod` in `.env`:
+
+```sh
+cd cursed_matrix
+docker compose up -d postgres redis
+docker compose run --rm migrate up
+docker compose up -d --no-build
+```
+
+`--no-build` matters: if an image is missing, a plain `up` would try to build
+it there, which is the thing being avoided.
 
 ### 4. TLS
 
@@ -134,6 +158,42 @@ free -m                                        # swap used should stay near 0
 
 Register an account and complete one task: that exercises the database,
 Redis, the cookie scheme and the XP ledger at once.
+
+### Updating
+
+Same three steps. On your machine:
+
+```sh
+IMAGE_TAG=prod docker compose build back front
+docker save cursed-matrix/back:prod cursed-matrix/front:prod \
+  | gzip | ssh user@server 'gunzip | docker load'
+```
+
+On the server:
+
+```sh
+git pull                                  # compose files and config, not code
+docker compose run --rm migrate up
+docker compose up -d --no-build
+docker image prune -f                     # the previous layers, otherwise they pile up
+```
+
+Migrations run as a separate step on purpose: the API does not migrate at
+startup, so a schema change fails loudly before new code serves against the
+old schema.
+
+Pinning: a fixed tag such as `prod` is replaced on every load. To keep the
+previous image around for a rollback, tag by commit instead
+(`IMAGE_TAG=$(git rev-parse --short HEAD)` on both sides) and switch `.env`
+back to the old tag if the new one misbehaves.
+
+### Alternative: a registry
+
+`.github/workflows/images.yml` builds and pushes `linux/amd64` images to
+`ghcr.io/moxicom/cursed_matrix/{back,front}` on every push to `main`. A server
+that can reach it sets `IMAGE_REPO=ghcr.io/moxicom/cursed_matrix` and
+`IMAGE_TAG=latest` in `.env` and updates with `make deploy` (pull, migrate,
+up). Nothing else changes.
 
 ## Configuration
 
@@ -162,6 +222,7 @@ and read at startup.
 | `database.max_conns` | 16, deliberately not sized from the CPU count |
 | `auth.access_ttl`, `auth.refresh_ttl` | 15 m and 30 d; auth is HttpOnly cookies plus a CSRF header, no tokens in response bodies |
 | `auth.rate_limit.*` | per-address and per-account windows for login, register, reads and writes |
+| `auth.password_hash.*` | argon2id cost: 32 MiB × 2 passes, 2 hashes at a time (peak 64 MiB); `max_memory_mib` is the ceiling accepted from stored hashes and must never drop below what live passwords were issued with |
 | `billing.enabled` | `false`: buying a plan grants it outright for `granted_period`, nobody is charged |
 | `billing.trial_period` | 14 days for new accounts |
 | `billing.prices` | per locale, not converted: 2.39 USD for EN, 199 RUB for RU |
@@ -185,8 +246,9 @@ Measured, not estimated. See `docs/DEPLOY.md` for the method.
 | Frontend build | 256 MB |
 | Backend build | 768 MB, or 512 MB with `GO_BUILD_LOWMEM=1` |
 
-The one runtime spike is login: argon2id at 64 MiB per hash, bounded by the
-rate limits in `config.yaml`.
+The one runtime spike is login: argon2id, 32 MiB per hash and at most two at
+once, both set under `auth.password_hash` in `config.yaml`. Every other request
+verifies a JWT cookie and hashes nothing.
 
 ## Backups
 

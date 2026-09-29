@@ -44,6 +44,7 @@ func validateStructure(cfg *Config) error {
 var yamlNames = map[string]string{
 	"MaxConns":  "max_conns",
 	"AccessTTL": "access_ttl",
+	"MemoryMiB": "memory_mib",
 }
 
 func describe(failure validator.FieldError) string {
@@ -67,6 +68,8 @@ func describe(failure validator.FieldError) string {
 		return fmt.Sprintf("%s must not exceed %s, got %v", field, param, failure.Value())
 	case "gtfield":
 		return fmt.Sprintf("%s must be greater than %s, got %v", field, param, failure.Value())
+	case "gtefield":
+		return fmt.Sprintf("%s must be at least %s, got %v", field, param, failure.Value())
 	default:
 		return fmt.Sprintf("%s fails %s, got %v", field, failure.Tag(), failure.Value())
 	}

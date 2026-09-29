@@ -226,7 +226,7 @@ func (a *API) respondWithSession(w http.ResponseWriter, r *http.Request, session
 }
 
 // maxBodyBytes bounds an unauthenticated request. Without it a single caller
-// can feed an arbitrarily long password into argon2, which is 64 MiB of work
+// can feed an arbitrarily long password into argon2, which is 32 MiB of work
 // per attempt by design.
 const maxBodyBytes = 16 << 10
 

@@ -56,6 +56,19 @@ func run() error {
 	log := utils.NewLogger(utils.LoggerOptions{Env: cfg.Env, Verbose: cfg.Development()})
 	slog.SetDefault(log)
 
+	// Before anything serves: the hasher is process-wide and not synchronised.
+	ph := cfg.Auth.PasswordHash
+	if err := utils.ConfigurePasswordHashing(utils.PasswordHashParams{
+		MemoryMiB:     ph.MemoryMiB,
+		Time:          ph.Time,
+		Threads:       ph.Threads,
+		MaxMemoryMiB:  ph.MaxMemoryMiB,
+		MaxConcurrent: ph.MaxConcurrent,
+		WaitBudget:    ph.WaitBudget,
+	}); err != nil {
+		return err
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

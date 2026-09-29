@@ -148,6 +148,22 @@ The proxy must send `X-Forwarded-Proto` (enables HSTS) and `X-Real-IP`
 (rate limits are per address; without it every visitor shares one counter).
 Caddy does both by default; an nginx example is in `docs/DEPLOY.md`.
 
+#### Without TLS
+
+Fine for a first smoke test, not for users. In `.env`:
+
+```ini
+FRONT_PORT=8080            # every interface, not just the loopback
+APP_ENV=development
+```
+
+and open `http://<server-ip>:8080`. `APP_ENV=production` does not work over
+plain HTTP: it marks the session cookies `Secure`, and a browser refuses to
+store a `Secure` cookie that arrived over HTTP, so the login appears to succeed
+and the session is gone on the next request. HSTS stays off on its own, nginx
+sends it only when a terminator forwards `X-Forwarded-Proto: https`. Postgres,
+Redis and the monitoring remain on `127.0.0.1` either way.
+
 ### 5. Verify
 
 ```sh

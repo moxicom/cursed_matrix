@@ -5,7 +5,7 @@ import type { PlanId } from '@/shared/types/domain';
 
 export interface PlanBadgeProps {
   plan: PlanId;
-  /** Active task count, shown as `14/35` on the free plan. */
+  /** Active task count, shown as `3/5` on the free plan. */
   activeTasks: number;
   onClick: () => void;
 }

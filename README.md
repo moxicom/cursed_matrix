@@ -134,6 +134,17 @@ docker compose up -d --no-build
 `--no-build` matters: if an image is missing, a plain `up` would try to build
 it there, which is the thing being avoided.
 
+If `migrate` fails with `password authentication failed for user "cursed"`,
+the Postgres volume was initialised with a different password than `.env` now
+holds. The password is applied once, when the volume is empty. On a fresh
+server, `docker compose down -v` and start again; with data in place, change
+it inside the container, where local connections need no password:
+
+```sh
+docker compose exec -T postgres psql -U cursed -d postgres \
+  -c "ALTER ROLE cursed PASSWORD '$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)'"
+```
+
 ### 4. TLS
 
 The stack speaks plain HTTP on 127.0.0.1:8080. Put Caddy in front:
@@ -247,8 +258,8 @@ Every secret is named indirectly: a `*_key` field holds the environment
 variable that carries the value, so an operator repoints a credential without
 touching the image.
 
-Things that are enforced by the API, not the page: free-plan quotas (35 active
-tasks, 25 links), input limits (title 100, description 2000, tag 24), XP and
+Things that are enforced by the API, not the page: free-plan quotas (5 active
+tasks, 5 links), input limits (title 100, description 2000, tag 24), XP and
 level rules. The frontend only renders.
 
 ## Memory footprint

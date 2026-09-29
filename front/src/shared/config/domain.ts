@@ -198,7 +198,7 @@ export const SUBTASK_XP_MULTIPLIER = 0.35;
  * and names the limit in the refusal, which is what the paywall quotes. This
  * is only the number beside the counter before anything has been refused.
  */
-export const FREE_TASK_CAP = 35;
+export const FREE_TASK_CAP = 5;
 
 /** Deadline within this many hours renders as "approaching". */
 export const DEADLINE_APPROACHING_HOURS = 48;

@@ -783,7 +783,7 @@ learns about it early.
 | Rule | Why the client cannot be trusted with it |
 |---|---|
 | Authentication and subscription state | A signed-out visitor can flip the session flag; the server authorises every request instead |
-| Plan quotas (35 active tasks, 25 links) | The counter in the UI is advisory; the creating endpoint refuses |
+| Plan quotas (5 active tasks, 5 links) | The counter in the UI is advisory; the creating endpoint refuses |
 | XP amount, level, streak | The client must never *send* XP — only display what was granted. Otherwise a crafted request grants any amount |
 | Field limits (title 100, description 2000, tag 24) | `maxLength` is an affordance; the payload is validated server-side |
 | Subscription price | Determined by the server and the billing provider, never taken from a client payload |
@@ -843,7 +843,7 @@ Additional system rules:
 26. Color is pure metadata and affects no system rule (§18).
 27. Every section except the landing and pricing pages requires an active
     subscription; without one the user is redirected to pricing.
-28. The FREE plan is capped at 35 active tasks and 25 links. Reaching a cap
+28. The FREE plan is capped at 5 active tasks and 5 links. Reaching a cap
     blocks creation and opens the quota wall; it never touches existing data.
 29. Quotas count active tasks only — completing or archiving a task frees a
     slot, so a full account is never a dead end.
@@ -1234,7 +1234,7 @@ privacy. The client never computes anything that affects data.
     reported. Silently falling back to a concrete quadrant would grant XP at an
     arbitrary rate and hide the corruption.
 18. **Subscription and quotas:** the current plan, trial expiry, and enforcing
-    the FREE caps (35 active tasks, 25 links) on every creating endpoint. The
+    the FREE caps (5 active tasks, 5 links) on every creating endpoint. The
     client may show the wall early, but the server is what refuses the write.
 
 **Go specifics.**
@@ -1372,7 +1372,7 @@ urgent.
 
 ### 27.1 The free quota is the wrong paid lever
 
-`CLAUDE.md` §64 makes FREE a volume quota: 35 active tasks, 25 links. A volume
+`CLAUDE.md` §64 makes FREE a volume quota: 5 active tasks, 5 links. A volume
 quota asks for money before the user has felt any value — the wall arrives in
 the first week, while Todoist and TickTick offer an uncapped free tier one tab
 away. "Remove the counter" is not a reason to pay; "I can no longer work without
@@ -1702,7 +1702,7 @@ were invented — each item states the question and the proposed default.
 26. **Offline / sync** — is offline work with conflict resolution required? The
     brief does not mention it.
 27. **Subscription plans.** The design ships FREE / OPERATOR / SELF_HOSTED with
-    quotas (35 active tasks, 25 links) and a paywall, none of which appears in
+    quotas (5 active tasks, 5 links) and a paywall, none of which appears in
     the brief. → *decision taken:* implemented as designed. Still open: the
     billing provider, trial length, and what happens to tasks above the quota
     when a subscription lapses.
@@ -1723,7 +1723,7 @@ were invented — each item states the question and the proposed default.
     supplied in production (compose reads `.env`, which is not a production
     answer).
 30. **What FREE actually withholds.** §27.1 argues the paid lever should be the
-    Graph rather than a 35-task quota. This contradicts `CLAUDE.md` §64 and is a
+    Graph rather than a 5-task quota. This contradicts `CLAUDE.md` §64 and is a
     product decision, not a technical one. → *proposal:* capability-gated;
     keep the quota code as an unused abuse fallback.
 31. **Market and billing provider** (§27.2). Which market ships first, and

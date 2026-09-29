@@ -3,8 +3,8 @@ package user
 import "github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 
 const (
-	FreeActiveTasks = 10
-	FreeTaskLinks   = 10
+	FreeActiveTasks = 5
+	FreeTaskLinks   = 5
 )
 
 const Unlimited = -1

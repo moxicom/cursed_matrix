@@ -323,7 +323,7 @@ groups them by `parentTaskId`. Links are included because the board shows a link
 count per card and the topology filter needs them.
 
 > The response is not paginated, but it is capped: the board and the graph both
-> need the whole working set, which the free plan bounds at 35 active tasks,
+> need the whole working set, which the free plan bounds at 5 active tasks,
 > while completed tasks are never deleted. A result that hits the cap of 500
 > says so with `truncated: true`.
 
@@ -368,7 +368,7 @@ Invariants the server guarantees (and the contract should make unrepresentable,
 
 The task is created in the given quadrant at the end of its list (`SPEC` §6).
 `422` if the title is empty or over 100 characters. `402` with
-`QUOTA_LIMIT_REACHED` when a free account already holds 35 active tasks.
+`QUOTA_LIMIT_REACHED` when a free account already holds 5 active tasks.
 
 Response `201`: the created `Task`.
 
@@ -514,7 +514,7 @@ that is an implementation detail the client does not observe.
 * `409 DUPLICATE_LINK` for a link that already exists — for undirected types
   (`RELATED`, `CONNECTED_TO`) the pair is normalised, so `A→B` and `B→A` are the
   same link;
-* `402 QUOTA_LIMIT_REACHED` when a free account already holds 25 links;
+* `402 QUOTA_LIMIT_REACHED` when a free account already holds 5 links;
 * linking a parent to its own subtask is refused (it duplicates the system
   relation).
 
@@ -674,8 +674,8 @@ unlocked or not, because the UI sorts by completion ratio.
 { "plans": [ { "id": "PRO", "price": { "amount": 600, "currency": "USD",
                                         "display": "$6" },
                "period": "MONTH", "features": ["…"] } ],
-  "current": "FREE", "quota": { "activeTasks": 14, "activeTaskLimit": 35,
-                                "links": 31, "linkLimit": 25 } }
+  "current": "FREE", "quota": { "activeTasks": 3, "activeTaskLimit": 5,
+                                "links": 2, "linkLimit": 5 } }
 ```
 
 Prices come from the server per locale and currency — the client must never
@@ -836,7 +836,7 @@ uninstalled rather than muted.
 
 ### 17.4 Capability gating instead of a volume quota (`SPEC` §27.1)
 
-If the paid lever becomes the Graph rather than the 35-task cap, the wire change
+If the paid lever becomes the Graph rather than the 5-task cap, the wire change
 is small and local:
 
 * `GET /graph` answers `402 SUBSCRIPTION_REQUIRED` for FREE;

@@ -84,7 +84,7 @@ holds a number of its own, the row below says so and says it is for display.
 | 54–60 | Six modules and their scope | done | done | all six read from the API; Activity, Leaderboard and Profile state a failed read instead of rendering zeroes |
 | 61 | 20 business rules | n/a | done | 1–9 in the schema, 10–20 in the service layer; each is exercised by a test or a live check |
 | 62 | Data model | n/a | done | 11 tables plus the outbox, 13 migrations |
-| 64 | Plans, access gate | done | done | both quotas enforced under the account lock and proven live at 35 tasks and 25 links; the client makes no quota decision of its own — a 402 opens the paywall, which quotes the limit the server named |
+| 64 | Plans, access gate | done | done | both quotas enforced under the account lock, now 5 tasks and 5 links (proven live at the earlier 35/25 values); the client makes no quota decision of its own — a 402 opens the paywall, which quotes the limit the server named |
 | 65 | Exact XP and level values | done | done | 50/35/20/10, ×0.35, `45·(n−1)²`, tests on both sides |
 | 66 | Reopen and soft delete | done | done | both live, each with its own compensating ledger entry (`TASK_REOPENED`, `TASK_DELETED`) |
 | 67 | Landing, pricing, 404, settings | done | n/a | routes exist and render; the server now answers export and account deletion |
@@ -117,7 +117,7 @@ achievements, the leaderboard — plus billing.
 | `GET /tags` | **done** — sorted by task count, which the server computes |
 | `POST /tasks/{id}/tags` | **done** — creates the label if new; names fold case, so one label per spelling |
 | `DELETE /tasks/{id}/tags/{tagId}` | **done** — a label left on nothing is forgotten |
-| `POST /links` | **done** — undirected pairs normalised, self-link and parent-relation refused, 25-link quota |
+| `POST /links` | **done** — undirected pairs normalised, self-link and parent-relation refused, 5-link quota |
 | `PATCH /links/{id}` | **done** — a retype that collides answers 409 |
 | `DELETE /links/{id}` | **done** |
 | `POST /activity/graph-opened` | **done** — recorded, deliberately outside the heatmap |
@@ -178,7 +178,7 @@ Both are for display, and neither decides anything:
 
 | Where | Number | Why it is not a rule |
 |---|---|---|
-| `FREE_TASK_CAP = 35` | the `12/35` counter in the header, settings and the paywall | the server refuses what exceeds the quota and names the limit in the refusal; that named limit is what the paywall shows once anything has been refused |
+| `FREE_TASK_CAP = 5` | the `12/35` counter in the header, settings and the paywall | the server refuses what exceeds the quota and names the limit in the refusal; that named limit is what the paywall shows once anything has been refused |
 | `TITLE_MAX_LENGTH`, `TAG_MAX_LENGTH`, `DESCRIPTION_MAX_LENGTH` | the counter beside a field and the red border at the limit | the server validates the same three lengths and answers `VALIDATION_FAILED` with `field` and `max`, proven live at 101, 2001 and 25 characters |
 
 ---

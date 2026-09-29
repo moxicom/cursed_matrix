@@ -168,12 +168,30 @@ FRONT_PORT=8080            # every interface, not just the loopback
 APP_ENV=development
 ```
 
-and open `http://<server-ip>:8080`. `APP_ENV=production` does not work over
-plain HTTP: it marks the session cookies `Secure`, and a browser refuses to
-store a `Secure` cookie that arrived over HTTP, so the login appears to succeed
-and the session is gone on the next request. HSTS stays off on its own, nginx
-sends it only when a terminator forwards `X-Forwarded-Proto: https`. Postgres,
-Redis and the monitoring remain on `127.0.0.1` either way.
+and open `http://<server-ip>:8080`. HSTS stays off on its own, nginx sends it
+only when a terminator forwards `X-Forwarded-Proto: https`. Postgres, Redis and
+the monitoring remain on `127.0.0.1` either way.
+
+**Symptom of getting this wrong:** the login succeeds, and the first change
+you make answers `CSRF_TOKEN_INVALID` / "The session has expired. Sign in
+again." With `APP_ENV=production` the three session cookies carry the `Secure`
+flag, and a browser refuses to store a `Secure` cookie that arrived over plain
+HTTP (except from `localhost`). The login response is a 200, but no cookie is
+kept; the next unsafe request finds no `cm_csrf` to echo in `X-CSRF-Token`,
+and the API refuses it. Check DevTools → Application → Cookies: if `cm_csrf` is
+missing, this is it. Fix on the server:
+
+```sh
+sed -i 's/^APP_ENV=.*/APP_ENV=development/' .env
+docker compose up -d back      # env changes apply only when the container is recreated
+```
+
+then clear the site's cookies and sign in again.
+
+If `cm_csrf` is present and the error persists, check the server clock with
+`timedatectl`. The access and CSRF cookies expire 15 minutes after issue, by an
+absolute `Expires` stamped with the server's clock; a server more than 15
+minutes behind hands out cookies the browser considers already expired.
 
 ### 5. Verify
 

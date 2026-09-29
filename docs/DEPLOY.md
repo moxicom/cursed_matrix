@@ -297,7 +297,20 @@ IMAGE_REPO=ghcr.io/moxicom/cursed_matrix
 IMAGE_TAG=latest           # or sha-<commit>, or a v* tag, to pin
 COMPOSE_PROFILES=          # no monitoring
 REDIS_MAXMEMORY=64mb       # 256mb is a quarter of the host
+POSTGRES_MEM_LIMIT=256m    # hard caps; 0 (the default) means none
+BACK_MEM_LIMIT=256m
+REDIS_MEM_LIMIT=96m
+FRONT_MEM_LIMIT=32m
+BACK_GOMEMLIMIT=192MiB     # Go GC tightens here, before the 256m cap kills it
 ```
+
+The caps are what stands in for swap when there is none. Without them the
+kernel's OOM killer picks the largest process on the host, and that is
+Postgres. With them a runaway service dies inside its own cgroup, `restart:
+unless-stopped` brings it back, and the database never notices. The Redis cap
+must stay above `REDIS_MAXMEMORY` with room for the AOF rewrite; the API cap
+above `BACK_GOMEMLIMIT`, or the runtime and the cgroup fight over the same
+line.
 
 and never call `build` there:
 

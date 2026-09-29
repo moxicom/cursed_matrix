@@ -1,6 +1,7 @@
 # docker compose up -d --build       the application
 # docker compose run --rm migrate up  migrations (one-shot, behind a profile)
 # See docs/DEPLOY.md. Everything but FRONT_PORT is published on 127.0.0.1.
+# *_MEM_LIMIT: hard memory cap per container; 0 (the default) means none.
 
 name: cursed-matrix
 
@@ -21,6 +22,7 @@ services:
       context: ./front
       dockerfile: Dockerfile
     image: ${IMAGE_REPO:-cursed-matrix}/front:${IMAGE_TAG:-dev}
+    mem_limit: ${FRONT_MEM_LIMIT:-0}
     environment:
       BACKEND_HOST: back
       BACKEND_PORT: "8080"
@@ -42,10 +44,14 @@ services:
       args:
         GO_BUILD_LOWMEM: ${GO_BUILD_LOWMEM:-}
     image: ${IMAGE_REPO:-cursed-matrix}/back:${IMAGE_TAG:-dev}
+    mem_limit: ${BACK_MEM_LIMIT:-0}
     environment:
       CONFIG_PATH: /etc/cursed-matrix/config.yaml
       # Only exactly "production" gives the session cookies the Secure flag.
       APP_ENV: ${APP_ENV:-development}
+      # Soft heap ceiling for the Go runtime; empty means off. Keep it below
+      # BACK_MEM_LIMIT so the GC works harder before the cgroup kills the process.
+      GOMEMLIMIT: ${BACK_GOMEMLIMIT:-}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
@@ -81,6 +87,7 @@ services:
   postgres:
     <<: [*restart, *logging]
     image: postgres:16-alpine
+    mem_limit: ${POSTGRES_MEM_LIMIT:-0}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-cursed}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -115,6 +122,7 @@ services:
   redis:
     <<: [*restart, *logging]
     image: redis:7-alpine
+    mem_limit: ${REDIS_MEM_LIMIT:-0}
     command:
       - "redis-server"
       - "--requirepass"

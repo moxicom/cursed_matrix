@@ -204,6 +204,52 @@ free -m                                        # swap used should stay near 0
 Register an account and complete one task: that exercises the database,
 Redis, the cookie scheme and the XP ledger at once.
 
+### Metrics over SSH
+
+The monitoring profile costs 420 MB, three times the application, so on this
+host it stays off. The API still serves Prometheus metrics on `/metrics`, and
+the `back` service publishes its port on the server's loopback only
+(`BACK_PORT`, 9090 by default). Nothing on the network can reach it; an SSH
+tunnel can.
+
+From your machine:
+
+```sh
+ssh -N -L 9090:127.0.0.1:9090 user@server &
+curl -s localhost:9090/metrics | grep -E '^(http_|go_goroutines|process_resident)'
+```
+
+That is the raw text: request rate and latency per endpoint, Go heap and
+goroutines, process memory. Enough for a look; for graphs, run the monitoring
+where the memory is, on your machine, and let it scrape through the tunnel.
+With Docker locally:
+
+```sh
+cat > scrape.yml <<'YAML'
+scrape_configs:
+  - job_name: cursed-vps
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["host.docker.internal:9090"]
+YAML
+
+docker run -d --name vm -p 8428:8428 \
+  -v "$PWD/scrape.yml:/etc/scrape.yml:ro" -v vm_data:/victoria-metrics-data \
+  victoriametrics/victoria-metrics:v1.152.0 \
+  -promscrape.config=/etc/scrape.yml -retentionPeriod=30d
+```
+
+Open `http://localhost:8428/vmui` and query, or point a local Grafana at it as
+a Prometheus datasource. The dashboards under `infra/grafana/dashboards/` work
+unchanged for the backend panels; the Postgres and Redis panels stay empty,
+their exporters are part of the profile that is off.
+
+Keep the tunnel alive across drops with `autossh -M 0 -N -L 9090:127.0.0.1:9090
+user@server`, or as a systemd user service. The tunnel is the only path in:
+never publish `BACK_PORT` on `0.0.0.0` and never proxy `/metrics` through
+nginx. It lists every endpoint with its latency and the runtime's state, and
+the API behind the same port skips nginx's rate limiting.
+
 ### Updating
 
 Same three steps. On your machine:

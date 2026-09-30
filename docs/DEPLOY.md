@@ -85,13 +85,14 @@ but a collision still stops the container from starting:
 | Port | Service | Bound to |
 |---|---|---|
 | 8080 | the site (`FRONT_PORT`) | every interface unless you change it |
+| 9090 | the API and its `/metrics` (`BACK_PORT`) | 127.0.0.1 |
 | 5432 | Postgres | 127.0.0.1 |
 | 6379 | Redis | 127.0.0.1 |
 | 8428 | VictoriaMetrics | 127.0.0.1 |
 | 3000 | Grafana | 127.0.0.1 |
 
 ```sh
-sudo ss -ltnp | grep -E ':(8080|5432|6379|8428|3000)\b'
+sudo ss -ltnp | grep -E ':(8080|9090|5432|6379|8428|3000)\b'
 ```
 
 Anything that answers is a collision; change the matching `*_PORT` in `.env`.

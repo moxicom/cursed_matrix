@@ -57,6 +57,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
     volumes:
       - ./back/config/config.yaml:/etc/cursed-matrix/config.yaml:ro
+    # Loopback only: /metrics and the raw API for an SSH tunnel (README,
+    # "Metrics over SSH"). Browsers reach the API through nginx, never here.
+    ports:
+      - "127.0.0.1:${BACK_PORT:-9090}:8080"
     networks: [edge, data]
     depends_on:
       postgres: { condition: service_healthy }

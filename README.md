@@ -147,7 +147,11 @@ docker compose exec -T postgres psql -U cursed -d postgres \
 
 ### 4. TLS
 
-The stack speaks plain HTTP on 127.0.0.1:8080. Put Caddy in front:
+The stack speaks plain HTTP on 127.0.0.1:8080 and expects a terminator in
+front of it. Whatever terminates must forward `X-Forwarded-Proto` (that is what
+turns HSTS on) and `X-Real-IP` (rate limits count per address; without it every
+visitor shares one counter). Below is nginx on the host with a Let's Encrypt
+certificate, tested on the 1 GB target. Caddy is the two-line alternative:
 
 ```
 cursed.example.com {
@@ -155,9 +159,146 @@ cursed.example.com {
 }
 ```
 
-The proxy must send `X-Forwarded-Proto` (enables HSTS) and `X-Real-IP`
-(rate limits are per address; without it every visitor shares one counter).
-Caddy does both by default; an nginx example is in `docs/DEPLOY.md`.
+#### A name for the server
+
+Let's Encrypt issues for hostnames, not IP addresses. Without a domain, use
+one that encodes the IP and resolves on its own:
+
+```sh
+IP=$(curl -4 -s ifconfig.me)
+DOMAIN=$(echo $IP | tr . -).sslip.io     # 203.0.113.10 -> 203-0-113-10.sslip.io
+dig +short $DOMAIN                       # must print $IP
+```
+
+Good enough to run the whole HTTPS path; every sslip.io user shares one
+Let's Encrypt issuance quota, so an occasional refusal means "try tomorrow".
+For real users buy a domain and point an A record at the server; switching is
+one certbot run and a `server_name` edit (below).
+
+#### nginx and certbot
+
+```sh
+sudo apt install -y nginx certbot
+```
+
+Write the site. The heredoc is unquoted so `$DOMAIN` expands; nginx's own
+variables are escaped:
+
+```sh
+sudo tee /etc/nginx/sites-available/cursed >/dev/null <<NGINX
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $DOMAIN;
+
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://\$host\$request_uri; }
+}
+
+server {
+    # listen 443 ssl http2;
+    # listen [::]:443 ssl http2;
+    server_name $DOMAIN;
+
+    # ssl_certificate     /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    # include             /etc/letsencrypt/options-ssl-nginx.conf;
+
+    client_max_body_size 64k;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host              \$host;
+        proxy_set_header X-Real-IP         \$remote_addr;
+        proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 60s;
+    }
+}
+NGINX
+sudo ln -sf /etc/nginx/sites-available/cursed /etc/nginx/sites-enabled/cursed
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+The five commented lines stay commented until the certificate exists: nginx
+refuses to start a `ssl` listener without one. `nginx -t` will warn about a
+conflicting server name on port 80 meanwhile; that is the second block with
+no `listen`, and it goes away once the lines are uncommented.
+
+Why proxy to 8080 and not to the Go process: the container's nginx serves the
+bundle, proxies `/api/`, sets CSP and gzip and has its own rate limits. The
+host nginx only terminates TLS. Do not add HSTS here; the container sends it
+once it sees `X-Forwarded-Proto: https`.
+
+Get the certificate over the port-80 challenge and tell certbot how to reload
+nginx after every renewal:
+
+```sh
+sudo certbot certonly --webroot -w /var/www/html -d $DOMAIN \
+  --register-unsafely-without-email --agree-tos \
+  --deploy-hook "systemctl reload nginx"
+```
+
+The TLS settings file that the config includes ships with certbot's nginx
+plugin, which this path does not use, so write it (Mozilla intermediate):
+
+```sh
+sudo tee /etc/letsencrypt/options-ssl-nginx.conf >/dev/null <<'CONF'
+ssl_session_cache shared:le_nginx_SSL:10m;
+ssl_session_timeout 1440m;
+ssl_session_tickets off;
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers off;
+ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
+CONF
+```
+
+Uncomment the five lines and reload:
+
+```sh
+sudo sed -i 's/^\(\s*\)# \(listen .*443\|ssl_certificate\|include \)/\1\2/' /etc/nginx/sites-available/cursed
+sudo nginx -t && sudo systemctl reload nginx
+curl -sI https://$DOMAIN | head -1        # HTTP/2 200
+```
+
+On nginx older than 1.25.1 `http2 on;` is not a directive; the `listen ... ssl
+http2` form above works on both old and new.
+
+#### Renewal
+
+The certbot package installs a systemd timer that checks twice a day and
+renews 30 days before expiry; the deploy hook above reloads nginx when it
+does. Rehearse it once:
+
+```sh
+systemctl list-timers certbot.timer
+sudo certbot renew --dry-run           # "all simulated renewals succeeded"
+```
+
+#### Switch the stack behind it
+
+```sh
+sed -i 's/^APP_ENV=.*/APP_ENV=production/; s/^FRONT_PORT=.*/FRONT_PORT=127.0.0.1:8080/' .env
+docker compose up -d --no-build
+curl -sI https://$DOMAIN | grep -i strict-transport      # HSTS is on
+```
+
+Clear the site's cookies in the browser, sign in again. Everything reaches the
+containers through nginx now; `http://<ip>:8080` no longer answers from outside.
+
+#### Moving to a real domain later
+
+```sh
+sudo sed -i "s/$DOMAIN/new.example.com/g" /etc/nginx/sites-available/cursed
+sudo certbot certonly --webroot -w /var/www/html -d new.example.com --deploy-hook "systemctl reload nginx"
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot delete --cert-name $DOMAIN
+```
+
+Nothing in the application knows the hostname; users sign in again because
+cookies are per host, and that is all.
 
 #### Without TLS
 

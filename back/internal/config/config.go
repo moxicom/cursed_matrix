@@ -83,10 +83,22 @@ type AuthConfig struct {
 	RefreshTTL   time.Duration      `yaml:"refresh_ttl" validate:"required,gt=0,gtfield=AccessTTL"`
 	RateLimit    RateLimitConfig    `yaml:"rate_limit" validate:"required"`
 	PasswordHash PasswordHashConfig `yaml:"password_hash"`
+
+	// RefreshReuseGrace is how long a refresh token that was just rotated is
+	// still answered with a fresh pair rather than treated as stolen. Zero,
+	// which is also what leaving it out means, is the strict rule: a second
+	// presentation revokes every session of the account at once.
+	RefreshReuseGrace time.Duration `yaml:"refresh_reuse_grace" validate:"gte=0,lte=5m"`
 }
 
 // PasswordHashConfig tunes argon2id and the queue in front of it. Every field
-// has a default, so the section may be left out entirely.
+// has a default, so the section may be left out entirely — and a key written
+// as zero is read as left out, not as zero: none of these has a meaningful
+// zero, and yaml cannot tell the two apart without pointer fields.
+//
+// The upper bounds are arithmetic, not policy: argon2 takes memory in KiB as a
+// uint32, so a large enough figure here would wrap to a small one and the
+// server would issue hashes far weaker than this file says.
 //
 // The memory is what makes a leaked database expensive to brute-force on a
 // GPU, and it is also what one sign-in costs this process: the peak is
@@ -95,11 +107,11 @@ type AuthConfig struct {
 // later without touching anyone's password, as long as this stays at or above
 // what the live hashes were issued with.
 type PasswordHashConfig struct {
-	MemoryMiB     uint32        `yaml:"memory_mib" validate:"gte=8"`
-	Time          uint32        `yaml:"time" validate:"gte=1"`
+	MemoryMiB     uint32        `yaml:"memory_mib" validate:"gte=8,lte=4096"`
+	Time          uint32        `yaml:"time" validate:"gte=1,lte=64"`
 	Threads       uint8         `yaml:"threads" validate:"gte=1"`
-	MaxMemoryMiB  uint32        `yaml:"max_memory_mib" validate:"gtefield=MemoryMiB"`
-	MaxConcurrent int           `yaml:"max_concurrent" validate:"gte=1"`
+	MaxMemoryMiB  uint32        `yaml:"max_memory_mib" validate:"gtefield=MemoryMiB,lte=4096"`
+	MaxConcurrent int           `yaml:"max_concurrent" validate:"gte=1,lte=1024"`
 	WaitBudget    time.Duration `yaml:"wait_budget" validate:"gt=0"`
 }
 

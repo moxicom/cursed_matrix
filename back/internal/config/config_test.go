@@ -43,6 +43,7 @@ auth:
   secret_key: TEST_AUTH_SECRET
   access_ttl: 15m
   refresh_ttl: 720h
+  refresh_reuse_grace: 20s
   password_hash:
     memory_mib: 24
     time: 3
@@ -117,6 +118,7 @@ func TestLoadReadsStructureAndResolvesSecrets(t *testing.T) {
 		{name: "attempts per address", got: cfg.Auth.RateLimit.AddressAttempts, want: 20},
 		{name: "attempts per account", got: cfg.Auth.RateLimit.AccountAttempts, want: 5},
 		{name: "account window", got: cfg.Auth.RateLimit.AccountWindow, want: 15 * time.Minute},
+		{name: "refresh reuse grace", got: cfg.Auth.RefreshReuseGrace, want: 20 * time.Second},
 		{name: "hash memory", got: cfg.Auth.PasswordHash.MemoryMiB, want: uint32(24)},
 		{name: "hash passes", got: cfg.Auth.PasswordHash.Time, want: uint32(3)},
 		{name: "hash lanes", got: cfg.Auth.PasswordHash.Threads, want: uint8(2)},
@@ -211,9 +213,28 @@ func TestLoadRejectsBrokenConfigurations(t *testing.T) {
 			wantWord: "auth.rate_limit.account_attempts",
 		},
 		{
+			// Long enough to stop being a grace and start being a second life
+			// for a stolen token.
+			name:     "a refresh reuse grace of an hour",
+			body:     strings.Replace(sampleConfig, "refresh_reuse_grace: 20s", "refresh_reuse_grace: 1h", 1),
+			wantWord: "auth.refresh_reuse_grace",
+		},
+		{
 			name:     "hash memory below the argon2 floor",
 			body:     strings.Replace(sampleConfig, "memory_mib: 24", "memory_mib: 4", 1),
 			wantWord: "auth.password_hash.memory_mib",
+		},
+		{
+			// 2^22 MiB is 2^32 KiB, which wraps to zero in the uint32 argon2
+			// takes: the server would issue hashes at argon2's minimum.
+			name:     "hash memory that would wrap",
+			body:     strings.Replace(strings.Replace(sampleConfig, "memory_mib: 24", "memory_mib: 4194304", 1), "max_memory_mib: 64", "max_memory_mib: 4096", 1),
+			wantWord: "auth.password_hash.memory_mib must be at most 4096",
+		},
+		{
+			name:     "hash passes beyond the ceiling",
+			body:     strings.Replace(sampleConfig, "time: 3", "time: 536870912", 1),
+			wantWord: "auth.password_hash.time must be at most 64",
 		},
 		{
 			// A ceiling below what is being issued would reject every hash the

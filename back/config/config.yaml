@@ -40,6 +40,13 @@ auth:
   secret_key: JWT_SECRET
   access_ttl: 15m
   refresh_ttl: 720h
+  # A refresh token presented twice is treated as stolen and every session of
+  # the account is revoked. For this long after a rotation the spent token is
+  # answered with a fresh pair instead: the second presenter is then almost
+  # always the same browser — two tabs waking together, or a response lost on
+  # the way. The cost is not noticing a thief who replays inside the window.
+  # 0, or the key left out, is the strict rule with no window.
+  refresh_reuse_grace: 30s
   password_hash:
     memory_mib: 32
     time: 2

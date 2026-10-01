@@ -67,3 +67,48 @@ func TestIssuedCookieLifetimes(t *testing.T) {
 		})
 	}
 }
+
+// A browser removes a cookie only when the expiring one matches the name and
+// the path it was set with. One that does not match is ignored, and the user
+// who signed out still carries a session.
+func TestClearExpiresEveryCookieOnItsOwnPath(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	httphandler.NewCookieWriter(true).Clear(recorder)
+
+	cookies := map[string]*http.Cookie{}
+	for _, cookie := range recorder.Result().Cookies() {
+		cookies[cookie.Name] = cookie
+	}
+
+	tests := []struct {
+		name         string
+		cookie       string
+		wantPath     string
+		wantHTTPOnly bool
+	}{
+		{name: "access", cookie: httphandler.AccessCookie, wantPath: "/api", wantHTTPOnly: true},
+		{name: "refresh", cookie: httphandler.RefreshCookie, wantPath: "/api/v1/auth", wantHTTPOnly: true},
+		{name: "csrf", cookie: httphandler.CSRFCookie, wantPath: "/", wantHTTPOnly: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cookie, ok := cookies[tc.cookie]
+			if !ok {
+				t.Fatalf("cookie %s was not cleared", tc.cookie)
+			}
+			if cookie.MaxAge >= 0 {
+				t.Errorf("MaxAge = %d, want negative so the browser drops it", cookie.MaxAge)
+			}
+			if cookie.Value != "" {
+				t.Errorf("Value = %q, want empty", cookie.Value)
+			}
+			if cookie.Path != tc.wantPath {
+				t.Errorf("Path = %q, want %q", cookie.Path, tc.wantPath)
+			}
+			if cookie.HttpOnly != tc.wantHTTPOnly {
+				t.Errorf("HttpOnly = %v, want %v", cookie.HttpOnly, tc.wantHTTPOnly)
+			}
+		})
+	}
+}

@@ -453,6 +453,7 @@ and read at startup.
 |---|---|
 | `database.max_conns` | 16, deliberately not sized from the CPU count |
 | `auth.access_ttl`, `auth.refresh_ttl` | 15 m and 30 d; auth is HttpOnly cookies plus a CSRF header, no tokens in response bodies |
+| `auth.refresh_reuse_grace` | 30 s: a refresh token presented again this soon after rotating gets a fresh pair instead of revoking every session; `0` is the strict rule |
 | `auth.rate_limit.*` | per-address and per-account windows for login, register, reads and writes |
 | `auth.password_hash.*` | argon2id cost: 32 MiB × 2 passes, 2 hashes at a time (peak 64 MiB); `max_memory_mib` is the ceiling accepted from stored hashes and must never drop below what live passwords were issued with |
 | `billing.enabled` | `false`: buying a plan grants it outright for `granted_period`, nobody is charged |

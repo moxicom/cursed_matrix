@@ -1,12 +1,9 @@
 package utils_test
 
 import (
-	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
-
-	"golang.org/x/crypto/argon2"
 
 	"github.com/moxicom/cursed_matrix/back/pkg/utils"
 )
@@ -110,53 +107,87 @@ func TestVerifyAbsentAccountAlwaysFails(t *testing.T) {
 	}
 }
 
-// A hash issued with the parameters this server used before they became
-// configurable must keep verifying under the new ones: the hash string carries
-// its own parameters, and the ceiling stays where those hashes were issued.
-func TestVerifyAcceptsHashesIssuedUnderOtherParameters(t *testing.T) {
-	// Issued with 64 MiB, one pass, four lanes — the previous hard-wired values.
-	legacy := "$argon2id$v=19$m=65536,t=1,p=4$MDEyMzQ1Njc4OWFiY2RlZg$" +
-		legacyKey(t, "password", 64*1024, 1, 4)
+// legacyHash was issued for "password" with the parameters this server
+// hard-wired before they became configurable: 64 MiB, one pass, four lanes. It
+// is a frozen string, not one computed here, because the point is that rows
+// already in the database keep working.
+const legacyHash = "$argon2id$v=19$m=65536,t=1,p=4$MDEyMzQ1Njc4OWFiY2RlZg$JgR9hq+ROMEl3sIza5R6Qd+Pl9LbOkPZEO5ELlgNORc"
 
+// A stored hash carries its own parameters. Ones issued under earlier settings
+// must keep verifying; ones that ask for more than the ceiling, or for values
+// argon2 would panic on, must be refused as unreadable rather than as a wrong
+// password — and never by taking the request goroutine down.
+func TestVerifyReadsParametersFromTheHash(t *testing.T) {
 	tests := []struct {
 		name     string
 		password string
 		hash     string
-		wantErr  error
+		// wantMismatch is a readable hash and the wrong password; wantRefusal
+		// is a hash this server will not compute at all.
+		wantMismatch bool
+		wantRefusal  bool
 	}{
-		{name: "legacy hash, right password", password: "password", hash: legacy},
-		{name: "legacy hash, wrong password", password: "wrong", hash: legacy, wantErr: utils.ErrPasswordMismatch},
+		{name: "legacy hash, right password", password: "password", hash: legacyHash},
+		{name: "legacy hash, wrong password", password: "wrong", hash: legacyHash, wantMismatch: true},
 		{
-			name:     "hash asking for more memory than the ceiling",
-			password: "password",
-			hash:     strings.Replace(legacy, "m=65536", "m=131072", 1),
-			wantErr:  errAnyButMismatch,
+			name:        "more memory than the ceiling",
+			password:    "password",
+			hash:        strings.Replace(legacyHash, "m=65536", "m=131072", 1),
+			wantRefusal: true,
+		},
+		{
+			name:        "zero memory",
+			password:    "password",
+			hash:        strings.Replace(legacyHash, "m=65536", "m=0", 1),
+			wantRefusal: true,
+		},
+		{
+			name:        "zero passes",
+			password:    "password",
+			hash:        strings.Replace(legacyHash, "t=1", "t=0", 1),
+			wantRefusal: true,
+		},
+		{
+			name:        "zero lanes",
+			password:    "password",
+			hash:        strings.Replace(legacyHash, "p=4", "p=0", 1),
+			wantRefusal: true,
+		},
+		{
+			name:        "more lanes than any hash this server issued",
+			password:    "password",
+			hash:        strings.Replace(legacyHash, "p=4", "p=64", 1),
+			wantRefusal: true,
+		},
+		{
+			name:        "empty key",
+			password:    "password",
+			hash:        legacyHash[:strings.LastIndex(legacyHash, "$")+1],
+			wantRefusal: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			err := utils.VerifyPassword(t.Context(), tc.password, tc.hash)
+			mismatch := errors.Is(err, utils.ErrPasswordMismatch)
+
 			switch {
-			case tc.wantErr == nil && err != nil:
-				t.Errorf("VerifyPassword: %v", err)
-			case tc.wantErr == errAnyButMismatch && (err == nil || errors.Is(err, utils.ErrPasswordMismatch)):
-				t.Errorf("VerifyPassword = %v, want a parameter refusal", err)
-			case tc.wantErr != nil && tc.wantErr != errAnyButMismatch && !errors.Is(err, tc.wantErr):
-				t.Errorf("VerifyPassword = %v, want %v", err, tc.wantErr)
+			case tc.wantRefusal:
+				if err == nil || mismatch {
+					t.Errorf("VerifyPassword = %v, want a refusal that is not a mismatch", err)
+				}
+			case tc.wantMismatch:
+				if !mismatch {
+					t.Errorf("VerifyPassword = %v, want %v", err, utils.ErrPasswordMismatch)
+				}
+			default:
+				if err != nil {
+					t.Errorf("VerifyPassword: %v", err)
+				}
 			}
 		})
 	}
-}
-
-// errAnyButMismatch marks a case that must fail for a reason other than the
-// password being wrong.
-var errAnyButMismatch = errors.New("any error but a mismatch")
-
-func legacyKey(t *testing.T, password string, memoryKiB, time uint32, threads uint8) string {
-	t.Helper()
-	key := argon2.IDKey([]byte(password), []byte("0123456789abcdef"), time, memoryKiB, threads, 32)
-	return base64.RawStdEncoding.EncodeToString(key)
 }
 
 func TestConfigurePasswordHashingRejectsUnsafeParameters(t *testing.T) {
@@ -178,6 +209,16 @@ func TestConfigurePasswordHashingRejectsUnsafeParameters(t *testing.T) {
 		{name: "no passes", change: func(p *utils.PasswordHashParams) { p.Time = 0 }},
 		{name: "no lanes", change: func(p *utils.PasswordHashParams) { p.Threads = 0 }},
 		{name: "ceiling below what is issued", change: func(p *utils.PasswordHashParams) { p.MaxMemoryMiB = 16 }},
+		// 2^22 MiB is 2^32 KiB: it wraps to zero in the uint32 argon2 takes,
+		// and argon2 would quietly hash with its minimum instead.
+		{name: "memory that wraps to zero in KiB", change: func(p *utils.PasswordHashParams) {
+			p.MemoryMiB, p.MaxMemoryMiB = 1<<22, 1<<22
+		}},
+		{name: "ceiling that wraps in KiB", change: func(p *utils.PasswordHashParams) { p.MaxMemoryMiB = 1<<22 + 32 }},
+		{name: "passes that wrap when the stored-hash guard multiplies them", change: func(p *utils.PasswordHashParams) {
+			p.Time = 1 << 29
+		}},
+		{name: "more slots than any host could feed", change: func(p *utils.PasswordHashParams) { p.MaxConcurrent = 1 << 20 }},
 		{name: "no slots", change: func(p *utils.PasswordHashParams) { p.MaxConcurrent = 0 }},
 		{name: "no wait budget", change: func(p *utils.PasswordHashParams) { p.WaitBudget = 0 }},
 	}

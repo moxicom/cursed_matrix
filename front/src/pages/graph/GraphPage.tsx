@@ -31,7 +31,9 @@ export interface GraphPageProps {
  */
 function useGraphVisit() {
   useEffect(() => {
-    void activityApi.graphOpened();
+    // Best effort: a visit that could not be recorded costs a day towards an
+    // achievement, and is not worth an unhandled rejection or a message.
+    activityApi.graphOpened().catch(() => undefined);
   }, []);
 }
 

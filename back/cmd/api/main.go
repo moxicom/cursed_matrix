@@ -56,7 +56,7 @@ func run() error {
 	log := utils.NewLogger(utils.LoggerOptions{Env: cfg.Env, Verbose: cfg.Development()})
 	slog.SetDefault(log)
 
-	// Before anything serves: the hasher is process-wide and not synchronised.
+	// Before anything serves, so no password is ever hashed under the defaults.
 	ph := cfg.Auth.PasswordHash
 	if err := utils.ConfigurePasswordHashing(utils.PasswordHashParams{
 		MemoryMiB:     ph.MemoryMiB,
@@ -66,7 +66,7 @@ func run() error {
 		MaxConcurrent: ph.MaxConcurrent,
 		WaitBudget:    ph.WaitBudget,
 	}); err != nil {
-		return err
+		return fmt.Errorf("password hashing: %w", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -108,6 +108,7 @@ func run() error {
 			redisCache,
 			&shared.SystemClock{},
 			cfg.Auth.RefreshTTL,
+			cfg.Auth.RefreshReuseGrace,
 			cfg.Billing.TrialPeriod,
 		)
 		achievementSvc := achievement.NewService(

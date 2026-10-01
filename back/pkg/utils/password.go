@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/argon2"
@@ -30,6 +31,16 @@ const (
 	// whatever the current setting: hashes issued before the lanes were
 	// narrowed carry p=4 and must keep verifying.
 	argonMaxThreads = 4
+
+	// Upper bounds on what configuration may ask for. They are far above any
+	// sensible setting and exist for arithmetic, not policy: argon2 takes
+	// memory in KiB as a uint32, so a large enough MiB figure wraps to a small
+	// one — or to zero, which argon2 quietly raises to its minimum — and the
+	// server would issue hashes far weaker than the file says. The pass count
+	// is multiplied when stored hashes are checked and wraps the same way.
+	maxPasswordHashMemoryMiB = 4096
+	maxPasswordHashTime      = 64
+	maxPasswordHashSlots     = 1024
 )
 
 // PasswordHashParams tunes argon2id and the queue in front of it. The memory
@@ -81,14 +92,22 @@ func (p *PasswordHashParams) validate() error {
 	switch {
 	case p.MemoryMiB < 8:
 		return fmt.Errorf("memory %d MiB is below the 8 MiB argon2 floor", p.MemoryMiB)
+	case p.MemoryMiB > maxPasswordHashMemoryMiB:
+		return fmt.Errorf("memory %d MiB is above the %d MiB ceiling", p.MemoryMiB, maxPasswordHashMemoryMiB)
 	case p.Time == 0:
 		return errors.New("time must be at least 1 pass")
+	case p.Time > maxPasswordHashTime:
+		return fmt.Errorf("time %d is above the ceiling of %d passes", p.Time, maxPasswordHashTime)
 	case p.Threads == 0:
 		return errors.New("threads must be at least 1")
 	case p.MaxMemoryMiB < p.MemoryMiB:
 		return fmt.Errorf("max memory %d MiB is below the %d MiB being issued", p.MaxMemoryMiB, p.MemoryMiB)
+	case p.MaxMemoryMiB > maxPasswordHashMemoryMiB:
+		return fmt.Errorf("max memory %d MiB is above the %d MiB ceiling", p.MaxMemoryMiB, maxPasswordHashMemoryMiB)
 	case p.MaxConcurrent <= 0:
 		return errors.New("max concurrent must be at least 1")
+	case p.MaxConcurrent > maxPasswordHashSlots:
+		return fmt.Errorf("max concurrent %d is above the ceiling of %d", p.MaxConcurrent, maxPasswordHashSlots)
 	case p.WaitBudget <= 0:
 		return errors.New("wait budget must be positive")
 	}
@@ -141,7 +160,7 @@ type passwordHasher struct {
 
 func newPasswordHasher(params PasswordHashParams) (*passwordHasher, error) {
 	if err := params.validate(); err != nil {
-		return nil, fmt.Errorf("password hashing: %w", err)
+		return nil, err
 	}
 	h := &passwordHasher{
 		params: params,
@@ -149,7 +168,7 @@ func newPasswordHasher(params PasswordHashParams) (*passwordHasher, error) {
 	}
 	dummy, err := h.hash(context.Background(), "there is no account with this name")
 	if err != nil {
-		return nil, fmt.Errorf("password hashing: dummy hash: %w", err)
+		return nil, fmt.Errorf("dummy hash: %w", err)
 	}
 	h.dummyHash = dummy
 	return h, nil
@@ -179,28 +198,35 @@ func (h *passwordHasher) hash(ctx context.Context, password string) (string, err
 func (h *passwordHasher) verify(ctx context.Context, password, encoded string) error {
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
-		return fmt.Errorf("unrecognised hash format")
+		return errors.New("unrecognised hash format")
 	}
 
 	var version int
 	if _, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil || version != argon2.Version {
-		return fmt.Errorf("unsupported argon2 version")
+		return errors.New("unsupported argon2 version")
 	}
 
 	var memory uint32
 	var time uint32
 	var threads uint8
 	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &time, &threads); err != nil {
-		return fmt.Errorf("unreadable parameters")
+		return errors.New("unreadable parameters")
 	}
 
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
-		return fmt.Errorf("unreadable salt")
+		return errors.New("unreadable salt")
 	}
 	want, err := base64.RawStdEncoding.DecodeString(parts[5])
 	if err != nil {
-		return fmt.Errorf("unreadable hash")
+		return errors.New("unreadable hash")
+	}
+
+	// argon2 panics on zero passes or zero lanes, and on an empty key. A row
+	// that says so is corrupt; it must fail this one sign-in, not the request
+	// goroutine.
+	if memory == 0 || time == 0 || threads == 0 || len(want) == 0 {
+		return errors.New("unreadable parameters")
 	}
 
 	// The parameters come from our own column, so this is not a parser
@@ -208,7 +234,7 @@ func (h *passwordHasher) verify(ctx context.Context, password, encoded string) e
 	// being able to ask this process for an arbitrary amount of memory.
 	p := &h.params
 	if memory > p.maxMemoryKiB() || time > p.Time*8 || threads > max(argonMaxThreads, p.Threads) {
-		return fmt.Errorf("hash parameters beyond what this server accepts")
+		return errors.New("hash parameters beyond what this server accepts")
 	}
 
 	if err := h.slots.acquire(ctx); err != nil {
@@ -235,29 +261,44 @@ func (h *passwordHasher) verifyAbsent(ctx context.Context, password string) erro
 	return ErrPasswordMismatch
 }
 
-// hasher is the process-wide instance. It starts from the defaults so the
-// package works without configuration (tests, tools); the API replaces it once
-// at startup from config.yaml, before any request is served.
-var hasher = mustHasher(DefaultPasswordHashParams())
+// The process-wide hasher. It is built on first use rather than at package
+// initialisation: building one computes a dummy hash, and every binary that
+// imports this package — the health probe that runs twice a minute among them
+// — would otherwise spend that memory and time without ever hashing a password.
+var (
+	hasherMu sync.Mutex
+	hasher   *passwordHasher
+)
 
-func mustHasher(params PasswordHashParams) *passwordHasher {
-	h, err := newPasswordHasher(params)
-	if err != nil {
-		// A failure here would silently leave the login timing guard inert,
-		// so it stops the process instead.
-		panic(err.Error())
+// currentHasher returns the configured hasher, or one built from the defaults
+// when nothing configured it (tests, tools).
+func currentHasher() *passwordHasher {
+	hasherMu.Lock()
+	defer hasherMu.Unlock()
+
+	if hasher == nil {
+		h, err := newPasswordHasher(DefaultPasswordHashParams())
+		if err != nil {
+			// A failure here would silently leave the login timing guard
+			// inert, so it stops the process instead.
+			panic("password hashing: " + err.Error())
+		}
+		hasher = h
 	}
-	return h
+	return hasher
 }
 
-// ConfigurePasswordHashing replaces the process-wide parameters. Call it once
-// at startup, before serving: it is not synchronised against concurrent
-// hashing, because there is nothing to synchronise against at that point.
+// ConfigurePasswordHashing replaces the process-wide parameters. It is meant
+// to be called once at startup, before serving; hashes already in flight
+// finish under the parameters they started with.
 func ConfigurePasswordHashing(params PasswordHashParams) error {
 	h, err := newPasswordHasher(params)
 	if err != nil {
 		return err
 	}
+
+	hasherMu.Lock()
+	defer hasherMu.Unlock()
 	hasher = h
 	return nil
 }
@@ -265,18 +306,18 @@ func ConfigurePasswordHashing(params PasswordHashParams) error {
 // HashPassword returns an encoded argon2id hash carrying its own parameters, so
 // they can be changed later without invalidating existing passwords.
 func HashPassword(ctx context.Context, password string) (string, error) {
-	return hasher.hash(ctx, password)
+	return currentHasher().hash(ctx, password)
 }
 
 // VerifyPassword reports whether the password produces the given hash. The
 // comparison is constant-time: a timing difference would leak how much of the
 // hash matched.
 func VerifyPassword(ctx context.Context, password, encoded string) error {
-	return hasher.verify(ctx, password, encoded)
+	return currentHasher().verify(ctx, password, encoded)
 }
 
 // VerifyAbsentAccount spends the time a real verification would, and always
 // fails. See passwordHasher.verifyAbsent.
 func VerifyAbsentAccount(ctx context.Context, password string) error {
-	return hasher.verifyAbsent(ctx, password)
+	return currentHasher().verifyAbsent(ctx, password)
 }

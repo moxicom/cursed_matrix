@@ -152,7 +152,7 @@ paths:
       description: |
         Every task the filter matches, subtasks included, each with its tag
         names. Not paginated: the board and the graph need the whole working
-        set, which the free plan caps at 35 active tasks. Completed tasks are
+        set, which the free plan caps at 5 active tasks. Completed tasks are
         never deleted, though, so a result is capped at 500 and says when it
         was cut.
       parameters:

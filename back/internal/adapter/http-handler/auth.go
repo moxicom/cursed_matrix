@@ -127,7 +127,12 @@ func (a *API) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	session, err := a.auth.Refresh(r.Context(), userID, presented)
 	if err != nil {
-		a.cookies.Clear(w)
+		// Only a verdict on the session takes the cookies away. A store that
+		// is down has said nothing about it, and clearing them then would
+		// sign the user out for an outage they could have ridden through.
+		if shared.CodeOf(err) == shared.CodeSessionExpired {
+			a.cookies.Clear(w)
+		}
 		WriteError(w, r, err)
 		return
 	}

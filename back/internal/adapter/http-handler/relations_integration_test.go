@@ -305,7 +305,7 @@ func TestFreePlanLinkQuota(t *testing.T) {
 	}
 
 	type pair struct{ source, target string }
-	var pairs []pair
+	pairs := make([]pair, 0, len(tasks)*(len(tasks)-1)/2)
 	for i := range tasks {
 		for j := i + 1; j < len(tasks); j++ {
 			pairs = append(pairs, pair{source: tasks[i].ID, target: tasks[j].ID})

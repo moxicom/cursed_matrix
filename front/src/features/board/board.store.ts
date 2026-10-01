@@ -135,6 +135,13 @@ export const useBoardStore = create<BoardState>((set, get) => {
     });
   };
 
+  /**
+   * Counts the times the board was emptied. A load captures it before asking
+   * and compares after: a different number means the answer is for a board
+   * that no longer exists.
+   */
+  let generation = 0;
+
   const flush = async (id: string) => {
     const change = pending.get(id);
     pending.delete(id);
@@ -152,6 +159,9 @@ export const useBoardStore = create<BoardState>((set, get) => {
       merge([saved]);
     } catch (error) {
       refuse(error);
+      // No session: the board was emptied when it ended, and asking for it
+      // again would only be refused again and mark the empty board as loaded.
+      if (error instanceof ApiError && error.unauthenticated) return;
       // The server did not take it, so the board must stop showing it as
       // though it had: whatever it holds now is the truth.
       void get().load();
@@ -177,10 +187,12 @@ export const useBoardStore = create<BoardState>((set, get) => {
       // The unwritten edits go with the data: a timer that fired after a sign
       // out would write one account's text with another account's session.
       forgetPendingEdits();
+      generation += 1;
       set({ tasks: [], links: [], tags: [], toast: null, loaded: false });
     },
 
     load: async () => {
+      const asked = generation;
       try {
         // Everything, completed included: the board hides them, the graph and
         // the search need them, and one call keeps the two consistent.
@@ -188,11 +200,20 @@ export const useBoardStore = create<BoardState>((set, get) => {
           tasksApi.board({ status: 'ALL' }),
           tasksApi.tags(),
         ]);
+        // The board was reset while this was on its way — the session ended,
+        // or another account signed in. The answer belongs to what was there
+        // before, and putting it on screen would show one session's tasks to
+        // the next.
+        if (asked !== generation) return;
         set({ tasks: board.tasks, links: board.links, tags, loaded: true });
         if (board.truncated) get().flash('RESULT_TRUNCATED', '');
       } catch (error) {
-        set({ loaded: true });
         refuse(error);
+        // A board emptied because the session ended is not a loaded board: it
+        // must show as loading again when somebody signs in, not as empty.
+        if (asked !== generation) return;
+        if (error instanceof ApiError && error.unauthenticated) return;
+        set({ loaded: true });
       }
     },
 

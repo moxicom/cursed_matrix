@@ -62,7 +62,7 @@ func describe(failure validator.FieldError) string {
 		return fmt.Sprintf("%s must be one of [%s], got %v", field, param, failure.Value())
 	case "gt", "gte", "min":
 		return fmt.Sprintf("%s must be at least %s, got %v", field, param, failure.Value())
-	case "max":
+	case "max", "lt", "lte":
 		return fmt.Sprintf("%s must be at most %s, got %v", field, param, failure.Value())
 	case "ltefield":
 		return fmt.Sprintf("%s must not exceed %s, got %v", field, param, failure.Value())

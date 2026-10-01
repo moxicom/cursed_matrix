@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
+	"github.com/moxicom/cursed_matrix/back/internal/app/session"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/achievement"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/activity"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/leaderboard"
@@ -146,7 +147,13 @@ type RateLimiter interface {
 
 type RefreshStore interface {
 	Save(ctx context.Context, userID uuid.UUID, tokenID string, ttl time.Duration) error
-	Consume(ctx context.Context, userID uuid.UUID, tokenID string) (bool, error)
+	// Consume spends a refresh token and reports what it found. A token spent
+	// within the last grace is reported as session.RefreshJustRotated instead of
+	// session.RefreshUnknown; a zero grace never reports it.
+	Consume(ctx context.Context, userID uuid.UUID, tokenID string, grace time.Duration) (session.RefreshOutcome, error)
+	// Drop forgets a token without leaving the trace Consume does: signing
+	// out must not be mistaken, moments later, for a rotation.
+	Drop(ctx context.Context, userID uuid.UUID, tokenID string) error
 	RevokeAll(ctx context.Context, userID uuid.UUID) error
 	// BlockAccess disowns the access tokens already issued to an account.
 	// They carry no state, so nothing else can withdraw them before they

@@ -10,6 +10,7 @@ import (
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/auth"
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
+	"github.com/moxicom/cursed_matrix/back/internal/app/session"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 	"github.com/moxicom/cursed_matrix/back/pkg/utils"
@@ -64,11 +65,37 @@ func (*stubUsers) TouchStreak(context.Context, uuid.UUID, time.Time) (user.Strea
 	return user.StreakChange{}, nil
 }
 
-type stubRefresh struct{ blocked bool }
+type stubRefresh struct {
+	blocked bool
+	// outcome is what Consume answers; the zero value is an unknown token, so
+	// the tests that refresh set it and the rest never reach it.
+	outcome session.RefreshOutcome
+	// consumedWith is the grace Consume was asked to honour.
+	consumedWith time.Duration
+	revoked      bool
+	dropped      bool
+	saved        int
+}
 
-func (*stubRefresh) Save(context.Context, uuid.UUID, string, time.Duration) error { return nil }
-func (*stubRefresh) Consume(context.Context, uuid.UUID, string) (bool, error)     { return true, nil }
-func (*stubRefresh) RevokeAll(context.Context, uuid.UUID) error                   { return nil }
+func (s *stubRefresh) Save(context.Context, uuid.UUID, string, time.Duration) error {
+	s.saved++
+	return nil
+}
+
+func (s *stubRefresh) Consume(_ context.Context, _ uuid.UUID, _ string, grace time.Duration) (session.RefreshOutcome, error) {
+	s.consumedWith = grace
+	return s.outcome, nil
+}
+
+func (s *stubRefresh) Drop(context.Context, uuid.UUID, string) error {
+	s.dropped = true
+	return nil
+}
+
+func (s *stubRefresh) RevokeAll(context.Context, uuid.UUID) error {
+	s.revoked = true
+	return nil
+}
 
 func (s *stubRefresh) BlockAccess(context.Context, uuid.UUID, time.Duration) error {
 	s.blocked = true
@@ -160,11 +187,11 @@ func TestUpdateSettingsRetiresTheCache(t *testing.T) {
 
 			var configured *stubCache
 			service := auth.NewService(users, &stubRefresh{}, &stubTx{}, &stubTokens{}, nil,
-				&shared.SystemClock{}, time.Hour, 14*24*time.Hour)
+				&shared.SystemClock{}, time.Hour, 0, 14*24*time.Hour)
 			if tt.cache != nil {
 				configured = tt.cache
 				service = auth.NewService(users, &stubRefresh{}, &stubTx{}, &stubTokens{}, configured,
-					&shared.SystemClock{}, time.Hour, 14*24*time.Hour)
+					&shared.SystemClock{}, time.Hour, 0, 14*24*time.Hour)
 			}
 
 			_, err := service.UpdateSettings(context.Background(), userID,
@@ -240,7 +267,7 @@ func TestLoginRetiresTheCacheWhenTheZoneChanges(t *testing.T) {
 			}}
 			cached := &stubCache{}
 			service := auth.NewService(users, &stubRefresh{}, &stubTx{}, &stubTokens{}, cached,
-				&shared.SystemClock{}, time.Hour, 14*24*time.Hour)
+				&shared.SystemClock{}, time.Hour, 0, 14*24*time.Hour)
 
 			if _, err := service.Login(context.Background(), "traveller", "correct horse battery", tt.sent); err != nil {
 				t.Fatalf("Login: %v", err)
@@ -254,6 +281,83 @@ func TestLoginRetiresTheCacheWhenTheZoneChanges(t *testing.T) {
 			}
 			if !users.touched {
 				t.Error("the login was not recorded")
+			}
+		})
+	}
+}
+
+// A refresh token presented twice is a replay and costs the account every
+// session — except right after the rotation, where the second presenter is
+// almost always the first one again and is answered with a fresh pair.
+func TestRefreshJudgesASpentToken(t *testing.T) {
+	const grace = 30 * time.Second
+	userID := uuid.New()
+
+	tests := []struct {
+		name        string
+		outcome     session.RefreshOutcome
+		wantSession bool
+		wantRevoked bool
+	}{
+		{name: "a live token is rotated", outcome: session.RefreshValid, wantSession: true},
+		{name: "a token spent a moment ago is answered again", outcome: session.RefreshJustRotated, wantSession: true},
+		{name: "an unknown token revokes the family", outcome: session.RefreshUnknown, wantRevoked: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			users := &stubUsers{account: &user.User{ID: userID, Settings: user.Settings{Timezone: "UTC"}}}
+			refresh := &stubRefresh{outcome: tt.outcome}
+			service := auth.NewService(users, refresh, &stubTx{}, &stubTokens{}, &stubCache{},
+				&shared.SystemClock{}, time.Hour, grace, 14*24*time.Hour)
+
+			session, err := service.Refresh(context.Background(), userID, "presented")
+
+			if tt.wantSession {
+				if err != nil || session == nil {
+					t.Fatalf("Refresh = %v, %v; want a session", session, err)
+				}
+				if refresh.saved != 1 {
+					t.Errorf("%d refresh tokens saved, want 1", refresh.saved)
+				}
+			} else if shared.CodeOf(err) != shared.CodeSessionExpired {
+				t.Fatalf("Refresh error = %v, want %s", err, shared.CodeSessionExpired)
+			}
+			if refresh.revoked != tt.wantRevoked {
+				t.Errorf("revoked = %v, want %v", refresh.revoked, tt.wantRevoked)
+			}
+			if refresh.consumedWith != grace {
+				t.Errorf("Consume was given a grace of %v, want %v", refresh.consumedWith, grace)
+			}
+		})
+	}
+}
+
+// Signing out must not leave the token honoured for the grace window: Consume
+// would, Drop does not.
+func TestLogoutDropsTheTokenRatherThanConsumingIt(t *testing.T) {
+	tests := []struct {
+		name  string
+		grace time.Duration
+	}{
+		{name: "with a grace window", grace: 30 * time.Second},
+		{name: "without one", grace: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			refresh := &stubRefresh{outcome: session.RefreshValid}
+			service := auth.NewService(&stubUsers{}, refresh, &stubTx{}, &stubTokens{}, &stubCache{},
+				&shared.SystemClock{}, time.Hour, tt.grace, 14*24*time.Hour)
+
+			if err := service.Logout(context.Background(), uuid.New(), "presented"); err != nil {
+				t.Fatalf("Logout: %v", err)
+			}
+			if !refresh.dropped {
+				t.Error("the token was not dropped")
+			}
+			if refresh.consumedWith != 0 || refresh.saved != 0 {
+				t.Error("Logout went through Consume or issued a token")
 			}
 		})
 	}

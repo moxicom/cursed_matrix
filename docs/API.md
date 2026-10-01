@@ -113,13 +113,30 @@ the server revokes the whole family for that user and answers `401`, because the
 second presenter is either the attacker or the victim, and there is no way to
 tell which.
 
-**What the client must do with it.** A `401` on any request outside `/auth/*`
-means the access token ran out, which happens every 15 minutes and is not the
-end of the session. The client refreshes once and repeats the request; only a
-refused refresh signs the user out. Because a refresh token presented twice
-revokes the whole family, refreshes are serialised: one at a time across every
-tab of the origin, and a request that finds `cm_csrf` already changed since it
-was sent skips the refresh, since someone else has done it.
+One exception, bounded by `auth.refresh_reuse_grace` (30 s as shipped, `0`
+turns it off). A token presented again that soon after its rotation is answered
+with another fresh pair and nothing is revoked. The second presenter is then
+almost always the first one: two tabs that woke together, or a browser whose
+response was lost on the way and which still holds the old cookie. What the
+window gives up is noticing a thief who replays inside it. A token ended by
+`/auth/logout` gets no such window, and neither does anything presented after
+`/auth/logout-all`.
+
+A refused refresh clears the three cookies only when the refusal is a verdict
+on the session (`SESSION_EXPIRED`). A `5xx` or a `429` leaves them in place.
+
+**What the client must do with it.** The access token runs out every 15
+minutes, and that is not the end of the session. The cue is the error code, not
+the status: `401 SESSION_EXPIRED`, or `403 CSRF_TOKEN_INVALID` on an unsafe
+method (that check runs before authentication, so a missing or replaced
+`cm_csrf` answers first). On either, outside `/auth/*`, the client refreshes
+once and repeats the request; only a refused refresh signs the user out. A
+`401 INVALID_CREDENTIALS` is never such a cue — `POST /me/delete` answers a
+wrong password that way inside a perfectly good session. Refreshes are
+serialised, one at a time across every tab of the origin, and a request that
+finds `cm_csrf` already changed since it was sent skips the refresh, since
+someone else has done it. The reuse window above is the backstop where that
+serialisation is not available (no Web Locks outside a secure context).
 
 **Rotating `JWT_SECRET`** invalidates every access token in flight; refresh
 tokens survive, so clients recover on their next refresh rather than being
@@ -157,7 +174,7 @@ GET /activity/events?limit=50&cursor=<opaque>
 ```
 
 `limit` has a server-side maximum. Tasks are **not** paginated: the board and
-the graph need the whole working set, which the free plan caps at 35 active
+the graph need the whole working set, which the free plan caps at 5 active
 tasks anyway. If that cap is lifted, the task list gains the same cursor scheme.
 
 ---
@@ -701,7 +718,7 @@ Quota responses (`402`) carry the numbers so the paywall can show them:
 
 ```json
 { "error": { "code": "QUOTA_LIMIT_REACHED",
-             "params": { "used": 35, "limit": 35, "resource": "ACTIVE_TASKS" } } }
+             "params": { "used": 5, "limit": 5, "resource": "ACTIVE_TASKS" } } }
 ```
 
 ---

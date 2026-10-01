@@ -11,6 +11,7 @@ import (
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/cache"
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
+	"github.com/moxicom/cursed_matrix/back/internal/app/session"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 	"github.com/moxicom/cursed_matrix/back/pkg/utils"
@@ -54,6 +55,11 @@ type Service struct {
 	clock      shared.Clock
 	refreshTTL time.Duration
 
+	// refreshGrace is how long after a rotation the spent token is still
+	// answered with a fresh pair instead of being treated as stolen. Zero is
+	// the strict rule: any second presentation revokes the account's sessions.
+	refreshGrace time.Duration
+
 	// trialPeriod is how long a new account may use the product before it has
 	// to pay. Zero leaves the account without an expiry, which is what every
 	// account made before trials existed has.
@@ -69,17 +75,19 @@ func NewService(
 	cached port.Cache,
 	clock shared.Clock,
 	refreshTTL time.Duration,
+	refreshGrace time.Duration,
 	trialPeriod time.Duration,
 ) *Service {
 	return &Service{
-		users:       users,
-		refresh:     refresh,
-		tx:          tx,
-		tokens:      tokens,
-		cache:       cached,
-		clock:       clock,
-		refreshTTL:  refreshTTL,
-		trialPeriod: trialPeriod,
+		users:        users,
+		refresh:      refresh,
+		tx:           tx,
+		tokens:       tokens,
+		cache:        cached,
+		clock:        clock,
+		refreshTTL:   refreshTTL,
+		refreshGrace: refreshGrace,
+		trialPeriod:  trialPeriod,
 	}
 }
 
@@ -208,12 +216,20 @@ func AccountFromRefreshToken(token string) (uuid.UUID, error) {
 // Refresh rotates the pair. A token presented twice is a replay: the whole
 // family is revoked, because the second presenter is either the attacker or the
 // victim and there is no way to tell which.
+//
+// Except for the moments right after the rotation. There the second presenter
+// is almost always the first one again: two tabs that woke together, or a
+// browser whose response was lost on the way and which still holds the old
+// cookie. Revoking every device of an honest user for that is the worse
+// mistake, so within refreshGrace the spent token is answered with a fresh
+// pair. What this gives up is detecting a thief who presents the token inside
+// that window; outside it the rule above holds unchanged.
 func (s *Service) Refresh(ctx context.Context, userID uuid.UUID, refreshToken string) (*Session, error) {
-	valid, err := s.refresh.Consume(ctx, userID, refreshToken)
+	outcome, err := s.refresh.Consume(ctx, userID, refreshToken, s.refreshGrace)
 	if err != nil {
 		return nil, err
 	}
-	if !valid {
+	if outcome == session.RefreshUnknown {
 		if err := s.refresh.RevokeAll(ctx, userID); err != nil {
 			return nil, err
 		}
@@ -227,11 +243,13 @@ func (s *Service) Refresh(ctx context.Context, userID uuid.UUID, refreshToken st
 	return s.issue(ctx, account)
 }
 
-// Logout consumes the presented token. It answers the same way whether or not
+// Logout forgets the presented token. It answers the same way whether or not
 // there was a session to end.
+//
+// Dropped, not consumed: a consumed token is honoured again for a moment, and
+// a session that was signed out must not come back.
 func (s *Service) Logout(ctx context.Context, userID uuid.UUID, refreshToken string) error {
-	_, err := s.refresh.Consume(ctx, userID, refreshToken)
-	return err
+	return s.refresh.Drop(ctx, userID, refreshToken)
 }
 
 // LogoutAll revokes every refresh token of the account.

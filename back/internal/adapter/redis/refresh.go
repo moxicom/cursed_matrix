@@ -9,6 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/moxicom/cursed_matrix/back/internal/app/port"
+	"github.com/moxicom/cursed_matrix/back/internal/app/session"
 	"github.com/moxicom/cursed_matrix/back/internal/domain/shared"
 )
 
@@ -36,20 +37,63 @@ func (s *RefreshStore) Save(ctx context.Context, userID uuid.UUID, tokenID strin
 	return nil
 }
 
-// Consume deletes the token and reports whether it was still valid. Redis DEL
-// returns how many keys it removed, which makes this atomic: two concurrent
-// refreshes cannot both see a valid token.
-func (s *RefreshStore) Consume(ctx context.Context, userID uuid.UUID, tokenID string) (bool, error) {
+// consumeScript spends a token and, when a grace is given, leaves a short-lived
+// marker in its place. One script, because the three steps must be one: a
+// second presenter arriving between "deleted" and "marked" would be judged a
+// replay, which is the outcome the marker exists to prevent.
+//
+// KEYS[1] the token, KEYS[2] its marker, ARGV[1] the grace in milliseconds.
+// Returns 1 for a live token, 2 for one spent within the grace, 0 otherwise.
+var consumeScript = redis.NewScript(`
+if redis.call('DEL', KEYS[1]) == 1 then
+  if tonumber(ARGV[1]) > 0 then
+    redis.call('SET', KEYS[2], '1', 'PX', ARGV[1])
+  end
+  return 1
+end
+if redis.call('EXISTS', KEYS[2]) == 1 then
+  return 2
+end
+return 0
+`)
+
+// Consume spends the token and reports what it found. Deleting is what makes a
+// refresh atomic — two concurrent presenters cannot both find a live token —
+// and the marker is what lets the second of them be told apart from a thief
+// for as long as the grace lasts.
+func (s *RefreshStore) Consume(ctx context.Context, userID uuid.UUID, tokenID string, grace time.Duration) (session.RefreshOutcome, error) {
 	generation, err := s.generation(ctx, userID)
 	if err != nil {
-		return false, err
+		return session.RefreshUnknown, err
 	}
 
-	removed, err := s.client.Del(ctx, s.tokenKey(userID, generation, tokenID)).Result()
+	key := s.tokenKey(userID, generation, tokenID)
+	found, err := consumeScript.Run(ctx, s.client, []string{key, s.rotatedKey(key)}, grace.Milliseconds()).Int()
 	if err != nil {
-		return false, fmt.Errorf("consume refresh token: %w", err)
+		return session.RefreshUnknown, fmt.Errorf("consume refresh token: %w", err)
 	}
-	return removed == 1, nil
+
+	switch found {
+	case 1:
+		return session.RefreshValid, nil
+	case 2:
+		return session.RefreshJustRotated, nil
+	default:
+		return session.RefreshUnknown, nil
+	}
+}
+
+// Drop deletes the token and leaves no marker: a token that was signed out is
+// simply gone, and presenting it again is a replay at once.
+func (s *RefreshStore) Drop(ctx context.Context, userID uuid.UUID, tokenID string) error {
+	generation, err := s.generation(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := s.client.Del(ctx, s.tokenKey(userID, generation, tokenID)).Err(); err != nil {
+		return fmt.Errorf("drop refresh token: %w", err)
+	}
+	return nil
 }
 
 // RevokeAll moves the account to a new generation, which orphans every token
@@ -78,6 +122,13 @@ func (s *RefreshStore) generationKey(userID uuid.UUID) string {
 
 func (s *RefreshStore) tokenKey(userID uuid.UUID, generation int64, tokenID string) string {
 	return fmt.Sprintf("%s:refresh:%s:%d:%s", keyPrefix, userID, generation, tokenID)
+}
+
+// rotatedKey names the marker of a spent token. It hangs off the token's own
+// key, generation included, so revoking the account orphans the markers along
+// with the tokens.
+func (s *RefreshStore) rotatedKey(tokenKey string) string {
+	return tokenKey + ":rotated"
 }
 
 var _ port.RefreshStore = (*RefreshStore)(nil)

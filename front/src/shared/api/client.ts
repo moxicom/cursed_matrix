@@ -167,11 +167,21 @@ async function exclusively<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/**
+ * How long a refresh may take. Every request that found the session expired,
+ * in every tab, waits behind the one refresh that is running; without a bound
+ * a connection that hangs would hold them all. Kept well inside the server's
+ * `refresh_reuse_grace`, so a refresh that did reach the server and is asked
+ * again after this gives up is answered, not judged a replay.
+ */
+const REFRESH_TIMEOUT_MS = 10_000;
+
 async function postRefresh(token: string): Promise<Response> {
   return fetch(BASE + REFRESH_PATH, {
     method: 'POST',
     headers: { [CSRF_HEADER]: token },
     credentials: 'same-origin',
+    signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
   });
 }
 
@@ -184,8 +194,10 @@ async function postRefresh(token: string): Promise<Response> {
  * refresh token again would be the replay described above.
  *
  * False is the server's verdict that the session is over. Anything else —
- * offline, rate limited, a 5xx — is thrown: it says nothing about the session,
- * and signing the user out for a dropped connection would be a lie.
+ * offline, rate limited, a 5xx, the timeout — is thrown: it says nothing about
+ * the session, and signing the user out for a dropped connection would be a
+ * lie. The caller then sees that failure instead of the refusal that started
+ * the refresh, which is the more useful of the two: "offline" is what is wrong.
  */
 async function renewSession(staleToken: string | null): Promise<boolean> {
   return exclusively(async () => {
@@ -206,20 +218,65 @@ async function renewSession(staleToken: string | null): Promise<boolean> {
  * plan is in the token. Shares the lock with the automatic refresh.
  */
 export async function rotateSession(): Promise<void> {
-  const response = await exclusively(() => postRefresh(csrfToken() ?? ''));
+  const response = await exclusively(async () => {
+    const token = csrfToken();
+    // Read inside the lock, so it is the token of whichever pair is current.
+    // Without one the server would refuse on the missing header alone; an
+    // empty header would say nothing, so the request is not made.
+    return token === null ? null : postRefresh(token);
+  });
+  if (response === null) throw new ApiError('SESSION_EXPIRED', 401);
   if (!response.ok) throw await refusal(response);
+}
+
+/**
+ * True when a refusal says the session needs renewing, as opposed to the
+ * request being wrong.
+ *
+ * The status alone does not say. A 401 is also how the server answers a wrong
+ * password on an endpoint inside the session — confirming an account deletion
+ * — and refreshing on that would rotate the tokens, send the password a second
+ * time and then sign out a user whose session was fine. And an expired session
+ * is not always a 401: an unsafe request is checked for its CSRF token first,
+ * so once that cookie is gone, or was replaced by another tab while this
+ * request was on its way, the answer is a 403.
+ */
+function needsRenewal(failure: ApiError): boolean {
+  return (
+    (failure.status === 401 && failure.code === 'SESSION_EXPIRED') ||
+    (failure.status === 403 && failure.code === 'CSRF_TOKEN_INVALID')
+  );
 }
 
 async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
   const sentWith = csrfToken();
   let response = await send(method, path, options);
 
-  // The access token lasts minutes and the session lasts weeks: a 401 is
-  // usually the first, not the second. One refresh, one retry; the user never
-  // sees it.
-  if (response.status === 401 && !SESSION_PATHS.has(path)) {
-    if (await renewSession(sentWith)) response = await send(method, path, options);
-    if (response.status === 401) sessionLost?.();
+  // The access token lasts minutes and the session lasts weeks, so the first
+  // refusal of this kind is usually not the last word. One refresh, one retry;
+  // the user never sees it.
+  if (!response.ok && !SESSION_PATHS.has(path)) {
+    const failure = await refusal(response);
+    if (!needsRenewal(failure)) throw failure;
+
+    if (!(await renewSession(sentWith))) {
+      sessionLost?.();
+      throw failure;
+    }
+    // The caller may have given up while the refresh was running. The refresh
+    // itself is never cut short — the server would have rotated the token for
+    // a response nobody read — but there is no point repeating the request.
+    options.signal?.throwIfAborted();
+
+    response = await send(method, path, options);
+    if (!response.ok) {
+      const second = await refusal(response);
+      // Still no session after a refresh that succeeded: it was revoked in
+      // between. A second CSRF refusal is another tab rotating again, which
+      // is the user's bad luck but not the end of their session.
+      if (second.status === 401 && second.code === 'SESSION_EXPIRED') sessionLost?.();
+      throw second;
+    }
   }
 
   if (!response.ok) throw await refusal(response);

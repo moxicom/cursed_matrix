@@ -87,6 +87,7 @@ func serverWithLimits(t *testing.T, limits httphandler.RateLimits) http.Handler 
 		cached,
 		&shared.SystemClock{},
 		24*time.Hour,
+		refreshGrace,
 		14*24*time.Hour,
 	)
 	awards := achievement.NewService(
@@ -295,34 +296,71 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 }
 
-func TestReplayedRefreshTokenRevokesTheFamily(t *testing.T) {
-	c := newClient(t)
-	if got := c.do(t, http.MethodPost, "/auth/register", registerBody("t_"+uuid.NewString()[:8])).Code; got != http.StatusCreated {
-		t.Fatalf("register: %d", got)
+// refreshGrace is the window the test server honours a just-rotated refresh
+// token for. Short, so that a case which needs it to have passed can wait.
+const refreshGrace = 150 * time.Millisecond
+
+// A refresh token presented a second time is a replay, and the whole family is
+// revoked: one of the two presenters is an attacker and there is no way to
+// tell which. Right after the rotation the second presenter is almost always
+// the first one again — two tabs waking together, a response lost on the way —
+// and revoking an honest user's every device for that is the worse mistake.
+func TestReplayedRefreshToken(t *testing.T) {
+	tests := []struct {
+		name string
+		// wait is how long after the rotation the spent token comes back.
+		wait             time.Duration
+		wantReplayStatus int
+		// wantRotatedAlive says whether the pair issued by the first refresh
+		// survives the replay.
+		wantRotatedAlive bool
+	}{
+		{
+			name:             "within the grace window it is answered again and nothing is revoked",
+			wait:             0,
+			wantReplayStatus: http.StatusNoContent,
+			wantRotatedAlive: true,
+		},
+		{
+			name:             "after it the family is revoked",
+			wait:             2 * refreshGrace,
+			wantReplayStatus: http.StatusUnauthorized,
+			wantRotatedAlive: false,
+		},
 	}
 
-	stolen := c.cookies[httphandler.RefreshCookie]
-	csrf := c.cookies[httphandler.CSRFCookie]
-	access := c.cookies[httphandler.AccessCookie]
-	if got := c.do(t, http.MethodPost, "/auth/refresh", "").Code; got != http.StatusNoContent {
-		t.Fatalf("first refresh: %d", got)
-	}
-	rotated := c.cookies[httphandler.RefreshCookie]
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newClient(t)
+			if got := c.do(t, http.MethodPost, "/auth/register", registerBody("t_"+uuid.NewString()[:8])).Code; got != http.StatusCreated {
+				t.Fatalf("register: %d", got)
+			}
 
-	c.cookies[httphandler.RefreshCookie] = stolen
-	if got := c.do(t, http.MethodPost, "/auth/refresh", "").Code; got != http.StatusUnauthorized {
-		t.Fatalf("replaying the consumed token = %d, want 401", got)
-	}
+			spent := c.cookies[httphandler.RefreshCookie]
+			if got := c.do(t, http.MethodPost, "/auth/refresh", "").Code; got != http.StatusNoContent {
+				t.Fatalf("first refresh: %d", got)
+			}
+			rotated := c.cookies[httphandler.RefreshCookie]
+			csrf := c.cookies[httphandler.CSRFCookie]
+			access := c.cookies[httphandler.AccessCookie]
 
-	// The replay cleared this client's cookies, but the honest holder of the
-	// rotated token never saw that response — so restore what it would still
-	// be carrying, and check the token is dead anyway. That is the point: one
-	// of the two is an attacker and there is no way to tell which.
-	c.cookies[httphandler.RefreshCookie] = rotated
-	c.cookies[httphandler.CSRFCookie] = csrf
-	c.cookies[httphandler.AccessCookie] = access
-	if got := c.do(t, http.MethodPost, "/auth/refresh", "").Code; got != http.StatusUnauthorized {
-		t.Fatalf("the rotated token still works after a replay: %d", got)
+			time.Sleep(tc.wait)
+
+			c.cookies[httphandler.RefreshCookie] = spent
+			if got := c.do(t, http.MethodPost, "/auth/refresh", "").Code; got != tc.wantReplayStatus {
+				t.Fatalf("presenting the spent token = %d, want %d", got, tc.wantReplayStatus)
+			}
+
+			// The honest holder of the rotated pair never saw that response,
+			// so put back what it would still be carrying.
+			c.cookies[httphandler.RefreshCookie] = rotated
+			c.cookies[httphandler.CSRFCookie] = csrf
+			c.cookies[httphandler.AccessCookie] = access
+			alive := c.do(t, http.MethodPost, "/auth/refresh", "").Code == http.StatusNoContent
+			if alive != tc.wantRotatedAlive {
+				t.Errorf("the rotated token alive = %v, want %v", alive, tc.wantRotatedAlive)
+			}
+		})
 	}
 }
 
@@ -436,7 +474,10 @@ func TestRefreshAndLogoutSurviveTheAccessCookie(t *testing.T) {
 				t.Fatalf("%s without the access cookie = %d, want %d", tc.call, got, tc.wantStatus)
 			}
 
-			// Whatever the call was, the token it consumed must be dead.
+			// Whatever the call was, the token it consumed must be dead —
+			// once the moment in which a rotation is answered twice has passed.
+			// A signed-out token is dead at once; waiting covers both.
+			time.Sleep(2 * refreshGrace)
 			c.cookies[httphandler.RefreshCookie] = refresh
 			if got := c.do(t, http.MethodPost, "/auth/refresh", "").Code; got == http.StatusNoContent {
 				t.Error("the consumed refresh token still works")

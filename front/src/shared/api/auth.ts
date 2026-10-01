@@ -1,6 +1,6 @@
 import type { PlanId, User } from '@/shared/types/domain';
 
-import { api } from './client';
+import { api, rotateSession } from './client';
 
 /**
  * What the server answers with for the signed-in account.
@@ -75,9 +75,12 @@ export async function signOutEverywhere() {
   await api.post<void>('/auth/logout-all');
 }
 
-/** Rotates the pair. Used when a request says the session expired. */
+/**
+ * Rotates the pair on purpose. An expired session is renewed by the client on
+ * its own; this is for when the token must change while still valid.
+ */
 export async function refresh() {
-  await api.post<void>('/auth/refresh');
+  await rotateSession();
 }
 
 export async function account() {

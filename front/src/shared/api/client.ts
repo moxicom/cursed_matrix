@@ -15,6 +15,29 @@ const CSRF_HEADER = 'X-CSRF-Token';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+const REFRESH_PATH = '/auth/refresh';
+
+/**
+ * Requests that settle the session themselves. A 401 from one of these is the
+ * answer, not a cue to refresh and try again.
+ */
+const SESSION_PATHS = new Set(['/auth/login', '/auth/register', REFRESH_PATH, '/auth/logout']);
+
+/** One refresh at a time across every tab of this origin. */
+const REFRESH_LOCK = 'cm-session-refresh';
+
+let sessionLost: (() => void) | null = null;
+
+/**
+ * Registers what happens when the server refuses to refresh the session.
+ *
+ * The client cannot import the session store — features depend on this file,
+ * not the other way round — so the store hands in its own sign-out.
+ */
+export function onSessionLost(handler: () => void): void {
+  sessionLost = handler;
+}
+
 /**
  * A refusal the server explained.
  *
@@ -97,7 +120,7 @@ function url(path: string, query: RequestOptions['query']): string {
   return rendered ? `${BASE}${path}?${rendered}` : BASE + path;
 }
 
-async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
+function send(method: string, path: string, options: RequestOptions): Promise<Response> {
   const headers: Record<string, string> = {};
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
 
@@ -121,7 +144,83 @@ async function request<T>(method: string, path: string, options: RequestOptions 
   if (options.body !== undefined) init.body = JSON.stringify(options.body);
   if (options.signal) init.signal = options.signal;
 
-  const response = await fetch(url(path, options.query), init);
+  return fetch(url(path, options.query), init);
+}
+
+/**
+ * Runs one refresh at a time.
+ *
+ * The server rotates the refresh token on every use and treats a token
+ * presented twice as stolen: it revokes every session of the account. Two
+ * requests failing together, or two tabs waking up together, would do exactly
+ * that to an honest user. The Web Lock spans tabs; where it is missing, a
+ * queue at least covers this one.
+ */
+let queue: Promise<unknown> = Promise.resolve();
+
+async function exclusively<T>(task: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== 'undefined' && 'locks' in navigator) {
+    return await navigator.locks.request(REFRESH_LOCK, task);
+  }
+  const run = queue.then(task, task);
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+async function postRefresh(token: string): Promise<Response> {
+  return fetch(BASE + REFRESH_PATH, {
+    method: 'POST',
+    headers: { [CSRF_HEADER]: token },
+    credentials: 'same-origin',
+  });
+}
+
+/**
+ * Renews an expired session. True means the caller may try again.
+ *
+ * `staleToken` is the CSRF token the failed request went out with. The server
+ * issues a new one with every pair, so finding a different one once the lock
+ * is ours means somebody else has already refreshed, and presenting the
+ * refresh token again would be the replay described above.
+ *
+ * False is the server's verdict that the session is over. Anything else —
+ * offline, rate limited, a 5xx — is thrown: it says nothing about the session,
+ * and signing the user out for a dropped connection would be a lie.
+ */
+async function renewSession(staleToken: string | null): Promise<boolean> {
+  return exclusively(async () => {
+    const current = csrfToken();
+    // Nothing to echo: a visitor who never signed in, or cookies long gone.
+    if (current === null) return false;
+    if (current !== staleToken) return true;
+
+    const response = await postRefresh(current);
+    if (response.ok) return true;
+    if (response.status === 401 || response.status === 403) return false;
+    throw await refusal(response);
+  });
+}
+
+/**
+ * Rotates the pair on purpose, expired or not — after a purchase, so the new
+ * plan is in the token. Shares the lock with the automatic refresh.
+ */
+export async function rotateSession(): Promise<void> {
+  const response = await exclusively(() => postRefresh(csrfToken() ?? ''));
+  if (!response.ok) throw await refusal(response);
+}
+
+async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
+  const sentWith = csrfToken();
+  let response = await send(method, path, options);
+
+  // The access token lasts minutes and the session lasts weeks: a 401 is
+  // usually the first, not the second. One refresh, one retry; the user never
+  // sees it.
+  if (response.status === 401 && !SESSION_PATHS.has(path)) {
+    if (await renewSession(sentWith)) response = await send(method, path, options);
+    if (response.status === 401) sessionLost?.();
+  }
 
   if (!response.ok) throw await refusal(response);
   if (response.status === 204) return undefined as T;

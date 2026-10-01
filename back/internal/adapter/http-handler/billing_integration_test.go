@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
 
 type planView struct {
@@ -57,11 +59,11 @@ func TestPlansAreePublic(t *testing.T) {
 	}
 
 	free := byPlan["FREE"]
-	if free.ActiveTaskLimit == nil || *free.ActiveTaskLimit != 35 {
-		t.Errorf("free activeTaskLimit = %v, want the 35 the server enforces", free.ActiveTaskLimit)
+	if free.ActiveTaskLimit == nil || *free.ActiveTaskLimit != user.FreeActiveTasks {
+		t.Errorf("free activeTaskLimit = %v, want the %d the server enforces", free.ActiveTaskLimit, user.FreeActiveTasks)
 	}
-	if free.TaskLinkLimit == nil || *free.TaskLinkLimit != 25 {
-		t.Errorf("free taskLinkLimit = %v, want 25", free.TaskLinkLimit)
+	if free.TaskLinkLimit == nil || *free.TaskLinkLimit != user.FreeTaskLinks {
+		t.Errorf("free taskLinkLimit = %v, want %d", free.TaskLinkLimit, user.FreeTaskLinks)
 	}
 
 	paid := byPlan["PRO"]

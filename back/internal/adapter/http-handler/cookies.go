@@ -45,18 +45,25 @@ func (c *CookieWriter) Issue(w http.ResponseWriter, access, refresh string, acce
 		Name: AccessCookie, Value: access, Path: apiPath,
 		Expires: accessExpiry, HttpOnly: true, Secure: c.secure, SameSite: http.SameSiteLaxMode,
 	})
+	refreshExpiry := time.Now().Add(refreshTTL)
 	// #nosec G124 -- as above; this one is additionally SameSite=Strict and
 	// scoped to the auth path.
 	http.SetCookie(w, &http.Cookie{
 		Name: RefreshCookie, Value: refresh, Path: refreshPath,
-		Expires: time.Now().Add(refreshTTL), HttpOnly: true, Secure: c.secure, SameSite: http.SameSiteStrictMode,
+		Expires: refreshExpiry, HttpOnly: true, Secure: c.secure, SameSite: http.SameSiteStrictMode,
 	})
 	// #nosec G124 -- HttpOnly is false by design: the page has to read this
 	// value to echo it in a header, which is exactly what a cross-site form
 	// cannot do. It carries no authority on its own.
+	//
+	// It lives as long as the refresh cookie, not the access one. Refreshing is
+	// itself an unsafe request behind the CSRF check, so a token that expired
+	// together with the access cookie would leave the client unable to refresh
+	// at the only moment it needs to — and the session would last one access
+	// lifetime, whatever the refresh cookie says.
 	http.SetCookie(w, &http.Cookie{
 		Name: CSRFCookie, Value: csrf, Path: "/",
-		Expires: accessExpiry, HttpOnly: false, Secure: c.secure, SameSite: http.SameSiteLaxMode,
+		Expires: refreshExpiry, HttpOnly: false, Secure: c.secure, SameSite: http.SameSiteLaxMode,
 	})
 	return nil
 }

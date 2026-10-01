@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
 
 type taskView struct {
@@ -221,12 +223,13 @@ func TestTaskLifecycleThroughTheRouter(t *testing.T) {
 }
 
 // TestFreePlanTaskQuota is the product rule from CLAUDE.md §64: the free plan
-// allows 35 active tasks, and finishing or removing one frees a slot.
+// caps active tasks, and finishing or removing one frees a slot. The number is
+// read from the domain, so changing the plan does not mean editing the test.
 func TestFreePlanTaskQuota(t *testing.T) {
 	c := signedInClient(t)
 
 	var last string
-	for i := range 35 {
+	for i := range user.FreeActiveTasks {
 		body := fmt.Sprintf(`{"title":"task %d","quadrant":"NOT_IMPORTANT_NOT_URGENT"}`, i)
 		response := c.do(t, http.MethodPost, "/tasks", body)
 		if response.Code != http.StatusCreated {
@@ -235,7 +238,7 @@ func TestFreePlanTaskQuota(t *testing.T) {
 		last = decodeTask(t, response.Body.Bytes()).ID
 	}
 
-	t.Run("the thirty-sixth is refused with the payment code", func(t *testing.T) {
+	t.Run("one past the cap is refused with the payment code", func(t *testing.T) {
 		response := c.do(t, http.MethodPost, "/tasks", `{"title":"one too many","quadrant":"IMPORTANT_URGENT"}`)
 		if response.Code != http.StatusPaymentRequired {
 			t.Fatalf("status = %d, want 402: %s", response.Code, response.Body)
@@ -253,8 +256,8 @@ func TestFreePlanTaskQuota(t *testing.T) {
 		if body.Error.Code != "QUOTA_LIMIT_REACHED" {
 			t.Errorf("code = %q", body.Error.Code)
 		}
-		if body.Error.Params["limit"] != float64(35) {
-			t.Errorf("limit = %v, want 35", body.Error.Params["limit"])
+		if body.Error.Params["limit"] != float64(user.FreeActiveTasks) {
+			t.Errorf("limit = %v, want %d", body.Error.Params["limit"], user.FreeActiveTasks)
 		}
 	})
 

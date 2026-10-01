@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
+
+	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
 
 type tagView struct {
@@ -287,27 +290,46 @@ func TestLinksThroughTheRouter(t *testing.T) {
 	})
 }
 
-// TestFreePlanLinkQuota is CLAUDE.md §64: 25 links on the free plan.
+// TestFreePlanLinkQuota is CLAUDE.md §64: the free plan caps links.
+//
+// The links are drawn between every pair of a full set of tasks rather than
+// from one hub to many spokes: a hub needs one task per link, and the task cap
+// may be no larger than the link cap. Pairs grow quadratically, so the active
+// task allowance yields more distinct links than the link cap allows.
 func TestFreePlanLinkQuota(t *testing.T) {
 	c := signedInClient(t)
 
-	hub := newTask(t, c, "hub", "IMPORTANT_URGENT")
-	spokes := make([]taskView, 0, 26)
-	for i := range 26 {
-		spokes = append(spokes, newTask(t, c, fmt.Sprintf("spoke %d", i), "NOT_IMPORTANT_NOT_URGENT"))
+	tasks := make([]taskView, 0, user.FreeActiveTasks)
+	for i := range user.FreeActiveTasks {
+		tasks = append(tasks, newTask(t, c, fmt.Sprintf("node %d", i), "NOT_IMPORTANT_NOT_URGENT"))
 	}
 
-	for i := range 25 {
-		body := `{"sourceTaskId":"` + hub.ID + `","targetTaskId":"` + spokes[i].ID + `"}`
-		if response := c.do(t, http.MethodPost, "/links", body); response.Code != http.StatusCreated {
+	type pair struct{ source, target string }
+	var pairs []pair
+	for i := range tasks {
+		for j := i + 1; j < len(tasks); j++ {
+			pairs = append(pairs, pair{source: tasks[i].ID, target: tasks[j].ID})
+		}
+	}
+	if len(pairs) <= user.FreeTaskLinks {
+		t.Fatalf("%d tasks give %d pairs, not enough to exceed the %d-link cap",
+			len(tasks), len(pairs), user.FreeTaskLinks)
+	}
+
+	link := func(p pair) *httptest.ResponseRecorder {
+		body := `{"sourceTaskId":"` + p.source + `","targetTaskId":"` + p.target + `"}`
+		return c.do(t, http.MethodPost, "/links", body)
+	}
+
+	for i := range user.FreeTaskLinks {
+		if response := link(pairs[i]); response.Code != http.StatusCreated {
 			t.Fatalf("link %d = %d: %s", i, response.Code, response.Body)
 		}
 	}
 
-	body := `{"sourceTaskId":"` + hub.ID + `","targetTaskId":"` + spokes[25].ID + `"}`
-	response := c.do(t, http.MethodPost, "/links", body)
+	response := link(pairs[user.FreeTaskLinks])
 	if response.Code != http.StatusPaymentRequired {
-		t.Fatalf("the 26th link = %d, want 402: %s", response.Code, response.Body)
+		t.Fatalf("one link past the cap = %d, want 402: %s", response.Code, response.Body)
 	}
 	if got := errorCodeOf(t, response.Body.Bytes()); got != "QUOTA_LIMIT_REACHED" {
 		t.Errorf("code = %q", got)

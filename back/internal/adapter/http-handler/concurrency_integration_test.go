@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+
+	"github.com/moxicom/cursed_matrix/back/internal/domain/user"
 )
 
 // sessions hands out callers that share one signed-in session but no mutable
@@ -123,8 +125,8 @@ func TestConcurrentReopenWithdrawsOnce(t *testing.T) {
 func TestConcurrentCreationRespectsTheQuota(t *testing.T) {
 	c := signedInClient(t)
 
-	// One slot left under the free plan's 35.
-	for i := range 34 {
+	// One slot left under the free plan's cap.
+	for i := range user.FreeActiveTasks - 1 {
 		body := fmt.Sprintf(`{"title":"task %d","quadrant":"NOT_IMPORTANT_NOT_URGENT"}`, i)
 		if response := c.do(t, http.MethodPost, "/tasks", body); response.Code != http.StatusCreated {
 			t.Fatalf("task %d = %d: %s", i, response.Code, response.Body)
@@ -152,7 +154,7 @@ func TestConcurrentCreationRespectsTheQuota(t *testing.T) {
 	if err := json.Unmarshal(listed.Body.Bytes(), &board); err != nil {
 		t.Fatalf("board: %v", err)
 	}
-	if len(board.Tasks) != 35 {
-		t.Errorf("%d active tasks, want the plan's 35", len(board.Tasks))
+	if len(board.Tasks) != user.FreeActiveTasks {
+		t.Errorf("%d active tasks, want the plan's %d", len(board.Tasks), user.FreeActiveTasks)
 	}
 }

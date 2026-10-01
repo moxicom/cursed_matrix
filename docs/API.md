@@ -86,7 +86,7 @@ headers, and that is the whole handover.
 |---|---|---|---|
 | `cm_access` | signed JWT: subject, plan, expiry | `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/api` | 15 min |
 | `cm_refresh` | opaque id of a server-side record | `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/api/v1/auth` | 30 days |
-| `cm_csrf` | random value, readable by the page | `Secure`, `SameSite=Lax`, `Path=/` | matches the access token |
+| `cm_csrf` | random value, readable by the page | `Secure`, `SameSite=Lax`, `Path=/` | matches the refresh token: refreshing is an unsafe request, so the value must still be there when the access token is not |
 
 `SameSite` differs on purpose. The access cookie is `Lax`, so following a link
 into the application from outside still arrives authenticated. The refresh
@@ -112,6 +112,14 @@ consumed and a new pair is issued. A refresh token presented twice is a replay â
 the server revokes the whole family for that user and answers `401`, because the
 second presenter is either the attacker or the victim, and there is no way to
 tell which.
+
+**What the client must do with it.** A `401` on any request outside `/auth/*`
+means the access token ran out, which happens every 15 minutes and is not the
+end of the session. The client refreshes once and repeats the request; only a
+refused refresh signs the user out. Because a refresh token presented twice
+revokes the whole family, refreshes are serialised: one at a time across every
+tab of the origin, and a request that finds `cm_csrf` already changed since it
+was sent skips the refresh, since someone else has done it.
 
 **Rotating `JWT_SECRET`** invalidates every access token in flight; refresh
 tokens survive, so clients recover on their next refresh rather than being

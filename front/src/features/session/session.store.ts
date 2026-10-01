@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { useBoardStore } from '@/features/board/board.store';
 import * as authApi from '@/shared/api/auth';
-import { ApiError } from '@/shared/api/client';
+import { ApiError, onSessionLost } from '@/shared/api/client';
 import type { User } from '@/shared/types/domain';
 
 type Status = 'unknown' | 'anonymous' | 'authenticated';
@@ -64,21 +64,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   restore: async () => {
     try {
+      // A session that has merely gone stale is renewed inside the client:
+      // it refreshes once on a 401 and asks again, so an answer here is final.
       set({ user: await authApi.account(), status: 'authenticated' });
-    } catch (error) {
-      // A session that has merely gone stale is worth one attempt at
-      // refreshing before the user is asked to sign in again.
-      if (error instanceof ApiError && error.unauthenticated) {
-        try {
-          await authApi.refresh();
-          set({ user: await authApi.account(), status: 'authenticated' });
-          return;
-        } catch {
-          clearAccountData();
-          set(anonymous);
-          return;
-        }
-      }
+    } catch {
       clearAccountData();
       set(anonymous);
     }
@@ -158,6 +147,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 }));
+
+// The server refused to renew the session in the middle of the user's work:
+// the token expired for good, or was revoked from another device. The guard
+// then routes away from the application the same way it does after sign-out.
+onSessionLost(() => {
+  clearAccountData();
+  useSessionStore.setState({ ...anonymous, error: null });
+});
 
 function codeOf(error: unknown): SessionRefusal {
   if (error instanceof ApiError) return { code: error.code, params: error.params };

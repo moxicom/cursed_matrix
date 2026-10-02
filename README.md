@@ -11,7 +11,9 @@ ATTENTION!! This repository is my first attempt to use real, raw vibecode to imp
 
 
 Full spec: [`docs/SPEC.md`](docs/SPEC.md). HTTP contract:
-[`docs/API.md`](docs/API.md). Deployment in depth: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+[`docs/API.md`](docs/API.md), OpenAPI:
+[`back/api/v1/openapi.yaml`](back/api/v1/openapi.yaml). Deployment in depth:
+[`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ```
 front/    React + TypeScript + Vite, served by nginx in production

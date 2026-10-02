@@ -149,7 +149,7 @@ docker compose exec -T postgres psql -U cursed -d postgres \
 
 The stack speaks plain HTTP on 127.0.0.1:8080 and expects a terminator in
 front of it. Whatever terminates must forward `X-Forwarded-Proto` (that is what
-turns HSTS on) and `X-Real-IP` (rate limits count per address; without it every
+turns HSTS on) and `X-Forwarded-For` (rate limits count per address; without it every
 visitor shares one counter). Below is nginx on the host with a Let's Encrypt
 certificate, tested on the 1 GB target. Caddy is the two-line alternative:
 

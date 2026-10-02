@@ -19,6 +19,14 @@ map $http_x_forwarded_proto $cursed_hsts {
     https   "max-age=31536000; includeSubDomains";
 }
 
+# Behind a TLS terminator on the host every request arrives from the Docker
+# gateway: take the caller from the address the terminator appended, or all
+# visitors share one counter. A peer outside these ranges is not believed.
+set_real_ip_from 10.0.0.0/8;
+set_real_ip_from 172.16.0.0/12;
+set_real_ip_from 192.168.0.0/16;
+real_ip_header   X-Forwarded-For;
+
 # --- rate limits: the edge stops volume, the backend counts per account ------
 # Empty key = not counted, so the strict zone only applies to credential endpoints.
 map $uri $cursed_auth_key {

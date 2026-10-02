@@ -101,7 +101,7 @@ are its own and `docker compose down` here stops nothing else.
 
 With a reverse proxy already on the host, skip §2 and point the proxy you have
 at `FRONT_PORT` instead. What it must send is in §2: `X-Forwarded-Proto`, so
-HSTS appears, and `X-Real-IP`, without which every visitor shares one
+HSTS appears, and `X-Forwarded-For`, without which every visitor shares one
 rate-limit counter.
 
 ## 1. Fetch and configure
@@ -203,9 +203,10 @@ server {
 }
 ```
 
-`X-Real-IP` matters more than it looks: the per-address ceilings count by it,
-and the container's own nginx overwrites whatever a client sent. A terminator
-that does not set it makes every visitor share one counter.
+`X-Forwarded-For` matters more than it looks: the per-address ceilings count by
+the last address in it, and the container's own nginx believes it only from a
+private peer, so a client cannot choose its own. A terminator that does not set
+it makes every visitor share one counter.
 
 ### Building on a small server
 
